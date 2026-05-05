@@ -10,6 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
   "duckdb>=1.1.0",
   "pandas>=2.2.0",
+  "polars>=1.8.0",
   "PyYAML>=6.0.0",
   "yfinance>=0.2.0",
   "xgboost>=2.0.0",
@@ -19,4 +20,15 @@ dependencies = [
 sq = "src.cli:main"
 
 [tool.setuptools]
-packages = ["src", "src.utils", "src.sync", "src.research"]
+packages = [
+  "src",
+  "src.utils",
+  "src.sync",
+  "src.research",
+  "src.sweep",
+  "src.evaluate",
+  "src.promote",
+  "src.trade",
+  "src.scan",
+  "src.monitor",
+]

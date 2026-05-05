@@ -16,26 +16,48 @@ class MarketDataClient:
         self.logger = logger
 
     @retry(retries=3, backoff_seconds=1.0, backoff_multiplier=2.0)
+    def download_history(
+        self,
+        tickers: list[str],
+        *,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        period: str | None = None,
+        interval: str = "1d",
+    ) -> pd.DataFrame:
+        import yfinance as yf
+
+        final_date = end_date or date.today()
+        kwargs = {
+            "tickers": tickers,
+            "interval": interval,
+            "auto_adjust": False,
+            "actions": False,
+            "group_by": "ticker",
+            "progress": False,
+            "threads": True,
+        }
+        if period is not None:
+            kwargs["period"] = period
+        else:
+            if start_date is None:
+                raise ValueError("start_date is required when period is not supplied")
+            kwargs["start"] = start_date.isoformat()
+            kwargs["end"] = (final_date + timedelta(days=1)).isoformat()
+        return yf.download(**kwargs)
+
+    @retry(retries=3, backoff_seconds=1.0, backoff_multiplier=2.0)
     def download_daily_history(
         self,
         tickers: list[str],
         start_date: date,
         end_date: date | None = None,
     ) -> pd.DataFrame:
-        import yfinance as yf
+        return self.download_history(tickers, start_date=start_date, end_date=end_date, interval="1d")
 
-        final_date = end_date or date.today()
-        return yf.download(
-            tickers=tickers,
-            start=start_date.isoformat(),
-            end=(final_date + timedelta(days=1)).isoformat(),
-            interval="1d",
-            auto_adjust=False,
-            actions=False,
-            group_by="ticker",
-            progress=False,
-            threads=True,
-        )
+    @retry(retries=3, backoff_seconds=1.0, backoff_multiplier=2.0)
+    def download_intraday_history(self, tickers: list[str]) -> pd.DataFrame:
+        return self.download_history(tickers, period="1d", interval="1m")
 
 
 def extract_ticker_history(raw_frame: pd.DataFrame, ticker: str) -> pd.DataFrame:
@@ -55,6 +77,7 @@ def extract_ticker_history(raw_frame: pd.DataFrame, ticker: str) -> pd.DataFrame
     frame = frame.reset_index()
     rename_map = {
         "Date": "date",
+        "Datetime": "date",
         "Open": "open",
         "High": "high",
         "Low": "low",
