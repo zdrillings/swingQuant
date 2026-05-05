@@ -1,0 +1,35 @@
+features:
+  trend:
+    - name: "sma_200_dist"
+      type: "pct_diff"
+      params: { window: 200 }
+  momentum:
+    - name: "rsi_14"
+      type: "rsi"
+      params: { window: 14 }
+    - name: "rsi_2"
+      type: "rsi"
+      params: { window: 2 }
+  volume:
+    - name: "vol_alpha"
+      type: "ratio_to_avg"
+      params: { window: 20 }
+  commodities:
+    - name: "oil_corr_60"
+      ticker: "USO"
+      type: "correlation"
+      params: { window: 60 }
+
+sweep_grid:
+  rsi_14_max:
+    min: 25
+    max: 45
+    step: 5
+  vol_alpha_min:
+    min: 1.2
+    max: 2.5
+    step: 0.25
+  sma_200_dist_min:
+    min: 0.0
+    max: 0.05
+    step: 0.01
