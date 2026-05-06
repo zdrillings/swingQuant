@@ -7,6 +7,8 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import pandas as pd
+
 from src.evaluate.service import EvaluateService
 from src.promote.service import PromoteService
 from src.settings import AppPaths
@@ -26,7 +28,7 @@ class FakeDuckDBConnection:
 
 
 class EvaluateServiceTests(unittest.TestCase):
-    def test_evaluate_applies_min_max_normalization_before_scoring(self) -> None:
+    def test_evaluate_uses_latest_run_and_min_trade_filter_in_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             paths = AppPaths(
@@ -46,6 +48,7 @@ class EvaluateServiceTests(unittest.TestCase):
             db.insert_backtest_results(
                 [
                     BacktestResultRow(
+                        run_id=1,
                         strategy_id=1,
                         params_json=json.dumps({"indicators": {}, "exit_rules": {}, "sector": "ALL"}),
                         norm_score=None,
@@ -53,8 +56,10 @@ class EvaluateServiceTests(unittest.TestCase):
                         expectancy=0.1,
                         mdd=0.2,
                         win_rate=0.5,
+                        trade_count=5,
                     ),
                     BacktestResultRow(
+                        run_id=2,
                         strategy_id=2,
                         params_json=json.dumps({"indicators": {}, "exit_rules": {}, "sector": "ALL"}),
                         norm_score=None,
@@ -62,22 +67,320 @@ class EvaluateServiceTests(unittest.TestCase):
                         expectancy=0.3,
                         mdd=0.1,
                         win_rate=0.6,
+                        trade_count=12,
+                    ),
+                    BacktestResultRow(
+                        run_id=2,
+                        strategy_id=3,
+                        params_json=json.dumps({"indicators": {}, "exit_rules": {}, "sector": "ALL"}),
+                        norm_score=None,
+                        profit_factor=float("inf"),
+                        expectancy=0.25,
+                        mdd=0.05,
+                        win_rate=1.0,
+                        trade_count=4,
                     ),
                 ]
             )
             service = EvaluateService(db)
-            service._build_candidate_links = lambda frame: {}
+            service._build_live_candidate_metadata = lambda frame: ({}, {})
 
             with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
                 report = service.run(top=2)
 
-            self.assertEqual(report.rows_written, 2)
-            rows = db.list_backtest_results()
+            self.assertEqual(report.rows_written, 1)
+            rows = db.list_backtest_results(run_id=2)
             scores = {row["strategy_id"]: row["norm_score"] for row in rows}
-            self.assertAlmostEqual(scores[1], -0.3)
-            self.assertAlmostEqual(scores[2], 0.7)
+            self.assertAlmostEqual(scores[2], 0.0)
             report_text = (paths.reports_dir / "candidates.md").read_text(encoding="utf-8")
-            self.assertIn("norm_score: 0.700000", report_text)
+            self.assertIn("- run_id: 2", report_text)
+            self.assertIn("- min_trades: 12", report_text)
+            self.assertIn("- ranking: practical_score desc, then norm_score desc, then expectancy desc", report_text)
+            self.assertIn("## Top Ranked Candidates", report_text)
+            self.assertIn("## Top Live Match Candidates", report_text)
+            self.assertIn("## Best Practical Live Candidates", report_text)
+            self.assertIn("## Best Candidate Per Sector", report_text)
+            self.assertIn("## Best Live Candidate Per Sector", report_text)
+            self.assertIn("## Best Portfolio Pairs", report_text)
+            self.assertIn("No strategies currently have live matches.", report_text)
+            self.assertIn("strategy_id: 2", report_text)
+            self.assertNotIn("strategy_id: 1", report_text)
+            self.assertNotIn("strategy_id: 3", report_text)
+            self.assertIn("global_rank: 1", report_text)
+            self.assertIn("sector_rank: 1", report_text)
+            self.assertIn("trade_count: 12", report_text)
+            self.assertIn("live_match_count: 0", report_text)
+            self.assertIn("gate_counts: unavailable", report_text)
+            self.assertIn("first_zero_gate: unavailable", report_text)
+            self.assertIn("practical_score:", report_text)
+            self.assertIn("warnings: low_trade_count, no_current_live_matches", report_text)
+
+    def test_evaluate_handles_infinite_profit_factor_when_threshold_allows_row(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            paths = AppPaths(
+                root_dir=root,
+                data_dir=root / "data",
+                duckdb_path=root / "data" / "market_data.duckdb",
+                sqlite_path=root / "data" / "ledger.sqlite",
+                reports_dir=root / "reports",
+                logs_dir=root / "logs",
+                config_path=root / "config.yaml",
+                env_path=root / ".env",
+                production_strategy_path=root / "production_strategy.json",
+            )
+            db = DatabaseManager(paths)
+            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                db.initialize()
+            db.insert_backtest_results(
+                [
+                    BacktestResultRow(
+                        run_id=1,
+                        strategy_id=10,
+                        params_json=json.dumps({"indicators": {}, "exit_rules": {}, "sector": "ALL"}),
+                        norm_score=None,
+                        profit_factor=float("inf"),
+                        expectancy=0.2,
+                        mdd=0.01,
+                        win_rate=1.0,
+                        trade_count=12,
+                    ),
+                    BacktestResultRow(
+                        run_id=1,
+                        strategy_id=11,
+                        params_json=json.dumps({"indicators": {}, "exit_rules": {}, "sector": "ALL"}),
+                        norm_score=None,
+                        profit_factor=3.0,
+                        expectancy=0.15,
+                        mdd=0.02,
+                        win_rate=0.7,
+                        trade_count=12,
+                    ),
+                ]
+            )
+            service = EvaluateService(db)
+            service._build_live_candidate_metadata = lambda frame: ({}, {})
+
+            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                report = service.run(top=2, min_trades=12)
+
+            self.assertEqual(report.rows_written, 2)
+            report_text = (paths.reports_dir / "candidates.md").read_text(encoding="utf-8")
+            self.assertIn("profit_factor: inf", report_text)
+            self.assertIn("practical_score:", report_text)
+            self.assertIn("No strategies currently have live matches.", report_text)
+            self.assertIn("## Best Practical Live Candidates", report_text)
+            self.assertIn("## Best Portfolio Pairs", report_text)
+            self.assertIn("warnings: low_trade_count, profit_factor_infinite, no_current_live_matches", report_text)
+
+    def test_evaluate_dedupes_plateau_equivalent_rows_in_report(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            paths = AppPaths(
+                root_dir=root,
+                data_dir=root / "data",
+                duckdb_path=root / "data" / "market_data.duckdb",
+                sqlite_path=root / "data" / "ledger.sqlite",
+                reports_dir=root / "reports",
+                logs_dir=root / "logs",
+                config_path=root / "config.yaml",
+                env_path=root / ".env",
+                production_strategy_path=root / "production_strategy.json",
+            )
+            db = DatabaseManager(paths)
+            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                db.initialize()
+            db.insert_backtest_results(
+                [
+                    BacktestResultRow(
+                        run_id=3,
+                        strategy_id=20,
+                        params_json=json.dumps({"indicators": {"a": 1}, "exit_rules": {}, "sector": "Energy"}),
+                        norm_score=None,
+                        profit_factor=5.0,
+                        expectancy=0.2,
+                        mdd=0.03,
+                        win_rate=0.7,
+                        trade_count=12,
+                    ),
+                    BacktestResultRow(
+                        run_id=3,
+                        strategy_id=21,
+                        params_json=json.dumps({"indicators": {"a": 2}, "exit_rules": {}, "sector": "Energy"}),
+                        norm_score=None,
+                        profit_factor=5.0,
+                        expectancy=0.2,
+                        mdd=0.03,
+                        win_rate=0.7,
+                        trade_count=12,
+                    ),
+                    BacktestResultRow(
+                        run_id=3,
+                        strategy_id=22,
+                        params_json=json.dumps({"indicators": {"a": 3}, "exit_rules": {}, "sector": "Materials"}),
+                        norm_score=None,
+                        profit_factor=4.0,
+                        expectancy=0.15,
+                        mdd=0.02,
+                        win_rate=0.65,
+                        trade_count=12,
+                    ),
+                ]
+            )
+            service = EvaluateService(db)
+            service._build_live_candidate_metadata = lambda frame: ({}, {})
+
+            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                report = service.run(top=10, run_id=3, min_trades=12)
+
+            self.assertEqual(report.rows_written, 2)
+            report_text = (paths.reports_dir / "candidates.md").read_text(encoding="utf-8")
+            self.assertIn("## Top Ranked Candidates", report_text)
+            self.assertIn("## Top Live Match Candidates", report_text)
+            self.assertIn("## Best Practical Live Candidates", report_text)
+            self.assertIn("## Best Candidate Per Sector", report_text)
+            self.assertIn("## Best Portfolio Pairs", report_text)
+            self.assertIn("No strategies currently have live matches.", report_text)
+            top_ranked_section = report_text.split("## Top Ranked Candidates", maxsplit=1)[1].split("## Top Live Match Candidates", maxsplit=1)[0]
+            self.assertEqual(top_ranked_section.count("### Result "), 2)
+            self.assertIn("duplicate_group_size: 2", report_text)
+            self.assertIn("collapsed_result_ids: 1, 2", report_text)
+            self.assertIn("### Pair 1 + 3", report_text)
+            self.assertIn("sectors: Energy + Materials", report_text)
+
+    def test_gate_diagnostic_identifies_first_zero_gate(self) -> None:
+        service = EvaluateService(DatabaseManager(AppPaths(
+            root_dir=Path("."),
+            data_dir=Path("data"),
+            duckdb_path=Path("data/market_data.duckdb"),
+            sqlite_path=Path("data/ledger.sqlite"),
+            reports_dir=Path("reports"),
+            logs_dir=Path("logs"),
+            config_path=Path("config.yaml"),
+            env_path=Path(".env"),
+            production_strategy_path=Path("production_strategy.json"),
+        )))
+        full_snapshot = pd.DataFrame(
+            [
+                {
+                    "ticker": "AAA",
+                    "sector": "Energy",
+                    "regime_green": True,
+                    "rsi_14": 30.0,
+                    "vol_alpha": 1.3,
+                    "relative_strength_index_vs_spy": 90.0,
+                },
+                {
+                    "ticker": "BBB",
+                    "sector": "Energy",
+                    "regime_green": True,
+                    "rsi_14": 40.0,
+                    "vol_alpha": 1.6,
+                    "relative_strength_index_vs_spy": 85.0,
+                },
+                {
+                    "ticker": "CCC",
+                    "sector": "Industrials",
+                    "regime_green": False,
+                    "rsi_14": 25.0,
+                    "vol_alpha": 2.0,
+                    "relative_strength_index_vs_spy": 95.0,
+                },
+            ]
+        )
+        regime_snapshot = full_snapshot[full_snapshot["regime_green"]].copy()
+
+        diagnostic = service._build_gate_diagnostic(
+            full_snapshot=full_snapshot,
+            regime_snapshot=regime_snapshot,
+            indicators={
+                "rsi_14_max": 35.0,
+                "vol_alpha_min": 1.5,
+                "relative_strength_index_vs_spy_min": 80.0,
+                "signal_score_min": 25.0,
+            },
+            sector="Energy",
+        )
+
+        self.assertEqual(
+            diagnostic["counts"],
+            [
+                ("universe", 3),
+                ("regime_green", 2),
+                ("sector_scope", 2),
+                ("relative_strength_index_vs_spy_min", 2),
+                ("signal_score_min", 0),
+            ],
+        )
+        self.assertEqual(
+            diagnostic["component_positive_counts"],
+            [("rsi_14_max", 2), ("vol_alpha_min", 2)],
+        )
+        self.assertEqual(diagnostic["first_zero_gate"], "signal_score_min")
+
+    def test_live_match_bonus_surfaces_live_candidate_in_practical_live_section(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            paths = AppPaths(
+                root_dir=root,
+                data_dir=root / "data",
+                duckdb_path=root / "data" / "market_data.duckdb",
+                sqlite_path=root / "data" / "ledger.sqlite",
+                reports_dir=root / "reports",
+                logs_dir=root / "logs",
+                config_path=root / "config.yaml",
+                env_path=root / ".env",
+                production_strategy_path=root / "production_strategy.json",
+            )
+            db = DatabaseManager(paths)
+            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                db.initialize()
+            db.insert_backtest_results(
+                [
+                    BacktestResultRow(
+                        run_id=7,
+                        strategy_id=100,
+                        params_json=json.dumps({"indicators": {}, "exit_rules": {}, "sector": "ALL"}),
+                        norm_score=None,
+                        profit_factor=10.0,
+                        expectancy=0.20,
+                        mdd=0.01,
+                        win_rate=0.90,
+                        trade_count=13,
+                    ),
+                    BacktestResultRow(
+                        run_id=7,
+                        strategy_id=101,
+                        params_json=json.dumps({"indicators": {}, "exit_rules": {}, "sector": "ALL"}),
+                        norm_score=None,
+                        profit_factor=2.0,
+                        expectancy=0.10,
+                        mdd=0.20,
+                        win_rate=0.55,
+                        trade_count=30,
+                    ),
+                ]
+            )
+            service = EvaluateService(db)
+            service._build_live_candidate_metadata = lambda frame: (
+                {
+                    int(frame.iloc[0]["id"]): {"count": 0, "tickers": [], "links": []},
+                    int(frame.iloc[1]["id"]): {"count": 1, "tickers": ["AAA"], "links": ["https://www.tradingview.com/chart/?symbol=AAA"]},
+                },
+                {},
+            )
+
+            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                report = service.run(top=2, run_id=7, min_trades=12)
+
+            self.assertEqual(report.rows_written, 2)
+            report_text = (paths.reports_dir / "candidates.md").read_text(encoding="utf-8")
+            self.assertIn("## Best Practical Live Candidates", report_text)
+            self.assertIn("## Best Live Candidate Per Sector", report_text)
+            best_live_section = report_text.split("## Best Practical Live Candidates", maxsplit=1)[1]
+            self.assertIn("strategy_id: 101", best_live_section)
+            self.assertIn("## Best Practical Live Candidates", report_text)
+            self.assertIn("live_match_tickers: AAA", report_text)
 
 
 class PromoteAndTradeTests(unittest.TestCase):
@@ -101,14 +404,17 @@ class PromoteAndTradeTests(unittest.TestCase):
             db.insert_backtest_results(
                 [
                     BacktestResultRow(
+                        run_id=1,
                         strategy_id=402,
                         params_json=json.dumps(
                             {
                                 "indicators": {"rsi_14_max": 35, "vol_alpha_min": 1.5},
                                 "exit_rules": {
-                                    "trailing_stop_pct": 0.05,
-                                    "profit_target_pct": 0.12,
+                                    "trailing_stop_pct": None,
+                                    "profit_target_pct": None,
                                     "time_limit_days": 20,
+                                    "trailing_stop_atr_mult": 2.5,
+                                    "profit_target_atr_mult": 3.0,
                                 },
                                 "sector": "ALL",
                             }
@@ -118,19 +424,64 @@ class PromoteAndTradeTests(unittest.TestCase):
                         expectancy=0.15,
                         mdd=0.12,
                         win_rate=0.55,
+                        trade_count=150,
                     )
                 ]
             )
 
-            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()), \
+                 patch("src.promote.service.load_feature_config", return_value={"promotion_policy": {"min_profit_factor": 1.3, "min_expectancy": 0.004, "min_trade_count": 100, "max_mdd": 0.30}}):
                 message = PromoteService(db).run(row_id=1)
 
             payload = json.loads(paths.production_strategy_path.read_text(encoding="utf-8"))
-            self.assertEqual(message, "Strategy 1 promoted. production_strategy.json updated.")
+            strategies_payload = json.loads((root / "production_strategies.json").read_text(encoding="utf-8"))
+            self.assertEqual(message, "Strategy 1 promoted into slot 'default'. production_strategies.json updated.")
             self.assertEqual(payload["strategy_id"], 402)
             self.assertIn("promoted_at", payload)
+            self.assertEqual(payload["sector"], "ALL")
             self.assertEqual(payload["indicators"]["rsi_14_max"], 35.0)
             self.assertEqual(payload["exit_rules"]["time_limit_days"], 20)
+            self.assertEqual(payload["exit_rules"]["trailing_stop_atr_mult"], 2.5)
+            self.assertEqual(payload["exit_rules"]["profit_target_atr_mult"], 3.0)
+            self.assertEqual(strategies_payload["strategies"]["default"]["strategy_id"], 402)
+
+    def test_promote_rejects_result_that_fails_promotion_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            paths = AppPaths(
+                root_dir=root,
+                data_dir=root / "data",
+                duckdb_path=root / "data" / "market_data.duckdb",
+                sqlite_path=root / "data" / "ledger.sqlite",
+                reports_dir=root / "reports",
+                logs_dir=root / "logs",
+                config_path=root / "config.yaml",
+                env_path=root / ".env",
+                production_strategy_path=root / "production_strategy.json",
+            )
+            db = DatabaseManager(paths)
+            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                db.initialize()
+            db.insert_backtest_results(
+                [
+                    BacktestResultRow(
+                        run_id=1,
+                        strategy_id=501,
+                        params_json=json.dumps({"indicators": {"rsi_14_max": 35}, "exit_rules": {"time_limit_days": 20}, "sector": "ALL"}),
+                        norm_score=0.2,
+                        profit_factor=1.10,
+                        expectancy=0.001,
+                        mdd=0.40,
+                        win_rate=0.51,
+                        trade_count=40,
+                    )
+                ]
+            )
+
+            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()), \
+                 patch("src.promote.service.load_feature_config", return_value={"promotion_policy": {"min_profit_factor": 1.3, "min_expectancy": 0.004, "min_trade_count": 100, "max_mdd": 0.30}}):
+                with self.assertRaisesRegex(ValueError, "does not satisfy promotion policy"):
+                    PromoteService(db).run(row_id=1)
 
     def test_trade_sell_updates_status_exit_fields_and_reports_pnl(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -153,6 +504,9 @@ class PromoteAndTradeTests(unittest.TestCase):
                 ticker="AAA",
                 entry_date="2026-05-01",
                 entry_price=100.0,
+                entry_atr=None,
+                strategy_id=1,
+                strategy_slot="default",
                 shares=10,
                 max_price_seen=100.0,
             )

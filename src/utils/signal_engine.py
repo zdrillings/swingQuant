@@ -5,9 +5,9 @@ from datetime import date
 import pandas as pd
 
 from src.settings import load_feature_config
-from src.utils.feature_engineering import apply_feature_definitions, compute_rsi
+from src.utils.feature_engineering import apply_feature_definitions, compute_atr, compute_rsi
 from src.utils.regime import regime_etf_for_sector
-from src.utils.strategy import evaluate_indicator_gate
+from src.utils.strategy import evaluate_signal_gate
 
 
 def overlay_price_history(base_history: pd.DataFrame, fresh_history: pd.DataFrame) -> pd.DataFrame:
@@ -77,14 +77,16 @@ def filter_signal_candidates(frame: pd.DataFrame, indicators: dict[str, float]) 
         return frame.iloc[0:0].copy()
     rows = []
     for row in frame.to_dict(orient="records"):
-        passed, details = evaluate_indicator_gate(indicators, row)
+        passed, details, signal_score = evaluate_signal_gate(indicators, row)
         if passed:
             payload = row.copy()
             payload["indicator_details"] = details
+            payload["signal_score"] = signal_score
             rows.append(payload)
     if not rows:
         empty_frame = frame.iloc[0:0].copy()
         empty_frame["indicator_details"] = pd.Series(dtype=object)
+        empty_frame["signal_score"] = pd.Series(dtype=float)
         return empty_frame
     return pd.DataFrame(rows)
 
@@ -115,3 +117,14 @@ def latest_rsi_2_with_intraday(price_history: pd.DataFrame, ticker: str, current
     ticker_history = append_intraday_price(price_history, ticker, current_price, as_of)
     rsi_values = compute_rsi(ticker_history["close"], window=2)
     return float(rsi_values.iloc[-1])
+
+
+def latest_atr_14_with_intraday(price_history: pd.DataFrame, ticker: str, current_price: float, as_of: date) -> float:
+    ticker_history = append_intraday_price(price_history, ticker, current_price, as_of)
+    atr_values = compute_atr(
+        ticker_history["high"],
+        ticker_history["low"],
+        ticker_history["close"],
+        window=14,
+    )
+    return float(atr_values.iloc[-1])

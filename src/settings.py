@@ -22,6 +22,7 @@ class AppPaths:
     config_path: Path
     env_path: Path
     production_strategy_path: Path
+    production_strategies_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,7 @@ def get_settings() -> RuntimeSettings:
         config_path=root_dir / "config.yaml",
         env_path=root_dir / ".env",
         production_strategy_path=root_dir / "production_strategy.json",
+        production_strategies_path=root_dir / "production_strategies.json",
     )
     env_values = _parse_env_file(paths.env_path)
     return RuntimeSettings(
@@ -98,3 +100,13 @@ def load_production_strategy(path: Path | None = None) -> dict:
     if not strategy_path.exists():
         raise SettingsError(f"Missing production strategy: {strategy_path}")
     return json.loads(strategy_path.read_text(encoding="utf-8"))
+
+
+def load_production_strategies(path: Path | None = None) -> dict:
+    default_path = get_settings().paths.production_strategies_path
+    strategies_path = path or default_path
+    if strategies_path is None:
+        raise SettingsError("Missing production strategies path.")
+    if not strategies_path.exists():
+        raise SettingsError(f"Missing production strategies: {strategies_path}")
+    return json.loads(strategies_path.read_text(encoding="utf-8"))

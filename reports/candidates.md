@@ -1,0 +1,731 @@
+# Ranked Candidates
+
+- run_id: 8
+- min_trades: 12
+- ranking: practical_score desc, then norm_score desc, then expectancy desc
+
+## Top Ranked Candidates
+
+### Result 244786
+- run_id: 8
+- strategy_id: 244786
+- global_rank: 1
+- sector_rank: 1
+- sector: Materials
+- practical_score: 0.639201
+- norm_score: 0.189201
+- expectancy: 0.008030
+- profit_factor: 1.808563
+- mdd: 0.186406
+- win_rate: 0.690476
+- trade_count: 126
+- duplicate_group_size: 1
+- collapsed_result_ids: 244786
+- live_match_count: 3
+- live_match_tickers: DOW, LYB, CF
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.19, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+
+### Result 244798
+- run_id: 8
+- strategy_id: 244798
+- global_rank: 2
+- sector_rank: 2
+- sector: Materials
+- practical_score: 0.635859
+- norm_score: 0.185859
+- expectancy: 0.007771
+- profit_factor: 1.782503
+- mdd: 0.186406
+- win_rate: 0.690476
+- trade_count: 126
+- duplicate_group_size: 1
+- collapsed_result_ids: 244798
+- live_match_count: 3
+- live_match_tickers: DOW, LYB, CF
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.19, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+
+### Result 244774
+- run_id: 8
+- strategy_id: 244774
+- global_rank: 3
+- sector_rank: 3
+- sector: Materials
+- practical_score: 0.635044
+- norm_score: 0.185044
+- expectancy: 0.007696
+- profit_factor: 1.778836
+- mdd: 0.186406
+- win_rate: 0.685039
+- trade_count: 127
+- duplicate_group_size: 1
+- collapsed_result_ids: 244774
+- live_match_count: 3
+- live_match_tickers: DOW, LYB, CF
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.19, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+
+### Result 244930
+- run_id: 8
+- strategy_id: 244930
+- global_rank: 4
+- sector_rank: 4
+- sector: Materials
+- practical_score: 0.632995
+- norm_score: 0.182995
+- expectancy: 0.007568
+- profit_factor: 1.756026
+- mdd: 0.186406
+- win_rate: 0.688000
+- trade_count: 125
+- duplicate_group_size: 1
+- collapsed_result_ids: 244930
+- live_match_count: 3
+- live_match_tickers: DOW, LYB, CF
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.2, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+
+### Result 244354
+- run_id: 8
+- strategy_id: 244354
+- global_rank: 5
+- sector_rank: 5
+- sector: Materials
+- practical_score: 0.632506
+- norm_score: 0.182506
+- expectancy: 0.007574
+- profit_factor: 1.742686
+- mdd: 0.186406
+- win_rate: 0.684615
+- trade_count: 130
+- duplicate_group_size: 2
+- collapsed_result_ids: 244354, 244498
+- live_match_count: 3
+- live_match_tickers: DOW, LYB, CF
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.16, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+
+### Result 244642
+- run_id: 8
+- strategy_id: 244642
+- global_rank: 6
+- sector_rank: 6
+- sector: Materials
+- practical_score: 0.632120
+- norm_score: 0.182120
+- expectancy: 0.007571
+- profit_factor: 1.733824
+- mdd: 0.186406
+- win_rate: 0.679688
+- trade_count: 128
+- duplicate_group_size: 1
+- collapsed_result_ids: 244642
+- live_match_count: 3
+- live_match_tickers: DOW, LYB, CF
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.18, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+
+### Result 244762
+- run_id: 8
+- strategy_id: 244762
+- global_rank: 7
+- sector_rank: 7
+- sector: Materials
+- practical_score: 0.631481
+- norm_score: 0.181481
+- expectancy: 0.007420
+- profit_factor: 1.750956
+- mdd: 0.186406
+- win_rate: 0.685039
+- trade_count: 127
+- duplicate_group_size: 1
+- collapsed_result_ids: 244762
+- live_match_count: 3
+- live_match_tickers: DOW, LYB, CF
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 2.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.19, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+
+### Result 244942
+- run_id: 8
+- strategy_id: 244942
+- global_rank: 8
+- sector_rank: 8
+- sector: Materials
+- practical_score: 0.629635
+- norm_score: 0.179635
+- expectancy: 0.007308
+- profit_factor: 1.729967
+- mdd: 0.186406
+- win_rate: 0.688000
+- trade_count: 125
+- duplicate_group_size: 1
+- collapsed_result_ids: 244942
+- live_match_count: 3
+- live_match_tickers: DOW, LYB, CF
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.2, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+
+### Result 244366
+- run_id: 8
+- strategy_id: 244366
+- global_rank: 9
+- sector_rank: 9
+- sector: Materials
+- practical_score: 0.629294
+- norm_score: 0.179294
+- expectancy: 0.007323
+- profit_factor: 1.718089
+- mdd: 0.186406
+- win_rate: 0.684615
+- trade_count: 130
+- duplicate_group_size: 2
+- collapsed_result_ids: 244366, 244510
+- live_match_count: 3
+- live_match_tickers: DOW, LYB, CF
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.16, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+
+### Result 244654
+- run_id: 8
+- strategy_id: 244654
+- global_rank: 10
+- sector_rank: 10
+- sector: Materials
+- practical_score: 0.628869
+- norm_score: 0.178869
+- expectancy: 0.007316
+- profit_factor: 1.709131
+- mdd: 0.186406
+- win_rate: 0.679688
+- trade_count: 128
+- duplicate_group_size: 1
+- collapsed_result_ids: 244654
+- live_match_count: 3
+- live_match_tickers: DOW, LYB, CF
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.18, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+
+## Top Live Match Candidates
+
+### Result 227077
+- run_id: 8
+- strategy_id: 227077
+- global_rank: 9371
+- sector_rank: 1513
+- sector: ALL
+- practical_score: 0.465067
+- norm_score: -0.084933
+- expectancy: 0.003036
+- profit_factor: 1.255669
+- mdd: 0.824891
+- win_rate: 0.640366
+- trade_count: 6768
+- duplicate_group_size: 1
+- collapsed_result_ids: 227077
+- live_match_count: 28
+- live_match_tickers: FN, GLW, KLAC, COHR, AMAT
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=250 -> relative_strength_index_vs_spy_min=50 -> signal_score_min=28
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=50, rsi_14_max=48, sma_200_dist_min=50, vol_alpha_min=50
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.01, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "ALL"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=FN, https://www.tradingview.com/chart/?symbol=GLW, https://www.tradingview.com/chart/?symbol=KLAC, https://www.tradingview.com/chart/?symbol=COHR, https://www.tradingview.com/chart/?symbol=AMAT
+
+### Result 227221
+- run_id: 8
+- strategy_id: 227221
+- global_rank: 9389
+- sector_rank: 1524
+- sector: ALL
+- practical_score: 0.464931
+- norm_score: -0.085069
+- expectancy: 0.003045
+- profit_factor: 1.256462
+- mdd: 0.825661
+- win_rate: 0.640449
+- trade_count: 6764
+- duplicate_group_size: 1
+- collapsed_result_ids: 227221
+- live_match_count: 28
+- live_match_tickers: FN, GLW, KLAC, COHR, AMAT
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=250 -> relative_strength_index_vs_spy_min=50 -> signal_score_min=28
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=50, rsi_14_max=48, sma_200_dist_min=50, vol_alpha_min=50
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.02, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "ALL"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=FN, https://www.tradingview.com/chart/?symbol=GLW, https://www.tradingview.com/chart/?symbol=KLAC, https://www.tradingview.com/chart/?symbol=COHR, https://www.tradingview.com/chart/?symbol=AMAT
+
+### Result 227065
+- run_id: 8
+- strategy_id: 227065
+- global_rank: 9417
+- sector_rank: 1533
+- sector: ALL
+- practical_score: 0.464701
+- norm_score: -0.085299
+- expectancy: 0.003006
+- profit_factor: 1.253209
+- mdd: 0.824891
+- win_rate: 0.640473
+- trade_count: 6770
+- duplicate_group_size: 1
+- collapsed_result_ids: 227065
+- live_match_count: 28
+- live_match_tickers: FN, GLW, KLAC, COHR, AMAT
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=250 -> relative_strength_index_vs_spy_min=50 -> signal_score_min=28
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=50, rsi_14_max=48, sma_200_dist_min=50, vol_alpha_min=50
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.01, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "ALL"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=FN, https://www.tradingview.com/chart/?symbol=GLW, https://www.tradingview.com/chart/?symbol=KLAC, https://www.tradingview.com/chart/?symbol=COHR, https://www.tradingview.com/chart/?symbol=AMAT
+
+### Result 227209
+- run_id: 8
+- strategy_id: 227209
+- global_rank: 9444
+- sector_rank: 1543
+- sector: ALL
+- practical_score: 0.464565
+- norm_score: -0.085435
+- expectancy: 0.003015
+- profit_factor: 1.254000
+- mdd: 0.825661
+- win_rate: 0.640556
+- trade_count: 6766
+- duplicate_group_size: 1
+- collapsed_result_ids: 227209
+- live_match_count: 28
+- live_match_tickers: FN, GLW, KLAC, COHR, AMAT
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=250 -> relative_strength_index_vs_spy_min=50 -> signal_score_min=28
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=50, rsi_14_max=48, sma_200_dist_min=50, vol_alpha_min=50
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.02, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "ALL"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=FN, https://www.tradingview.com/chart/?symbol=GLW, https://www.tradingview.com/chart/?symbol=KLAC, https://www.tradingview.com/chart/?symbol=COHR, https://www.tradingview.com/chart/?symbol=AMAT
+
+### Result 227365
+- run_id: 8
+- strategy_id: 227365
+- global_rank: 9484
+- sector_rank: 1563
+- sector: ALL
+- practical_score: 0.464199
+- norm_score: -0.085801
+- expectancy: 0.003048
+- profit_factor: 1.256719
+- mdd: 0.828027
+- win_rate: 0.640533
+- trade_count: 6760
+- duplicate_group_size: 1
+- collapsed_result_ids: 227365
+- live_match_count: 28
+- live_match_tickers: FN, GLW, KLAC, COHR, AMAT
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=250 -> relative_strength_index_vs_spy_min=50 -> signal_score_min=28
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=50, rsi_14_max=48, sma_200_dist_min=50, vol_alpha_min=50
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.03, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "ALL"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=FN, https://www.tradingview.com/chart/?symbol=GLW, https://www.tradingview.com/chart/?symbol=KLAC, https://www.tradingview.com/chart/?symbol=COHR, https://www.tradingview.com/chart/?symbol=AMAT
+
+### Result 227053
+- run_id: 8
+- strategy_id: 227053
+- global_rank: 9490
+- sector_rank: 1567
+- sector: ALL
+- practical_score: 0.464162
+- norm_score: -0.085838
+- expectancy: 0.002962
+- profit_factor: 1.249496
+- mdd: 0.824891
+- win_rate: 0.640201
+- trade_count: 6776
+- duplicate_group_size: 1
+- collapsed_result_ids: 227053
+- live_match_count: 28
+- live_match_tickers: FN, GLW, KLAC, COHR, AMAT
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=250 -> relative_strength_index_vs_spy_min=50 -> signal_score_min=28
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=50, rsi_14_max=48, sma_200_dist_min=50, vol_alpha_min=50
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.01, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "ALL"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=FN, https://www.tradingview.com/chart/?symbol=GLW, https://www.tradingview.com/chart/?symbol=KLAC, https://www.tradingview.com/chart/?symbol=COHR, https://www.tradingview.com/chart/?symbol=AMAT
+
+### Result 227197
+- run_id: 8
+- strategy_id: 227197
+- global_rank: 9502
+- sector_rank: 1573
+- sector: ALL
+- practical_score: 0.464025
+- norm_score: -0.085975
+- expectancy: 0.002971
+- profit_factor: 1.250284
+- mdd: 0.825661
+- win_rate: 0.640284
+- trade_count: 6772
+- duplicate_group_size: 1
+- collapsed_result_ids: 227197
+- live_match_count: 28
+- live_match_tickers: FN, GLW, KLAC, COHR, AMAT
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=250 -> relative_strength_index_vs_spy_min=50 -> signal_score_min=28
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=50, rsi_14_max=48, sma_200_dist_min=50, vol_alpha_min=50
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.02, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "ALL"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=FN, https://www.tradingview.com/chart/?symbol=GLW, https://www.tradingview.com/chart/?symbol=KLAC, https://www.tradingview.com/chart/?symbol=COHR, https://www.tradingview.com/chart/?symbol=AMAT
+
+### Result 227353
+- run_id: 8
+- strategy_id: 227353
+- global_rank: 9520
+- sector_rank: 1582
+- sector: ALL
+- practical_score: 0.463833
+- norm_score: -0.086167
+- expectancy: 0.003018
+- profit_factor: 1.254255
+- mdd: 0.828027
+- win_rate: 0.640639
+- trade_count: 6762
+- duplicate_group_size: 1
+- collapsed_result_ids: 227353
+- live_match_count: 28
+- live_match_tickers: FN, GLW, KLAC, COHR, AMAT
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=250 -> relative_strength_index_vs_spy_min=50 -> signal_score_min=28
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=50, rsi_14_max=48, sma_200_dist_min=50, vol_alpha_min=50
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.03, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "ALL"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=FN, https://www.tradingview.com/chart/?symbol=GLW, https://www.tradingview.com/chart/?symbol=KLAC, https://www.tradingview.com/chart/?symbol=COHR, https://www.tradingview.com/chart/?symbol=AMAT
+
+### Result 227041
+- run_id: 8
+- strategy_id: 227041
+- global_rank: 9556
+- sector_rank: 1591
+- sector: ALL
+- practical_score: 0.463395
+- norm_score: -0.086605
+- expectancy: 0.002872
+- profit_factor: 1.242171
+- mdd: 0.823892
+- win_rate: 0.640383
+- trade_count: 6785
+- duplicate_group_size: 1
+- collapsed_result_ids: 227041
+- live_match_count: 28
+- live_match_tickers: FN, GLW, KLAC, COHR, AMAT
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=250 -> relative_strength_index_vs_spy_min=50 -> signal_score_min=28
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=50, rsi_14_max=48, sma_200_dist_min=50, vol_alpha_min=50
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 2.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.01, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "ALL"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=FN, https://www.tradingview.com/chart/?symbol=GLW, https://www.tradingview.com/chart/?symbol=KLAC, https://www.tradingview.com/chart/?symbol=COHR, https://www.tradingview.com/chart/?symbol=AMAT
+
+### Result 227341
+- run_id: 8
+- strategy_id: 227341
+- global_rank: 9560
+- sector_rank: 1595
+- sector: ALL
+- practical_score: 0.463292
+- norm_score: -0.086708
+- expectancy: 0.002974
+- profit_factor: 1.250537
+- mdd: 0.828027
+- win_rate: 0.640366
+- trade_count: 6768
+- duplicate_group_size: 1
+- collapsed_result_ids: 227341
+- live_match_count: 28
+- live_match_tickers: FN, GLW, KLAC, COHR, AMAT
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=250 -> relative_strength_index_vs_spy_min=50 -> signal_score_min=28
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=50, rsi_14_max=48, sma_200_dist_min=50, vol_alpha_min=50
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.03, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "ALL"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=FN, https://www.tradingview.com/chart/?symbol=GLW, https://www.tradingview.com/chart/?symbol=KLAC, https://www.tradingview.com/chart/?symbol=COHR, https://www.tradingview.com/chart/?symbol=AMAT
+
+## Best Practical Live Candidates
+
+### Result 244786
+- run_id: 8
+- strategy_id: 244786
+- global_rank: 1
+- sector_rank: 1
+- sector: Materials
+- practical_score: 0.639201
+- norm_score: 0.189201
+- expectancy: 0.008030
+- profit_factor: 1.808563
+- mdd: 0.186406
+- win_rate: 0.690476
+- trade_count: 126
+- duplicate_group_size: 1
+- collapsed_result_ids: 244786
+- live_match_count: 3
+- live_match_tickers: DOW, LYB, CF
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.19, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+
+### Result 244798
+- run_id: 8
+- strategy_id: 244798
+- global_rank: 2
+- sector_rank: 2
+- sector: Materials
+- practical_score: 0.635859
+- norm_score: 0.185859
+- expectancy: 0.007771
+- profit_factor: 1.782503
+- mdd: 0.186406
+- win_rate: 0.690476
+- trade_count: 126
+- duplicate_group_size: 1
+- collapsed_result_ids: 244798
+- live_match_count: 3
+- live_match_tickers: DOW, LYB, CF
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.19, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+
+### Result 244774
+- run_id: 8
+- strategy_id: 244774
+- global_rank: 3
+- sector_rank: 3
+- sector: Materials
+- practical_score: 0.635044
+- norm_score: 0.185044
+- expectancy: 0.007696
+- profit_factor: 1.778836
+- mdd: 0.186406
+- win_rate: 0.685039
+- trade_count: 127
+- duplicate_group_size: 1
+- collapsed_result_ids: 244774
+- live_match_count: 3
+- live_match_tickers: DOW, LYB, CF
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.19, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+
+### Result 244930
+- run_id: 8
+- strategy_id: 244930
+- global_rank: 4
+- sector_rank: 4
+- sector: Materials
+- practical_score: 0.632995
+- norm_score: 0.182995
+- expectancy: 0.007568
+- profit_factor: 1.756026
+- mdd: 0.186406
+- win_rate: 0.688000
+- trade_count: 125
+- duplicate_group_size: 1
+- collapsed_result_ids: 244930
+- live_match_count: 3
+- live_match_tickers: DOW, LYB, CF
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.2, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+
+### Result 244354
+- run_id: 8
+- strategy_id: 244354
+- global_rank: 5
+- sector_rank: 5
+- sector: Materials
+- practical_score: 0.632506
+- norm_score: 0.182506
+- expectancy: 0.007574
+- profit_factor: 1.742686
+- mdd: 0.186406
+- win_rate: 0.684615
+- trade_count: 130
+- duplicate_group_size: 2
+- collapsed_result_ids: 244354, 244498
+- live_match_count: 3
+- live_match_tickers: DOW, LYB, CF
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.16, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+
+### Result 244642
+- run_id: 8
+- strategy_id: 244642
+- global_rank: 6
+- sector_rank: 6
+- sector: Materials
+- practical_score: 0.632120
+- norm_score: 0.182120
+- expectancy: 0.007571
+- profit_factor: 1.733824
+- mdd: 0.186406
+- win_rate: 0.679688
+- trade_count: 128
+- duplicate_group_size: 1
+- collapsed_result_ids: 244642
+- live_match_count: 3
+- live_match_tickers: DOW, LYB, CF
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.18, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+
+### Result 244762
+- run_id: 8
+- strategy_id: 244762
+- global_rank: 7
+- sector_rank: 7
+- sector: Materials
+- practical_score: 0.631481
+- norm_score: 0.181481
+- expectancy: 0.007420
+- profit_factor: 1.750956
+- mdd: 0.186406
+- win_rate: 0.685039
+- trade_count: 127
+- duplicate_group_size: 1
+- collapsed_result_ids: 244762
+- live_match_count: 3
+- live_match_tickers: DOW, LYB, CF
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 2.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.19, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+
+### Result 244942
+- run_id: 8
+- strategy_id: 244942
+- global_rank: 8
+- sector_rank: 8
+- sector: Materials
+- practical_score: 0.629635
+- norm_score: 0.179635
+- expectancy: 0.007308
+- profit_factor: 1.729967
+- mdd: 0.186406
+- win_rate: 0.688000
+- trade_count: 125
+- duplicate_group_size: 1
+- collapsed_result_ids: 244942
+- live_match_count: 3
+- live_match_tickers: DOW, LYB, CF
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.2, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+
+### Result 244366
+- run_id: 8
+- strategy_id: 244366
+- global_rank: 9
+- sector_rank: 9
+- sector: Materials
+- practical_score: 0.629294
+- norm_score: 0.179294
+- expectancy: 0.007323
+- profit_factor: 1.718089
+- mdd: 0.186406
+- win_rate: 0.684615
+- trade_count: 130
+- duplicate_group_size: 2
+- collapsed_result_ids: 244366, 244510
+- live_match_count: 3
+- live_match_tickers: DOW, LYB, CF
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.16, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+
+### Result 244654
+- run_id: 8
+- strategy_id: 244654
+- global_rank: 10
+- sector_rank: 10
+- sector: Materials
+- practical_score: 0.628869
+- norm_score: 0.178869
+- expectancy: 0.007316
+- profit_factor: 1.709131
+- mdd: 0.186406
+- win_rate: 0.679688
+- trade_count: 128
+- duplicate_group_size: 1
+- collapsed_result_ids: 244654
+- live_match_count: 3
+- live_match_tickers: DOW, LYB, CF
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.18, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF

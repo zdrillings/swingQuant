@@ -54,8 +54,13 @@ class DatabaseManagerInitializationTests(unittest.TestCase):
                         "SELECT name FROM sqlite_master WHERE type='table'"
                     ).fetchall()
                 }
+                active_trade_columns = {
+                    row[1]
+                    for row in connection.execute("PRAGMA table_info(Active_Trades)").fetchall()
+                }
             finally:
                 connection.close()
 
             self.assertTrue({"Universe", "Backtest_Results", "Active_Trades"}.issubset(tables))
+            self.assertIn("entry_atr", active_trade_columns)
             self.assertTrue(any("historical_ohlcv" in statement for statement in fake_duckdb.statements))

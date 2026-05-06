@@ -3,6 +3,9 @@ features:
     - name: "sma_200_dist"
       type: "pct_diff"
       params: { window: 200 }
+    - name: "atr_14"
+      type: "atr"
+      params: { window: 14 }
   momentum:
     - name: "rsi_14"
       type: "rsi"
@@ -10,6 +13,13 @@ features:
     - name: "rsi_2"
       type: "rsi"
       params: { window: 2 }
+    - name: "roc_63"
+      type: "roc"
+      params: { window: 63 }
+    - name: "relative_strength_index_vs_spy"
+      ticker: "SPY"
+      type: "relative_strength_percentile"
+      params: { window: 63 }
   volume:
     - name: "vol_alpha"
       type: "ratio_to_avg"
@@ -20,16 +30,62 @@ features:
       type: "correlation"
       params: { window: 60 }
 
+signal_model:
+  default_pass_score: 30
+  hard_filter_indicators:
+    - "relative_strength_index_vs_spy_min"
+  score_spans:
+    rsi_14_max: 30
+    vol_alpha_min: 1.2
+    sma_200_dist_min: 0.25
+    roc_63_min: 0.20
+
+backtest_costs:
+  slippage_bps_per_side: 5
+  commission_bps_per_side: 0
+
+scan_policy:
+  max_candidates_total: 6
+  max_candidates_per_slot: 3
+  max_candidates_per_sector: 2
+  pre_cap_candidates_per_slot: 5
+
+promotion_policy:
+  min_profit_factor: 1.30
+  min_expectancy: 0.004
+  min_trade_count: 100
+  max_mdd: 0.30
+
 sweep_grid:
   rsi_14_max:
     min: 25
-    max: 45
+    max: 60
     step: 5
   vol_alpha_min:
-    min: 1.2
-    max: 2.5
-    step: 0.25
+    min: 0.8
+    max: 1.8
+    step: 0.2
   sma_200_dist_min:
     min: 0.0
-    max: 0.05
+    max: 0.20
     step: 0.01
+  roc_63_min:
+    min: 0.10
+    max: 0.10
+    step: 0.05
+  relative_strength_index_vs_spy_min:
+    min: 80
+    max: 80
+    step: 5
+  signal_score_min:
+    min: 30
+    max: 30
+    step: 5
+  trailing_stop_atr_mult:
+    min: 2.0
+    max: 3.0
+    step: 0.5
+  profit_target_atr_mult:
+    min: 2.5
+    max: 4.0
+    step: 0.5

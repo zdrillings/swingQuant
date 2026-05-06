@@ -37,19 +37,24 @@ CREATE TABLE IF NOT EXISTS Universe (
 
 CREATE TABLE IF NOT EXISTS Backtest_Results (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id INTEGER,
     strategy_id INTEGER NOT NULL,
     params_json TEXT NOT NULL,
     norm_score REAL,
     profit_factor REAL,
     expectancy REAL,
     mdd REAL,
-    win_rate REAL
+    win_rate REAL,
+    trade_count INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS Active_Trades (
     ticker TEXT NOT NULL,
     entry_date TEXT NOT NULL,
     entry_price REAL NOT NULL,
+    entry_atr REAL,
+    strategy_id INTEGER,
+    strategy_slot TEXT,
     shares INTEGER NOT NULL,
     max_price_seen REAL NOT NULL,
     status TEXT NOT NULL CHECK(status IN ('open', 'closed')),
@@ -69,6 +74,7 @@ class UniverseRow:
 
 @dataclass(frozen=True)
 class BacktestResultRow:
+    run_id: int | None
     strategy_id: int
     params_json: str
     norm_score: float | None
@@ -76,6 +82,7 @@ class BacktestResultRow:
     expectancy: float
     mdd: float
     win_rate: float
+    trade_count: int | None = None
 
 
 @dataclass(frozen=True)
@@ -83,6 +90,9 @@ class ActiveTradeRow:
     ticker: str
     entry_date: str
     entry_price: float
+    entry_atr: float | None
+    strategy_id: int | None
+    strategy_slot: str | None
     shares: int
     max_price_seen: float
     status: str
@@ -101,6 +111,7 @@ class DatabaseManager:
 
         with self.sqlite_connection() as sqlite_conn:
             sqlite_conn.executescript(SQLITE_SCHEMA)
+            self._migrate_sqlite_schema(sqlite_conn)
 
         with self.duckdb_connection() as duckdb_conn:
             duckdb_conn.execute(HISTORICAL_TABLE_SCHEMA)
@@ -109,6 +120,26 @@ class DatabaseManager:
         connection = sqlite3.connect(self.paths.sqlite_path)
         connection.row_factory = sqlite3.Row
         return connection
+
+    def _migrate_sqlite_schema(self, connection: sqlite3.Connection) -> None:
+        backtest_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(Backtest_Results)").fetchall()
+        }
+        if "run_id" not in backtest_columns:
+            connection.execute("ALTER TABLE Backtest_Results ADD COLUMN run_id INTEGER")
+        if "trade_count" not in backtest_columns:
+            connection.execute("ALTER TABLE Backtest_Results ADD COLUMN trade_count INTEGER")
+        active_trade_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(Active_Trades)").fetchall()
+        }
+        if "entry_atr" not in active_trade_columns:
+            connection.execute("ALTER TABLE Active_Trades ADD COLUMN entry_atr REAL")
+        if "strategy_id" not in active_trade_columns:
+            connection.execute("ALTER TABLE Active_Trades ADD COLUMN strategy_id INTEGER")
+        if "strategy_slot" not in active_trade_columns:
+            connection.execute("ALTER TABLE Active_Trades ADD COLUMN strategy_slot TEXT")
 
     def duckdb_connection(self):
         import duckdb
@@ -320,9 +351,22 @@ class DatabaseManager:
             ).fetchone()
         return int(row["next_id"])
 
+    def next_run_id(self) -> int:
+        with self.sqlite_connection() as connection:
+            row = connection.execute(
+                "SELECT COALESCE(MAX(run_id), 0) + 1 AS next_id FROM Backtest_Results"
+            ).fetchone()
+        return int(row["next_id"])
+
+    def latest_run_id(self) -> int | None:
+        with self.sqlite_connection() as connection:
+            row = connection.execute("SELECT MAX(run_id) AS run_id FROM Backtest_Results").fetchone()
+        return int(row["run_id"]) if row["run_id"] is not None else None
+
     def insert_backtest_results(self, results: Iterable[BacktestResultRow]) -> int:
         rows = [
             (
+                result.run_id,
                 result.strategy_id,
                 result.params_json,
                 result.norm_score,
@@ -330,6 +374,7 @@ class DatabaseManager:
                 result.expectancy,
                 result.mdd,
                 result.win_rate,
+                result.trade_count,
             )
             for result in results
         ]
@@ -340,24 +385,27 @@ class DatabaseManager:
             connection.executemany(
                 """
                 INSERT INTO Backtest_Results (
-                    strategy_id, params_json, norm_score, profit_factor, expectancy, mdd, win_rate
+                    run_id, strategy_id, params_json, norm_score, profit_factor, expectancy, mdd, win_rate, trade_count
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 rows,
             )
         return len(rows)
 
-    def list_backtest_results(self) -> list[sqlite3.Row]:
+    def list_backtest_results(self, run_id: int | None = None) -> list[sqlite3.Row]:
+        query = """
+            SELECT id, run_id, strategy_id, params_json, norm_score, profit_factor, expectancy, mdd, win_rate, trade_count
+            FROM Backtest_Results
+        """
+        params: tuple = ()
+        if run_id is not None:
+            query += " WHERE run_id = ?"
+            params = (run_id,)
+        query += " ORDER BY id ASC"
         with self.sqlite_connection() as connection:
             return list(
-                connection.execute(
-                    """
-                    SELECT id, strategy_id, params_json, norm_score, profit_factor, expectancy, mdd, win_rate
-                    FROM Backtest_Results
-                    ORDER BY id ASC
-                    """
-                ).fetchall()
+                connection.execute(query, params).fetchall()
             )
 
     def update_backtest_norm_scores(self, scored_rows: Iterable[tuple[int, float]]) -> None:
@@ -374,7 +422,7 @@ class DatabaseManager:
         with self.sqlite_connection() as connection:
             return connection.execute(
                 """
-                SELECT id, strategy_id, params_json, norm_score, profit_factor, expectancy, mdd, win_rate
+                SELECT id, run_id, strategy_id, params_json, norm_score, profit_factor, expectancy, mdd, win_rate, trade_count
                 FROM Backtest_Results
                 WHERE id = ?
                 """,
@@ -387,6 +435,9 @@ class DatabaseManager:
         ticker: str,
         entry_date: str,
         entry_price: float,
+        entry_atr: float | None,
+        strategy_id: int | None,
+        strategy_slot: str | None,
         shares: int,
         max_price_seen: float,
     ) -> None:
@@ -394,11 +445,11 @@ class DatabaseManager:
             connection.execute(
                 """
                 INSERT INTO Active_Trades (
-                    ticker, entry_date, entry_price, shares, max_price_seen, status
+                    ticker, entry_date, entry_price, entry_atr, strategy_id, strategy_slot, shares, max_price_seen, status
                 )
-                VALUES (?, ?, ?, ?, ?, 'open')
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'open')
                 """,
-                (ticker, entry_date, entry_price, shares, max_price_seen),
+                (ticker, entry_date, entry_price, entry_atr, strategy_id, strategy_slot, shares, max_price_seen),
             )
 
     def list_open_trades(self) -> list[sqlite3.Row]:
@@ -406,7 +457,7 @@ class DatabaseManager:
             return list(
                 connection.execute(
                     """
-                    SELECT ticker, entry_date, entry_price, shares, max_price_seen, status, exit_date, exit_price
+                    SELECT ticker, entry_date, entry_price, entry_atr, strategy_id, strategy_slot, shares, max_price_seen, status, exit_date, exit_price
                     FROM Active_Trades
                     WHERE status = 'open'
                     ORDER BY entry_date ASC, ticker ASC
@@ -418,7 +469,7 @@ class DatabaseManager:
         with self.sqlite_connection() as connection:
             return connection.execute(
                 """
-                SELECT rowid, ticker, entry_date, entry_price, shares, max_price_seen, status, exit_date, exit_price
+                SELECT rowid, ticker, entry_date, entry_price, entry_atr, strategy_id, strategy_slot, shares, max_price_seen, status, exit_date, exit_price
                 FROM Active_Trades
                 WHERE ticker = ? AND status = 'open'
                 ORDER BY entry_date DESC, rowid DESC
@@ -432,6 +483,13 @@ class DatabaseManager:
             connection.execute(
                 "UPDATE Active_Trades SET max_price_seen = ? WHERE rowid = ?",
                 (max_price_seen, trade_rowid),
+            )
+
+    def assign_trade_strategy(self, trade_rowid: int, *, strategy_id: int, strategy_slot: str) -> None:
+        with self.sqlite_connection() as connection:
+            connection.execute(
+                "UPDATE Active_Trades SET strategy_id = ?, strategy_slot = ? WHERE rowid = ?",
+                (strategy_id, strategy_slot, trade_rowid),
             )
 
     def close_trade(
