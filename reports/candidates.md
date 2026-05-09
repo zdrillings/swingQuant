@@ -1,731 +1,946 @@
 # Ranked Candidates
 
-- run_id: 8
+- run_id: 29
 - min_trades: 12
 - ranking: practical_score desc, then norm_score desc, then expectancy desc
+- practical_score includes live-match bonus, trade-count bonus, and alpha bonuses vs SPY/sector
 
 ## Top Ranked Candidates
 
-### Result 244786
-- run_id: 8
-- strategy_id: 244786
+### Result 987870
+- run_id: 29
+- strategy_id: 987870
 - global_rank: 1
 - sector_rank: 1
-- sector: Materials
-- practical_score: 0.639201
-- norm_score: 0.189201
-- expectancy: 0.008030
-- profit_factor: 1.808563
-- mdd: 0.186406
-- win_rate: 0.690476
-- trade_count: 126
-- duplicate_group_size: 1
-- collapsed_result_ids: 244786
-- live_match_count: 3
-- live_match_tickers: DOW, LYB, CF
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
-- first_zero_gate: none
-- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
-- warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.19, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+- sector: Industrials
+- practical_score: 0.830000
+- norm_score: 0.700000
+- expectancy: 0.019041
+- profit_factor: 3.965527
+- alpha_vs_spy: 0.015605
+- alpha_vs_sector: 0.016783
+- mdd: 0.092386
+- win_rate: 0.682927
+- trade_count: 41
+- duplicate_group_size: 2
+- collapsed_result_ids: 987870, 987902
+- live_match_count: 0
+- live_match_tickers: none
+- promotion_policy_passed: no
+- promotion_policy_violations: trade_count 41 < 100
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=0
+- first_zero_gate: signal_score_min
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: no_current_live_matches
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.15, "rsi_14_max": 50.0, "signal_score_min": 34.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: none
 
-### Result 244798
-- run_id: 8
-- strategy_id: 244798
+### Result 987886
+- run_id: 29
+- strategy_id: 987886
 - global_rank: 2
 - sector_rank: 2
-- sector: Materials
-- practical_score: 0.635859
-- norm_score: 0.185859
-- expectancy: 0.007771
-- profit_factor: 1.782503
-- mdd: 0.186406
-- win_rate: 0.690476
-- trade_count: 126
-- duplicate_group_size: 1
-- collapsed_result_ids: 244798
-- live_match_count: 3
-- live_match_tickers: DOW, LYB, CF
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
-- first_zero_gate: none
-- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
-- warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.19, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+- sector: Industrials
+- practical_score: 0.782891
+- norm_score: 0.662291
+- expectancy: 0.018523
+- profit_factor: 3.744105
+- alpha_vs_spy: 0.014821
+- alpha_vs_sector: 0.016262
+- mdd: 0.092386
+- win_rate: 0.666667
+- trade_count: 39
+- duplicate_group_size: 2
+- collapsed_result_ids: 987886, 987918
+- live_match_count: 0
+- live_match_tickers: none
+- promotion_policy_passed: no
+- promotion_policy_violations: trade_count 39 < 100
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=0
+- first_zero_gate: signal_score_min
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: no_current_live_matches
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 50.0, "signal_score_min": 34.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: none
 
-### Result 244774
-- run_id: 8
-- strategy_id: 244774
+### Result 987869
+- run_id: 29
+- strategy_id: 987869
 - global_rank: 3
 - sector_rank: 3
-- sector: Materials
-- practical_score: 0.635044
-- norm_score: 0.185044
-- expectancy: 0.007696
-- profit_factor: 1.778836
-- mdd: 0.186406
-- win_rate: 0.685039
-- trade_count: 127
-- duplicate_group_size: 1
-- collapsed_result_ids: 244774
-- live_match_count: 3
-- live_match_tickers: DOW, LYB, CF
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
-- first_zero_gate: none
-- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
-- warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.19, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+- sector: Industrials
+- practical_score: 0.776845
+- norm_score: 0.660739
+- expectancy: 0.018120
+- profit_factor: 3.822064
+- alpha_vs_spy: 0.014684
+- alpha_vs_sector: 0.015862
+- mdd: 0.092386
+- win_rate: 0.682927
+- trade_count: 41
+- duplicate_group_size: 2
+- collapsed_result_ids: 987869, 987901
+- live_match_count: 0
+- live_match_tickers: none
+- promotion_policy_passed: no
+- promotion_policy_violations: trade_count 41 < 100
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=0
+- first_zero_gate: signal_score_min
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: no_current_live_matches
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.15, "rsi_14_max": 50.0, "signal_score_min": 34.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: none
 
-### Result 244930
-- run_id: 8
-- strategy_id: 244930
+### Result 987872
+- run_id: 29
+- strategy_id: 987872
 - global_rank: 4
 - sector_rank: 4
-- sector: Materials
-- practical_score: 0.632995
-- norm_score: 0.182995
-- expectancy: 0.007568
-- profit_factor: 1.756026
-- mdd: 0.186406
-- win_rate: 0.688000
-- trade_count: 125
-- duplicate_group_size: 1
-- collapsed_result_ids: 244930
-- live_match_count: 3
-- live_match_tickers: DOW, LYB, CF
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
-- first_zero_gate: none
-- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
-- warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.2, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+- sector: Industrials
+- practical_score: 0.773442
+- norm_score: 0.649673
+- expectancy: 0.018618
+- profit_factor: 3.720557
+- alpha_vs_spy: 0.015099
+- alpha_vs_sector: 0.016428
+- mdd: 0.103684
+- win_rate: 0.682927
+- trade_count: 41
+- duplicate_group_size: 2
+- collapsed_result_ids: 987872, 987904
+- live_match_count: 0
+- live_match_tickers: none
+- promotion_policy_passed: no
+- promotion_policy_violations: trade_count 41 < 100
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=0
+- first_zero_gate: signal_score_min
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: no_current_live_matches
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.15, "rsi_14_max": 50.0, "signal_score_min": 34.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: none
 
-### Result 244354
-- run_id: 8
-- strategy_id: 244354
+### Result 987885
+- run_id: 29
+- strategy_id: 987885
 - global_rank: 5
 - sector_rank: 5
-- sector: Materials
-- practical_score: 0.632506
-- norm_score: 0.182506
-- expectancy: 0.007574
-- profit_factor: 1.742686
-- mdd: 0.186406
-- win_rate: 0.684615
-- trade_count: 130
+- sector: Industrials
+- practical_score: 0.727827
+- norm_score: 0.621834
+- expectancy: 0.017554
+- profit_factor: 3.600642
+- alpha_vs_spy: 0.013853
+- alpha_vs_sector: 0.015293
+- mdd: 0.092386
+- win_rate: 0.666667
+- trade_count: 39
 - duplicate_group_size: 2
-- collapsed_result_ids: 244354, 244498
-- live_match_count: 3
-- live_match_tickers: DOW, LYB, CF
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
-- first_zero_gate: none
-- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
-- warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.16, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+- collapsed_result_ids: 987885, 987917
+- live_match_count: 0
+- live_match_tickers: none
+- promotion_policy_passed: no
+- promotion_policy_violations: trade_count 39 < 100
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=0
+- first_zero_gate: signal_score_min
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: no_current_live_matches
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 50.0, "signal_score_min": 34.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: none
 
-### Result 244642
-- run_id: 8
-- strategy_id: 244642
+### Result 987888
+- run_id: 29
+- strategy_id: 987888
 - global_rank: 6
 - sector_rank: 6
-- sector: Materials
-- practical_score: 0.632120
-- norm_score: 0.182120
-- expectancy: 0.007571
-- profit_factor: 1.733824
-- mdd: 0.186406
-- win_rate: 0.679688
-- trade_count: 128
-- duplicate_group_size: 1
-- collapsed_result_ids: 244642
-- live_match_count: 3
-- live_match_tickers: DOW, LYB, CF
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
-- first_zero_gate: none
-- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
-- warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.18, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+- sector: Industrials
+- practical_score: 0.726983
+- norm_score: 0.612934
+- expectancy: 0.018078
+- profit_factor: 3.512813
+- alpha_vs_spy: 0.014289
+- alpha_vs_sector: 0.015889
+- mdd: 0.103684
+- win_rate: 0.666667
+- trade_count: 39
+- duplicate_group_size: 2
+- collapsed_result_ids: 987888, 987920
+- live_match_count: 0
+- live_match_tickers: none
+- promotion_policy_passed: no
+- promotion_policy_violations: trade_count 39 < 100
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=0
+- first_zero_gate: signal_score_min
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: no_current_live_matches
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 50.0, "signal_score_min": 34.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: none
 
-### Result 244762
-- run_id: 8
-- strategy_id: 244762
+### Result 987871
+- run_id: 29
+- strategy_id: 987871
 - global_rank: 7
 - sector_rank: 7
-- sector: Materials
-- practical_score: 0.631481
-- norm_score: 0.181481
-- expectancy: 0.007420
-- profit_factor: 1.750956
-- mdd: 0.186406
-- win_rate: 0.685039
-- trade_count: 127
-- duplicate_group_size: 1
-- collapsed_result_ids: 244762
-- live_match_count: 3
-- live_match_tickers: DOW, LYB, CF
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
-- first_zero_gate: none
-- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
-- warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 2.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.19, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+- sector: Industrials
+- practical_score: 0.721271
+- norm_score: 0.611396
+- expectancy: 0.017697
+- profit_factor: 3.585956
+- alpha_vs_spy: 0.014178
+- alpha_vs_sector: 0.015507
+- mdd: 0.103684
+- win_rate: 0.682927
+- trade_count: 41
+- duplicate_group_size: 2
+- collapsed_result_ids: 987871, 987903
+- live_match_count: 0
+- live_match_tickers: none
+- promotion_policy_passed: no
+- promotion_policy_violations: trade_count 41 < 100
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=0
+- first_zero_gate: signal_score_min
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: no_current_live_matches
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.15, "rsi_14_max": 50.0, "signal_score_min": 34.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: none
 
-### Result 244942
-- run_id: 8
-- strategy_id: 244942
+### Result 987887
+- run_id: 29
+- strategy_id: 987887
 - global_rank: 8
 - sector_rank: 8
-- sector: Materials
-- practical_score: 0.629635
-- norm_score: 0.179635
-- expectancy: 0.007308
-- profit_factor: 1.729967
-- mdd: 0.186406
-- win_rate: 0.688000
-- trade_count: 125
-- duplicate_group_size: 1
-- collapsed_result_ids: 244942
-- live_match_count: 3
-- live_match_tickers: DOW, LYB, CF
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
-- first_zero_gate: none
-- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
-- warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.2, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+- sector: Industrials
+- practical_score: 0.672903
+- norm_score: 0.573460
+- expectancy: 0.017110
+- profit_factor: 3.378212
+- alpha_vs_spy: 0.013321
+- alpha_vs_sector: 0.014921
+- mdd: 0.103684
+- win_rate: 0.666667
+- trade_count: 39
+- duplicate_group_size: 2
+- collapsed_result_ids: 987887, 987919
+- live_match_count: 0
+- live_match_tickers: none
+- promotion_policy_passed: no
+- promotion_policy_violations: trade_count 39 < 100
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=0
+- first_zero_gate: signal_score_min
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: no_current_live_matches
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 50.0, "signal_score_min": 34.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: none
 
-### Result 244366
-- run_id: 8
-- strategy_id: 244366
+### Result 987894
+- run_id: 29
+- strategy_id: 987894
 - global_rank: 9
 - sector_rank: 9
-- sector: Materials
-- practical_score: 0.629294
-- norm_score: 0.179294
-- expectancy: 0.007323
-- profit_factor: 1.718089
-- mdd: 0.186406
-- win_rate: 0.684615
-- trade_count: 130
-- duplicate_group_size: 2
-- collapsed_result_ids: 244366, 244510
-- live_match_count: 3
-- live_match_tickers: DOW, LYB, CF
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
-- first_zero_gate: none
-- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
-- warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.16, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+- sector: Industrials
+- practical_score: 0.562032
+- norm_score: 0.469483
+- expectancy: 0.016096
+- profit_factor: 3.062836
+- alpha_vs_spy: 0.013289
+- alpha_vs_sector: 0.014194
+- mdd: 0.143053
+- win_rate: 0.698113
+- trade_count: 53
+- duplicate_group_size: 1
+- collapsed_result_ids: 987894
+- live_match_count: 0
+- live_match_tickers: none
+- promotion_policy_passed: no
+- promotion_policy_violations: trade_count 53 < 100
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=0
+- first_zero_gate: signal_score_min
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: no_current_live_matches
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 85.0, "roc_63_min": 0.15, "rsi_14_max": 50.0, "signal_score_min": 34.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: none
 
-### Result 244654
-- run_id: 8
-- strategy_id: 244654
+### Result 987862
+- run_id: 29
+- strategy_id: 987862
 - global_rank: 10
 - sector_rank: 10
-- sector: Materials
-- practical_score: 0.628869
-- norm_score: 0.178869
-- expectancy: 0.007316
-- profit_factor: 1.709131
-- mdd: 0.186406
-- win_rate: 0.679688
-- trade_count: 128
+- sector: Industrials
+- practical_score: 0.559339
+- norm_score: 0.468911
+- expectancy: 0.015973
+- profit_factor: 3.085715
+- alpha_vs_spy: 0.013220
+- alpha_vs_sector: 0.014008
+- mdd: 0.143053
+- win_rate: 0.703704
+- trade_count: 54
 - duplicate_group_size: 1
-- collapsed_result_ids: 244654
-- live_match_count: 3
-- live_match_tickers: DOW, LYB, CF
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
-- first_zero_gate: none
-- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
-- warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.18, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+- collapsed_result_ids: 987862
+- live_match_count: 0
+- live_match_tickers: none
+- promotion_policy_passed: no
+- promotion_policy_violations: trade_count 54 < 100
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=0
+- first_zero_gate: signal_score_min
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: no_current_live_matches
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 85.0, "roc_63_min": 0.15, "rsi_14_max": 50.0, "signal_score_min": 34.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: none
 
 ## Top Live Match Candidates
 
-### Result 227077
-- run_id: 8
-- strategy_id: 227077
-- global_rank: 9371
-- sector_rank: 1513
-- sector: ALL
-- practical_score: 0.465067
-- norm_score: -0.084933
-- expectancy: 0.003036
-- profit_factor: 1.255669
-- mdd: 0.824891
-- win_rate: 0.640366
-- trade_count: 6768
+### Result 988172
+- run_id: 29
+- strategy_id: 988172
+- global_rank: 39
+- sector_rank: 39
+- sector: Industrials
+- practical_score: 0.380695
+- norm_score: -0.064602
+- expectancy: 0.006821
+- profit_factor: 1.668439
+- alpha_vs_spy: 0.005592
+- alpha_vs_sector: 0.006372
+- mdd: 0.274334
+- win_rate: 0.695652
+- trade_count: 299
 - duplicate_group_size: 1
-- collapsed_result_ids: 227077
-- live_match_count: 28
-- live_match_tickers: FN, GLW, KLAC, COHR, AMAT
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=250 -> relative_strength_index_vs_spy_min=50 -> signal_score_min=28
+- collapsed_result_ids: 988172
+- live_match_count: 2
+- live_match_tickers: GEV, VRT
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=50, rsi_14_max=48, sma_200_dist_min=50, vol_alpha_min=50
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.01, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "ALL"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=FN, https://www.tradingview.com/chart/?symbol=GLW, https://www.tradingview.com/chart/?symbol=KLAC, https://www.tradingview.com/chart/?symbol=COHR, https://www.tradingview.com/chart/?symbol=AMAT
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
 
-### Result 227221
-- run_id: 8
-- strategy_id: 227221
-- global_rank: 9389
-- sector_rank: 1524
-- sector: ALL
-- practical_score: 0.464931
-- norm_score: -0.085069
-- expectancy: 0.003045
-- profit_factor: 1.256462
-- mdd: 0.825661
-- win_rate: 0.640449
-- trade_count: 6764
+### Result 988170
+- run_id: 29
+- strategy_id: 988170
+- global_rank: 41
+- sector_rank: 41
+- sector: Industrials
+- practical_score: 0.379476
+- norm_score: -0.063848
+- expectancy: 0.006773
+- profit_factor: 1.686121
+- alpha_vs_spy: 0.005449
+- alpha_vs_sector: 0.006249
+- mdd: 0.274334
+- win_rate: 0.698675
+- trade_count: 302
 - duplicate_group_size: 1
-- collapsed_result_ids: 227221
-- live_match_count: 28
-- live_match_tickers: FN, GLW, KLAC, COHR, AMAT
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=250 -> relative_strength_index_vs_spy_min=50 -> signal_score_min=28
+- collapsed_result_ids: 988170
+- live_match_count: 2
+- live_match_tickers: GEV, VRT
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=50, rsi_14_max=48, sma_200_dist_min=50, vol_alpha_min=50
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.02, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "ALL"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=FN, https://www.tradingview.com/chart/?symbol=GLW, https://www.tradingview.com/chart/?symbol=KLAC, https://www.tradingview.com/chart/?symbol=COHR, https://www.tradingview.com/chart/?symbol=AMAT
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
 
-### Result 227065
-- run_id: 8
-- strategy_id: 227065
-- global_rank: 9417
-- sector_rank: 1533
-- sector: ALL
-- practical_score: 0.464701
-- norm_score: -0.085299
-- expectancy: 0.003006
-- profit_factor: 1.253209
-- mdd: 0.824891
-- win_rate: 0.640473
-- trade_count: 6770
+### Result 988171
+- run_id: 29
+- strategy_id: 988171
+- global_rank: 42
+- sector_rank: 42
+- sector: Industrials
+- practical_score: 0.372998
+- norm_score: -0.070035
+- expectancy: 0.006670
+- profit_factor: 1.653733
+- alpha_vs_spy: 0.005442
+- alpha_vs_sector: 0.006222
+- mdd: 0.274334
+- win_rate: 0.695652
+- trade_count: 299
 - duplicate_group_size: 1
-- collapsed_result_ids: 227065
-- live_match_count: 28
-- live_match_tickers: FN, GLW, KLAC, COHR, AMAT
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=250 -> relative_strength_index_vs_spy_min=50 -> signal_score_min=28
+- collapsed_result_ids: 988171
+- live_match_count: 2
+- live_match_tickers: GEV, VRT
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=50, rsi_14_max=48, sma_200_dist_min=50, vol_alpha_min=50
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.01, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "ALL"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=FN, https://www.tradingview.com/chart/?symbol=GLW, https://www.tradingview.com/chart/?symbol=KLAC, https://www.tradingview.com/chart/?symbol=COHR, https://www.tradingview.com/chart/?symbol=AMAT
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
 
-### Result 227209
-- run_id: 8
-- strategy_id: 227209
-- global_rank: 9444
-- sector_rank: 1543
-- sector: ALL
-- practical_score: 0.464565
-- norm_score: -0.085435
-- expectancy: 0.003015
-- profit_factor: 1.254000
-- mdd: 0.825661
-- win_rate: 0.640556
-- trade_count: 6766
+### Result 988140
+- run_id: 29
+- strategy_id: 988140
+- global_rank: 43
+- sector_rank: 43
+- sector: Industrials
+- practical_score: 0.372395
+- norm_score: -0.071764
+- expectancy: 0.006635
+- profit_factor: 1.646156
+- alpha_vs_spy: 0.005529
+- alpha_vs_sector: 0.006288
+- mdd: 0.274334
+- win_rate: 0.694079
+- trade_count: 304
 - duplicate_group_size: 1
-- collapsed_result_ids: 227209
-- live_match_count: 28
-- live_match_tickers: FN, GLW, KLAC, COHR, AMAT
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=250 -> relative_strength_index_vs_spy_min=50 -> signal_score_min=28
+- collapsed_result_ids: 988140
+- live_match_count: 2
+- live_match_tickers: GEV, VRT
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=50, rsi_14_max=48, sma_200_dist_min=50, vol_alpha_min=50
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.02, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "ALL"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=FN, https://www.tradingview.com/chart/?symbol=GLW, https://www.tradingview.com/chart/?symbol=KLAC, https://www.tradingview.com/chart/?symbol=COHR, https://www.tradingview.com/chart/?symbol=AMAT
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
 
-### Result 227365
-- run_id: 8
-- strategy_id: 227365
-- global_rank: 9484
-- sector_rank: 1563
-- sector: ALL
-- practical_score: 0.464199
-- norm_score: -0.085801
-- expectancy: 0.003048
-- profit_factor: 1.256719
-- mdd: 0.828027
-- win_rate: 0.640533
-- trade_count: 6760
+### Result 988169
+- run_id: 29
+- strategy_id: 988169
+- global_rank: 44
+- sector_rank: 44
+- sector: Industrials
+- practical_score: 0.371801
+- norm_score: -0.069282
+- expectancy: 0.006624
+- profit_factor: 1.671071
+- alpha_vs_spy: 0.005301
+- alpha_vs_sector: 0.006100
+- mdd: 0.274334
+- win_rate: 0.698675
+- trade_count: 302
 - duplicate_group_size: 1
-- collapsed_result_ids: 227365
-- live_match_count: 28
-- live_match_tickers: FN, GLW, KLAC, COHR, AMAT
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=250 -> relative_strength_index_vs_spy_min=50 -> signal_score_min=28
+- collapsed_result_ids: 988169
+- live_match_count: 2
+- live_match_tickers: GEV, VRT
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=50, rsi_14_max=48, sma_200_dist_min=50, vol_alpha_min=50
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.03, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "ALL"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=FN, https://www.tradingview.com/chart/?symbol=GLW, https://www.tradingview.com/chart/?symbol=KLAC, https://www.tradingview.com/chart/?symbol=COHR, https://www.tradingview.com/chart/?symbol=AMAT
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
 
-### Result 227053
-- run_id: 8
-- strategy_id: 227053
-- global_rank: 9490
-- sector_rank: 1567
-- sector: ALL
-- practical_score: 0.464162
-- norm_score: -0.085838
-- expectancy: 0.002962
-- profit_factor: 1.249496
-- mdd: 0.824891
-- win_rate: 0.640201
-- trade_count: 6776
+### Result 988138
+- run_id: 29
+- strategy_id: 988138
+- global_rank: 45
+- sector_rank: 45
+- sector: Industrials
+- practical_score: 0.371183
+- norm_score: -0.071046
+- expectancy: 0.006590
+- profit_factor: 1.662918
+- alpha_vs_spy: 0.005390
+- alpha_vs_sector: 0.006168
+- mdd: 0.274334
+- win_rate: 0.697068
+- trade_count: 307
 - duplicate_group_size: 1
-- collapsed_result_ids: 227053
-- live_match_count: 28
-- live_match_tickers: FN, GLW, KLAC, COHR, AMAT
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=250 -> relative_strength_index_vs_spy_min=50 -> signal_score_min=28
+- collapsed_result_ids: 988138
+- live_match_count: 2
+- live_match_tickers: GEV, VRT
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=50, rsi_14_max=48, sma_200_dist_min=50, vol_alpha_min=50
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.01, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "ALL"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=FN, https://www.tradingview.com/chart/?symbol=GLW, https://www.tradingview.com/chart/?symbol=KLAC, https://www.tradingview.com/chart/?symbol=COHR, https://www.tradingview.com/chart/?symbol=AMAT
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
 
-### Result 227197
-- run_id: 8
-- strategy_id: 227197
-- global_rank: 9502
-- sector_rank: 1573
-- sector: ALL
-- practical_score: 0.464025
-- norm_score: -0.085975
-- expectancy: 0.002971
-- profit_factor: 1.250284
-- mdd: 0.825661
-- win_rate: 0.640284
-- trade_count: 6772
+### Result 988139
+- run_id: 29
+- strategy_id: 988139
+- global_rank: 47
+- sector_rank: 47
+- sector: Industrials
+- practical_score: 0.364835
+- norm_score: -0.077098
+- expectancy: 0.006488
+- profit_factor: 1.631784
+- alpha_vs_spy: 0.005382
+- alpha_vs_sector: 0.006141
+- mdd: 0.274334
+- win_rate: 0.694079
+- trade_count: 304
 - duplicate_group_size: 1
-- collapsed_result_ids: 227197
-- live_match_count: 28
-- live_match_tickers: FN, GLW, KLAC, COHR, AMAT
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=250 -> relative_strength_index_vs_spy_min=50 -> signal_score_min=28
+- collapsed_result_ids: 988139
+- live_match_count: 2
+- live_match_tickers: GEV, VRT
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=50, rsi_14_max=48, sma_200_dist_min=50, vol_alpha_min=50
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.02, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "ALL"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=FN, https://www.tradingview.com/chart/?symbol=GLW, https://www.tradingview.com/chart/?symbol=KLAC, https://www.tradingview.com/chart/?symbol=COHR, https://www.tradingview.com/chart/?symbol=AMAT
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
 
-### Result 227353
-- run_id: 8
-- strategy_id: 227353
-- global_rank: 9520
-- sector_rank: 1582
-- sector: ALL
-- practical_score: 0.463833
-- norm_score: -0.086167
-- expectancy: 0.003018
-- profit_factor: 1.254255
-- mdd: 0.828027
-- win_rate: 0.640639
-- trade_count: 6762
+### Result 988137
+- run_id: 29
+- strategy_id: 988137
+- global_rank: 49
+- sector_rank: 49
+- sector: Industrials
+- practical_score: 0.363644
+- norm_score: -0.076380
+- expectancy: 0.006444
+- profit_factor: 1.648217
+- alpha_vs_spy: 0.005243
+- alpha_vs_sector: 0.006022
+- mdd: 0.274334
+- win_rate: 0.697068
+- trade_count: 307
 - duplicate_group_size: 1
-- collapsed_result_ids: 227353
-- live_match_count: 28
-- live_match_tickers: FN, GLW, KLAC, COHR, AMAT
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=250 -> relative_strength_index_vs_spy_min=50 -> signal_score_min=28
+- collapsed_result_ids: 988137
+- live_match_count: 2
+- live_match_tickers: GEV, VRT
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=50, rsi_14_max=48, sma_200_dist_min=50, vol_alpha_min=50
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.03, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "ALL"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=FN, https://www.tradingview.com/chart/?symbol=GLW, https://www.tradingview.com/chart/?symbol=KLAC, https://www.tradingview.com/chart/?symbol=COHR, https://www.tradingview.com/chart/?symbol=AMAT
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
 
-### Result 227041
-- run_id: 8
-- strategy_id: 227041
-- global_rank: 9556
-- sector_rank: 1591
-- sector: ALL
-- practical_score: 0.463395
-- norm_score: -0.086605
-- expectancy: 0.002872
-- profit_factor: 1.242171
-- mdd: 0.823892
-- win_rate: 0.640383
-- trade_count: 6785
+### Result 988156
+- run_id: 29
+- strategy_id: 988156
+- global_rank: 57
+- sector_rank: 57
+- sector: Industrials
+- practical_score: 0.348042
+- norm_score: -0.090176
+- expectancy: 0.006204
+- profit_factor: 1.578711
+- alpha_vs_spy: 0.005207
+- alpha_vs_sector: 0.005850
+- mdd: 0.274334
+- win_rate: 0.693811
+- trade_count: 307
 - duplicate_group_size: 1
-- collapsed_result_ids: 227041
-- live_match_count: 28
-- live_match_tickers: FN, GLW, KLAC, COHR, AMAT
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=250 -> relative_strength_index_vs_spy_min=50 -> signal_score_min=28
+- collapsed_result_ids: 988156
+- live_match_count: 2
+- live_match_tickers: GEV, VRT
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=50, rsi_14_max=48, sma_200_dist_min=50, vol_alpha_min=50
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 2.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.01, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "ALL"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=FN, https://www.tradingview.com/chart/?symbol=GLW, https://www.tradingview.com/chart/?symbol=KLAC, https://www.tradingview.com/chart/?symbol=COHR, https://www.tradingview.com/chart/?symbol=AMAT
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.15, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
 
-### Result 227341
-- run_id: 8
-- strategy_id: 227341
-- global_rank: 9560
-- sector_rank: 1595
-- sector: ALL
-- practical_score: 0.463292
-- norm_score: -0.086708
-- expectancy: 0.002974
-- profit_factor: 1.250537
-- mdd: 0.828027
-- win_rate: 0.640366
-- trade_count: 6768
+### Result 988155
+- run_id: 29
+- strategy_id: 988155
+- global_rank: 58
+- sector_rank: 58
+- sector: Industrials
+- practical_score: 0.340622
+- norm_score: -0.095391
+- expectancy: 0.006058
+- profit_factor: 1.565079
+- alpha_vs_spy: 0.005060
+- alpha_vs_sector: 0.005704
+- mdd: 0.274334
+- win_rate: 0.693811
+- trade_count: 307
 - duplicate_group_size: 1
-- collapsed_result_ids: 227341
-- live_match_count: 28
-- live_match_tickers: FN, GLW, KLAC, COHR, AMAT
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=250 -> relative_strength_index_vs_spy_min=50 -> signal_score_min=28
+- collapsed_result_ids: 988155
+- live_match_count: 2
+- live_match_tickers: GEV, VRT
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=50, rsi_14_max=48, sma_200_dist_min=50, vol_alpha_min=50
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.03, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "ALL"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=FN, https://www.tradingview.com/chart/?symbol=GLW, https://www.tradingview.com/chart/?symbol=KLAC, https://www.tradingview.com/chart/?symbol=COHR, https://www.tradingview.com/chart/?symbol=AMAT
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.15, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
 
 ## Best Practical Live Candidates
 
-### Result 244786
-- run_id: 8
-- strategy_id: 244786
+### Result 987978
+- run_id: 29
+- strategy_id: 987978
+- global_rank: 32
+- sector_rank: 32
+- sector: Industrials
+- practical_score: 0.395198
+- norm_score: -0.028208
+- expectancy: 0.007819
+- profit_factor: 1.768417
+- alpha_vs_spy: 0.007327
+- alpha_vs_sector: 0.008317
+- mdd: 0.274334
+- win_rate: 0.698113
+- trade_count: 212
+- duplicate_group_size: 1
+- collapsed_result_ids: 987978
+- live_match_count: 1
+- live_match_tickers: GEV
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=1
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=GEV
+
+### Result 987946
+- run_id: 29
+- strategy_id: 987946
+- global_rank: 33
+- sector_rank: 33
+- sector: Industrials
+- practical_score: 0.394053
+- norm_score: -0.026831
+- expectancy: 0.007845
+- profit_factor: 1.774862
+- alpha_vs_spy: 0.007194
+- alpha_vs_sector: 0.008128
+- mdd: 0.274334
+- win_rate: 0.692308
+- trade_count: 221
+- duplicate_group_size: 1
+- collapsed_result_ids: 987946
+- live_match_count: 1
+- live_match_tickers: GEV
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=1
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=GEV
+
+### Result 987977
+- run_id: 29
+- strategy_id: 987977
+- global_rank: 36
+- sector_rank: 36
+- sector: Industrials
+- practical_score: 0.386948
+- norm_score: -0.034034
+- expectancy: 0.007658
+- profit_factor: 1.752619
+- alpha_vs_spy: 0.007167
+- alpha_vs_sector: 0.008156
+- mdd: 0.274334
+- win_rate: 0.698113
+- trade_count: 212
+- duplicate_group_size: 1
+- collapsed_result_ids: 987977
+- live_match_count: 1
+- live_match_tickers: GEV
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=1
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=GEV
+
+### Result 987945
+- run_id: 29
+- strategy_id: 987945
+- global_rank: 37
+- sector_rank: 37
+- sector: Industrials
+- practical_score: 0.386130
+- norm_score: -0.032428
+- expectancy: 0.007691
+- profit_factor: 1.759631
+- alpha_vs_spy: 0.007040
+- alpha_vs_sector: 0.007974
+- mdd: 0.274334
+- win_rate: 0.692308
+- trade_count: 221
+- duplicate_group_size: 1
+- collapsed_result_ids: 987945
+- live_match_count: 1
+- live_match_tickers: GEV
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=1
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=GEV
+
+### Result 988172
+- run_id: 29
+- strategy_id: 988172
+- global_rank: 39
+- sector_rank: 39
+- sector: Industrials
+- practical_score: 0.380695
+- norm_score: -0.064602
+- expectancy: 0.006821
+- profit_factor: 1.668439
+- alpha_vs_spy: 0.005592
+- alpha_vs_sector: 0.006372
+- mdd: 0.274334
+- win_rate: 0.695652
+- trade_count: 299
+- duplicate_group_size: 1
+- collapsed_result_ids: 988172
+- live_match_count: 2
+- live_match_tickers: GEV, VRT
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
+
+### Result 988170
+- run_id: 29
+- strategy_id: 988170
+- global_rank: 41
+- sector_rank: 41
+- sector: Industrials
+- practical_score: 0.379476
+- norm_score: -0.063848
+- expectancy: 0.006773
+- profit_factor: 1.686121
+- alpha_vs_spy: 0.005449
+- alpha_vs_sector: 0.006249
+- mdd: 0.274334
+- win_rate: 0.698675
+- trade_count: 302
+- duplicate_group_size: 1
+- collapsed_result_ids: 988170
+- live_match_count: 2
+- live_match_tickers: GEV, VRT
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
+
+### Result 988171
+- run_id: 29
+- strategy_id: 988171
+- global_rank: 42
+- sector_rank: 42
+- sector: Industrials
+- practical_score: 0.372998
+- norm_score: -0.070035
+- expectancy: 0.006670
+- profit_factor: 1.653733
+- alpha_vs_spy: 0.005442
+- alpha_vs_sector: 0.006222
+- mdd: 0.274334
+- win_rate: 0.695652
+- trade_count: 299
+- duplicate_group_size: 1
+- collapsed_result_ids: 988171
+- live_match_count: 2
+- live_match_tickers: GEV, VRT
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
+
+### Result 988140
+- run_id: 29
+- strategy_id: 988140
+- global_rank: 43
+- sector_rank: 43
+- sector: Industrials
+- practical_score: 0.372395
+- norm_score: -0.071764
+- expectancy: 0.006635
+- profit_factor: 1.646156
+- alpha_vs_spy: 0.005529
+- alpha_vs_sector: 0.006288
+- mdd: 0.274334
+- win_rate: 0.694079
+- trade_count: 304
+- duplicate_group_size: 1
+- collapsed_result_ids: 988140
+- live_match_count: 2
+- live_match_tickers: GEV, VRT
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
+
+### Result 988169
+- run_id: 29
+- strategy_id: 988169
+- global_rank: 44
+- sector_rank: 44
+- sector: Industrials
+- practical_score: 0.371801
+- norm_score: -0.069282
+- expectancy: 0.006624
+- profit_factor: 1.671071
+- alpha_vs_spy: 0.005301
+- alpha_vs_sector: 0.006100
+- mdd: 0.274334
+- win_rate: 0.698675
+- trade_count: 302
+- duplicate_group_size: 1
+- collapsed_result_ids: 988169
+- live_match_count: 2
+- live_match_tickers: GEV, VRT
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
+
+### Result 988138
+- run_id: 29
+- strategy_id: 988138
+- global_rank: 45
+- sector_rank: 45
+- sector: Industrials
+- practical_score: 0.371183
+- norm_score: -0.071046
+- expectancy: 0.006590
+- profit_factor: 1.662918
+- alpha_vs_spy: 0.005390
+- alpha_vs_sector: 0.006168
+- mdd: 0.274334
+- win_rate: 0.697068
+- trade_count: 307
+- duplicate_group_size: 1
+- collapsed_result_ids: 988138
+- live_match_count: 2
+- live_match_tickers: GEV, VRT
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
+- first_zero_gate: none
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
+
+## Best Candidate Per Sector
+
+### Result 987870
+- run_id: 29
+- strategy_id: 987870
 - global_rank: 1
 - sector_rank: 1
-- sector: Materials
-- practical_score: 0.639201
-- norm_score: 0.189201
-- expectancy: 0.008030
-- profit_factor: 1.808563
-- mdd: 0.186406
-- win_rate: 0.690476
-- trade_count: 126
-- duplicate_group_size: 1
-- collapsed_result_ids: 244786
-- live_match_count: 3
-- live_match_tickers: DOW, LYB, CF
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
-- first_zero_gate: none
-- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
-- warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.19, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
-
-### Result 244798
-- run_id: 8
-- strategy_id: 244798
-- global_rank: 2
-- sector_rank: 2
-- sector: Materials
-- practical_score: 0.635859
-- norm_score: 0.185859
-- expectancy: 0.007771
-- profit_factor: 1.782503
-- mdd: 0.186406
-- win_rate: 0.690476
-- trade_count: 126
-- duplicate_group_size: 1
-- collapsed_result_ids: 244798
-- live_match_count: 3
-- live_match_tickers: DOW, LYB, CF
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
-- first_zero_gate: none
-- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
-- warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.19, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
-
-### Result 244774
-- run_id: 8
-- strategy_id: 244774
-- global_rank: 3
-- sector_rank: 3
-- sector: Materials
-- practical_score: 0.635044
-- norm_score: 0.185044
-- expectancy: 0.007696
-- profit_factor: 1.778836
-- mdd: 0.186406
-- win_rate: 0.685039
-- trade_count: 127
-- duplicate_group_size: 1
-- collapsed_result_ids: 244774
-- live_match_count: 3
-- live_match_tickers: DOW, LYB, CF
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
-- first_zero_gate: none
-- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
-- warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.19, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
-
-### Result 244930
-- run_id: 8
-- strategy_id: 244930
-- global_rank: 4
-- sector_rank: 4
-- sector: Materials
-- practical_score: 0.632995
-- norm_score: 0.182995
-- expectancy: 0.007568
-- profit_factor: 1.756026
-- mdd: 0.186406
-- win_rate: 0.688000
-- trade_count: 125
-- duplicate_group_size: 1
-- collapsed_result_ids: 244930
-- live_match_count: 3
-- live_match_tickers: DOW, LYB, CF
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
-- first_zero_gate: none
-- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
-- warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.2, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
-
-### Result 244354
-- run_id: 8
-- strategy_id: 244354
-- global_rank: 5
-- sector_rank: 5
-- sector: Materials
-- practical_score: 0.632506
-- norm_score: 0.182506
-- expectancy: 0.007574
-- profit_factor: 1.742686
-- mdd: 0.186406
-- win_rate: 0.684615
-- trade_count: 130
+- sector: Industrials
+- practical_score: 0.830000
+- norm_score: 0.700000
+- expectancy: 0.019041
+- profit_factor: 3.965527
+- alpha_vs_spy: 0.015605
+- alpha_vs_sector: 0.016783
+- mdd: 0.092386
+- win_rate: 0.682927
+- trade_count: 41
 - duplicate_group_size: 2
-- collapsed_result_ids: 244354, 244498
-- live_match_count: 3
-- live_match_tickers: DOW, LYB, CF
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
-- first_zero_gate: none
-- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
-- warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.16, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+- collapsed_result_ids: 987870, 987902
+- live_match_count: 0
+- live_match_tickers: none
+- promotion_policy_passed: no
+- promotion_policy_violations: trade_count 41 < 100
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=0
+- first_zero_gate: signal_score_min
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: no_current_live_matches
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.15, "rsi_14_max": 50.0, "signal_score_min": 34.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: none
 
-### Result 244642
-- run_id: 8
-- strategy_id: 244642
-- global_rank: 6
-- sector_rank: 6
-- sector: Materials
-- practical_score: 0.632120
-- norm_score: 0.182120
-- expectancy: 0.007571
-- profit_factor: 1.733824
-- mdd: 0.186406
-- win_rate: 0.679688
-- trade_count: 128
+## Best Promotable Candidate Per Sector
+
+### Result 987978
+- run_id: 29
+- strategy_id: 987978
+- global_rank: 32
+- sector_rank: 32
+- sector: Industrials
+- practical_score: 0.395198
+- norm_score: -0.028208
+- expectancy: 0.007819
+- profit_factor: 1.768417
+- alpha_vs_spy: 0.007327
+- alpha_vs_sector: 0.008317
+- mdd: 0.274334
+- win_rate: 0.698113
+- trade_count: 212
 - duplicate_group_size: 1
-- collapsed_result_ids: 244642
-- live_match_count: 3
-- live_match_tickers: DOW, LYB, CF
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
+- collapsed_result_ids: 987978
+- live_match_count: 1
+- live_match_tickers: GEV
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=1
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.18, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=GEV
 
-### Result 244762
-- run_id: 8
-- strategy_id: 244762
-- global_rank: 7
-- sector_rank: 7
-- sector: Materials
-- practical_score: 0.631481
-- norm_score: 0.181481
-- expectancy: 0.007420
-- profit_factor: 1.750956
-- mdd: 0.186406
-- win_rate: 0.685039
-- trade_count: 127
+## Best Live Candidate Per Sector
+
+### Result 987978
+- run_id: 29
+- strategy_id: 987978
+- global_rank: 32
+- sector_rank: 32
+- sector: Industrials
+- practical_score: 0.395198
+- norm_score: -0.028208
+- expectancy: 0.007819
+- profit_factor: 1.768417
+- alpha_vs_spy: 0.007327
+- alpha_vs_sector: 0.008317
+- mdd: 0.274334
+- win_rate: 0.698113
+- trade_count: 212
 - duplicate_group_size: 1
-- collapsed_result_ids: 244762
-- live_match_count: 3
-- live_match_tickers: DOW, LYB, CF
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
+- collapsed_result_ids: 987978
+- live_match_count: 1
+- live_match_tickers: GEV
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=1
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
+- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 2.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.19, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=GEV
 
-### Result 244942
-- run_id: 8
-- strategy_id: 244942
-- global_rank: 8
-- sector_rank: 8
-- sector: Materials
-- practical_score: 0.629635
-- norm_score: 0.179635
-- expectancy: 0.007308
-- profit_factor: 1.729967
-- mdd: 0.186406
-- win_rate: 0.688000
-- trade_count: 125
-- duplicate_group_size: 1
-- collapsed_result_ids: 244942
-- live_match_count: 3
-- live_match_tickers: DOW, LYB, CF
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
-- first_zero_gate: none
-- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
-- warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.2, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+## Best Promotable Portfolio Pairs
 
-### Result 244366
-- run_id: 8
-- strategy_id: 244366
-- global_rank: 9
-- sector_rank: 9
-- sector: Materials
-- practical_score: 0.629294
-- norm_score: 0.179294
-- expectancy: 0.007323
-- profit_factor: 1.718089
-- mdd: 0.186406
-- win_rate: 0.684615
-- trade_count: 130
-- duplicate_group_size: 2
-- collapsed_result_ids: 244366, 244510
-- live_match_count: 3
-- live_match_tickers: DOW, LYB, CF
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
-- first_zero_gate: none
-- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
-- warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.16, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
-
-### Result 244654
-- run_id: 8
-- strategy_id: 244654
-- global_rank: 10
-- sector_rank: 10
-- sector: Materials
-- practical_score: 0.628869
-- norm_score: 0.178869
-- expectancy: 0.007316
-- profit_factor: 1.709131
-- mdd: 0.186406
-- win_rate: 0.679688
-- trade_count: 128
-- duplicate_group_size: 1
-- collapsed_result_ids: 244654
-- live_match_count: 3
-- live_match_tickers: DOW, LYB, CF
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=8 -> relative_strength_index_vs_spy_min=3 -> signal_score_min=3
-- first_zero_gate: none
-- component_positive_counts: roc_63_min=3, rsi_14_max=3, sma_200_dist_min=3, vol_alpha_min=0
-- warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 80.0, "roc_63_min": 0.1, "rsi_14_max": 60.0, "signal_score_min": 30.0, "sma_200_dist_min": 0.18, "vol_alpha_min": 1.8}, "scope_size": 250, "sector": "Materials"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=DOW, https://www.tradingview.com/chart/?symbol=LYB, https://www.tradingview.com/chart/?symbol=CF
+No portfolio pairs currently satisfy promotion policy.

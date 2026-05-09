@@ -1,20 +1,20 @@
 {
-  "strategy_id": 172365,
-  "sector": "Information Technology",
-  "promoted_at": "2026-05-05T21:34:15",
+  "strategy_id": 987978,
+  "sector": "Industrials",
+  "promoted_at": "2026-05-09T08:49:58",
   "indicators": {
-    "relative_strength_index_vs_spy_min": 80.0,
-    "roc_63_min": 0.1,
-    "rsi_14_max": 40.0,
-    "signal_score_min": 30.0,
-    "sma_200_dist_min": 0.2,
-    "vol_alpha_min": 1.8
+    "relative_strength_index_vs_spy_min": 90.0,
+    "roc_63_min": 0.2,
+    "rsi_14_max": 55.0,
+    "signal_score_min": 32.0,
+    "sma_200_dist_min": 0.14,
+    "vol_alpha_min": 0.8
   },
   "exit_rules": {
     "trailing_stop_pct": null,
     "profit_target_pct": null,
     "time_limit_days": 20,
     "trailing_stop_atr_mult": 3.0,
-    "profit_target_atr_mult": 4.0
+    "profit_target_atr_mult": 4.5
   }
 }

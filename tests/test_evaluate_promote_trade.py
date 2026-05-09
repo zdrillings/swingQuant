@@ -14,6 +14,7 @@ from src.promote.service import PromoteService
 from src.settings import AppPaths
 from src.trade.service import TradeService
 from src.utils.db_manager import BacktestResultRow, DatabaseManager
+from src.utils.strategy import ExitRules, ProductionStrategy, clear_strategy_caches
 
 
 class FakeDuckDBConnection:
@@ -23,8 +24,22 @@ class FakeDuckDBConnection:
     def __exit__(self, exc_type, exc, tb):
         return None
 
-    def execute(self, statement: str):
+    def execute(self, statement: str, *args, **kwargs):
         return self
+
+    def df(self) -> pd.DataFrame:
+        return pd.DataFrame()
+
+
+class FakeMarketDataClient:
+    def __init__(self, frame: pd.DataFrame | list[pd.DataFrame]) -> None:
+        self.frames = frame if isinstance(frame, list) else [frame]
+        self.calls = 0
+
+    def download_daily_history(self, tickers: list[str], start_date, end_date=None) -> pd.DataFrame:
+        index = min(self.calls, len(self.frames) - 1)
+        self.calls += 1
+        return self.frames[index].copy()
 
 
 class EvaluateServiceTests(unittest.TestCase):
@@ -101,7 +116,8 @@ class EvaluateServiceTests(unittest.TestCase):
             self.assertIn("## Best Practical Live Candidates", report_text)
             self.assertIn("## Best Candidate Per Sector", report_text)
             self.assertIn("## Best Live Candidate Per Sector", report_text)
-            self.assertIn("## Best Portfolio Pairs", report_text)
+            self.assertIn("## Best Promotable Candidate Per Sector", report_text)
+            self.assertIn("## Best Promotable Portfolio Pairs", report_text)
             self.assertIn("No strategies currently have live matches.", report_text)
             self.assertIn("strategy_id: 2", report_text)
             self.assertNotIn("strategy_id: 1", report_text)
@@ -110,6 +126,8 @@ class EvaluateServiceTests(unittest.TestCase):
             self.assertIn("sector_rank: 1", report_text)
             self.assertIn("trade_count: 12", report_text)
             self.assertIn("live_match_count: 0", report_text)
+            self.assertIn("promotion_policy_passed: no", report_text)
+            self.assertIn("promotion_policy_violations: trade_count 12 < 100", report_text)
             self.assertIn("gate_counts: unavailable", report_text)
             self.assertIn("first_zero_gate: unavailable", report_text)
             self.assertIn("practical_score:", report_text)
@@ -170,7 +188,7 @@ class EvaluateServiceTests(unittest.TestCase):
             self.assertIn("practical_score:", report_text)
             self.assertIn("No strategies currently have live matches.", report_text)
             self.assertIn("## Best Practical Live Candidates", report_text)
-            self.assertIn("## Best Portfolio Pairs", report_text)
+            self.assertIn("## Best Promotable Portfolio Pairs", report_text)
             self.assertIn("warnings: low_trade_count, profit_factor_infinite, no_current_live_matches", report_text)
 
     def test_evaluate_dedupes_plateau_equivalent_rows_in_report(self) -> None:
@@ -239,14 +257,14 @@ class EvaluateServiceTests(unittest.TestCase):
             self.assertIn("## Top Live Match Candidates", report_text)
             self.assertIn("## Best Practical Live Candidates", report_text)
             self.assertIn("## Best Candidate Per Sector", report_text)
-            self.assertIn("## Best Portfolio Pairs", report_text)
+            self.assertIn("## Best Promotable Candidate Per Sector", report_text)
+            self.assertIn("## Best Promotable Portfolio Pairs", report_text)
             self.assertIn("No strategies currently have live matches.", report_text)
             top_ranked_section = report_text.split("## Top Ranked Candidates", maxsplit=1)[1].split("## Top Live Match Candidates", maxsplit=1)[0]
             self.assertEqual(top_ranked_section.count("### Result "), 2)
             self.assertIn("duplicate_group_size: 2", report_text)
             self.assertIn("collapsed_result_ids: 1, 2", report_text)
-            self.assertIn("### Pair 1 + 3", report_text)
-            self.assertIn("sectors: Energy + Materials", report_text)
+            self.assertIn("No portfolio pairs currently satisfy promotion policy.", report_text)
 
     def test_gate_diagnostic_identifies_first_zero_gate(self) -> None:
         service = EvaluateService(DatabaseManager(AppPaths(
@@ -377,10 +395,71 @@ class EvaluateServiceTests(unittest.TestCase):
             report_text = (paths.reports_dir / "candidates.md").read_text(encoding="utf-8")
             self.assertIn("## Best Practical Live Candidates", report_text)
             self.assertIn("## Best Live Candidate Per Sector", report_text)
+            self.assertIn("## Best Promotable Portfolio Pairs", report_text)
             best_live_section = report_text.split("## Best Practical Live Candidates", maxsplit=1)[1]
             self.assertIn("strategy_id: 101", best_live_section)
             self.assertIn("## Best Practical Live Candidates", report_text)
             self.assertIn("live_match_tickers: AAA", report_text)
+
+    def test_alpha_bonus_can_lift_higher_alpha_row_in_practical_ranking(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            paths = AppPaths(
+                root_dir=root,
+                data_dir=root / "data",
+                duckdb_path=root / "data" / "market_data.duckdb",
+                sqlite_path=root / "data" / "ledger.sqlite",
+                reports_dir=root / "reports",
+                logs_dir=root / "logs",
+                config_path=root / "config.yaml",
+                env_path=root / ".env",
+                production_strategy_path=root / "production_strategy.json",
+            )
+            db = DatabaseManager(paths)
+            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                db.initialize()
+            db.insert_backtest_results(
+                [
+                    BacktestResultRow(
+                        run_id=8,
+                        strategy_id=200,
+                        params_json=json.dumps({"indicators": {}, "exit_rules": {}, "sector": "Materials"}),
+                        norm_score=None,
+                        profit_factor=1.55,
+                        expectancy=0.098,
+                        mdd=0.10,
+                        win_rate=0.55,
+                        trade_count=100,
+                        alpha_vs_spy=0.020,
+                        alpha_vs_sector=0.020,
+                    ),
+                    BacktestResultRow(
+                        run_id=8,
+                        strategy_id=201,
+                        params_json=json.dumps({"indicators": {}, "exit_rules": {}, "sector": "Materials"}),
+                        norm_score=None,
+                        profit_factor=1.52,
+                        expectancy=0.100,
+                        mdd=0.10,
+                        win_rate=0.55,
+                        trade_count=100,
+                        alpha_vs_spy=0.0,
+                        alpha_vs_sector=0.0,
+                    ),
+                ]
+            )
+            service = EvaluateService(db)
+            service._build_live_candidate_metadata = lambda frame: ({}, {})
+
+            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                service.run(top=2, run_id=8, min_trades=12)
+
+            report_text = (paths.reports_dir / "candidates.md").read_text(encoding="utf-8")
+            top_ranked_section = report_text.split("## Top Ranked Candidates", maxsplit=1)[1].split("## Top Live Match Candidates", maxsplit=1)[0]
+            self.assertIn("strategy_id: 200", top_ranked_section)
+            self.assertLess(top_ranked_section.find("strategy_id: 200"), top_ranked_section.find("strategy_id: 201"))
+            self.assertIn("alpha_vs_spy: 0.020000", report_text)
+            self.assertIn("alpha_vs_sector: 0.020000", report_text)
 
 
 class PromoteAndTradeTests(unittest.TestCase):
@@ -429,8 +508,7 @@ class PromoteAndTradeTests(unittest.TestCase):
                 ]
             )
 
-            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()), \
-                 patch("src.promote.service.load_feature_config", return_value={"promotion_policy": {"min_profit_factor": 1.3, "min_expectancy": 0.004, "min_trade_count": 100, "max_mdd": 0.30}}):
+            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
                 message = PromoteService(db).run(row_id=1)
 
             payload = json.loads(paths.production_strategy_path.read_text(encoding="utf-8"))
@@ -478,8 +556,7 @@ class PromoteAndTradeTests(unittest.TestCase):
                 ]
             )
 
-            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()), \
-                 patch("src.promote.service.load_feature_config", return_value={"promotion_policy": {"min_profit_factor": 1.3, "min_expectancy": 0.004, "min_trade_count": 100, "max_mdd": 0.30}}):
+            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
                 with self.assertRaisesRegex(ValueError, "does not satisfy promotion policy"):
                     PromoteService(db).run(row_id=1)
 
@@ -526,3 +603,273 @@ class PromoteAndTradeTests(unittest.TestCase):
             self.assertEqual(row["status"], "closed")
             self.assertEqual(row["exit_price"], 112.5)
             self.assertIsNotNone(row["exit_date"])
+
+    def test_trade_buy_reuses_existing_open_trade_strategy_for_off_universe_ticker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            paths = AppPaths(
+                root_dir=root,
+                data_dir=root / "data",
+                duckdb_path=root / "data" / "market_data.duckdb",
+                sqlite_path=root / "data" / "ledger.sqlite",
+                reports_dir=root / "reports",
+                logs_dir=root / "logs",
+                config_path=root / "config.yaml",
+                env_path=root / ".env",
+                production_strategy_path=root / "production_strategy.json",
+                production_strategies_path=root / "production_strategies.json",
+            )
+            db = DatabaseManager(paths)
+            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                db.initialize()
+            db.open_trade(
+                ticker="RKLB",
+                entry_date="2026-05-06",
+                entry_price=75.0,
+                entry_atr=None,
+                strategy_id=172365,
+                strategy_slot="technology",
+                shares=10,
+                max_price_seen=75.0,
+            )
+            strategy = ProductionStrategy(
+                strategy_id=172365,
+                promoted_at="2026-05-06T17:00:00",
+                indicators={},
+                exit_rules=ExitRules(
+                    trailing_stop_pct=0.08,
+                    profit_target_pct=0.10,
+                    time_limit_days=20,
+                ),
+                slot="technology",
+                sector="Information Technology",
+            )
+
+            clear_strategy_caches()
+            with patch("src.trade.service.load_active_strategies", return_value={"technology": strategy}):
+                with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                    message = TradeService(db).buy(ticker="RKLB", price=79.66, shares=60)
+
+            self.assertEqual(message, "Bought RKLB: 60 shares at 79.66 using strategy slot 'technology'")
+            latest_trade = db.get_latest_open_trade("RKLB")
+            self.assertIsNotNone(latest_trade)
+            self.assertEqual(latest_trade["strategy_slot"], "technology")
+            self.assertEqual(latest_trade["strategy_id"], 172365)
+            self.assertEqual(latest_trade["shares"], 60)
+
+    def test_trade_buy_fetches_recent_history_for_atr_based_off_universe_ticker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            paths = AppPaths(
+                root_dir=root,
+                data_dir=root / "data",
+                duckdb_path=root / "data" / "market_data.duckdb",
+                sqlite_path=root / "data" / "ledger.sqlite",
+                reports_dir=root / "reports",
+                logs_dir=root / "logs",
+                config_path=root / "config.yaml",
+                env_path=root / ".env",
+                production_strategy_path=root / "production_strategy.json",
+                production_strategies_path=root / "production_strategies.json",
+            )
+            db = DatabaseManager(paths)
+            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                db.initialize()
+
+            db.open_trade(
+                ticker="RKLB",
+                entry_date="2026-05-06",
+                entry_price=75.0,
+                entry_atr=None,
+                strategy_id=172365,
+                strategy_slot="technology",
+                shares=10,
+                max_price_seen=75.0,
+            )
+
+            strategy = ProductionStrategy(
+                strategy_id=172365,
+                promoted_at="2026-05-06T17:00:00",
+                indicators={},
+                exit_rules=ExitRules(
+                    trailing_stop_pct=None,
+                    profit_target_pct=None,
+                    time_limit_days=20,
+                    trailing_stop_atr_mult=2.5,
+                    profit_target_atr_mult=3.0,
+                ),
+                slot="technology",
+                sector="Information Technology",
+            )
+
+            trade_dates = pd.date_range("2026-03-01", periods=40, freq="B")
+            raw_history = pd.DataFrame(
+                {
+                    "Open": [60.0 + index * 0.4 for index in range(len(trade_dates))],
+                    "High": [61.0 + index * 0.4 for index in range(len(trade_dates))],
+                    "Low": [59.0 + index * 0.4 for index in range(len(trade_dates))],
+                    "Close": [60.5 + index * 0.4 for index in range(len(trade_dates))],
+                    "Adj Close": [60.5 + index * 0.4 for index in range(len(trade_dates))],
+                    "Volume": [1_000_000 for _ in range(len(trade_dates))],
+                },
+                index=trade_dates,
+            )
+            raw_history.index.name = "Date"
+
+            clear_strategy_caches()
+            with patch("src.trade.service.load_active_strategies", return_value={"technology": strategy}):
+                with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                    message = TradeService(
+                        db,
+                        market_data_client=FakeMarketDataClient(raw_history),
+                    ).buy(ticker="RKLB", price=79.66, shares=60)
+
+            self.assertEqual(message, "Bought RKLB: 60 shares at 79.66 using strategy slot 'technology'")
+            latest_trade = db.get_latest_open_trade("RKLB")
+            self.assertIsNotNone(latest_trade)
+            self.assertEqual(latest_trade["strategy_slot"], "technology")
+            self.assertEqual(latest_trade["strategy_id"], 172365)
+            self.assertEqual(latest_trade["shares"], 60)
+            self.assertIsNotNone(latest_trade["entry_atr"])
+            self.assertGreater(float(latest_trade["entry_atr"]), 0.0)
+
+    def test_trade_buy_retries_shorter_history_windows_for_atr_based_ticker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            paths = AppPaths(
+                root_dir=root,
+                data_dir=root / "data",
+                duckdb_path=root / "data" / "market_data.duckdb",
+                sqlite_path=root / "data" / "ledger.sqlite",
+                reports_dir=root / "reports",
+                logs_dir=root / "logs",
+                config_path=root / "config.yaml",
+                env_path=root / ".env",
+                production_strategy_path=root / "production_strategy.json",
+                production_strategies_path=root / "production_strategies.json",
+            )
+            db = DatabaseManager(paths)
+            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                db.initialize()
+            db.open_trade(
+                ticker="NBIS",
+                entry_date="2026-05-05",
+                entry_price=150.0,
+                entry_atr=None,
+                strategy_id=172365,
+                strategy_slot="technology",
+                shares=75,
+                max_price_seen=155.0,
+            )
+            latest_open = db.get_latest_open_trade("NBIS")
+            self.assertIsNotNone(latest_open)
+            db.close_trade(
+                trade_rowid=int(latest_open["rowid"]),
+                exit_date="2026-05-06",
+                exit_price=160.0,
+            )
+            strategy = ProductionStrategy(
+                strategy_id=172365,
+                promoted_at="2026-05-06T17:00:00",
+                indicators={},
+                exit_rules=ExitRules(
+                    trailing_stop_pct=None,
+                    profit_target_pct=None,
+                    time_limit_days=20,
+                    trailing_stop_atr_mult=2.5,
+                    profit_target_atr_mult=3.0,
+                ),
+                slot="technology",
+                sector="Information Technology",
+            )
+            trade_dates = pd.date_range("2026-03-01", periods=40, freq="B")
+            fallback_history = pd.DataFrame(
+                {
+                    "Open": [140.0 + index * 0.8 for index in range(len(trade_dates))],
+                    "High": [141.5 + index * 0.8 for index in range(len(trade_dates))],
+                    "Low": [138.5 + index * 0.8 for index in range(len(trade_dates))],
+                    "Close": [140.7 + index * 0.8 for index in range(len(trade_dates))],
+                    "Adj Close": [140.7 + index * 0.8 for index in range(len(trade_dates))],
+                    "Volume": [800_000 for _ in range(len(trade_dates))],
+                },
+                index=trade_dates,
+            )
+            fallback_history.index.name = "Date"
+            market_data_client = FakeMarketDataClient([pd.DataFrame(), fallback_history])
+
+            clear_strategy_caches()
+            with patch("src.trade.service.load_active_strategies", return_value={"technology": strategy}):
+                with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                    message = TradeService(
+                        db,
+                        market_data_client=market_data_client,
+                    ).buy(ticker="NBIS", price=178.22, shares=120)
+
+            self.assertEqual(message, "Bought NBIS: 120 shares at 178.22 using strategy slot 'technology'")
+            self.assertGreaterEqual(market_data_client.calls, 2)
+            latest_trade = db.get_latest_trade("NBIS")
+            self.assertIsNotNone(latest_trade)
+            self.assertEqual(latest_trade["status"], "open")
+            self.assertIsNotNone(latest_trade["entry_atr"])
+            self.assertGreater(float(latest_trade["entry_atr"]), 0.0)
+
+    def test_trade_buy_reuses_latest_closed_trade_strategy_for_off_universe_ticker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            paths = AppPaths(
+                root_dir=root,
+                data_dir=root / "data",
+                duckdb_path=root / "data" / "market_data.duckdb",
+                sqlite_path=root / "data" / "ledger.sqlite",
+                reports_dir=root / "reports",
+                logs_dir=root / "logs",
+                config_path=root / "config.yaml",
+                env_path=root / ".env",
+                production_strategy_path=root / "production_strategy.json",
+                production_strategies_path=root / "production_strategies.json",
+            )
+            db = DatabaseManager(paths)
+            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                db.initialize()
+            db.open_trade(
+                ticker="NBIS",
+                entry_date="2026-05-05",
+                entry_price=150.0,
+                entry_atr=None,
+                strategy_id=172365,
+                strategy_slot="technology",
+                shares=75,
+                max_price_seen=155.0,
+            )
+            latest_open = db.get_latest_open_trade("NBIS")
+            self.assertIsNotNone(latest_open)
+            db.close_trade(
+                trade_rowid=int(latest_open["rowid"]),
+                exit_date="2026-05-06",
+                exit_price=160.0,
+            )
+            strategy = ProductionStrategy(
+                strategy_id=172365,
+                promoted_at="2026-05-06T17:00:00",
+                indicators={},
+                exit_rules=ExitRules(
+                    trailing_stop_pct=0.08,
+                    profit_target_pct=0.10,
+                    time_limit_days=20,
+                ),
+                slot="technology",
+                sector="Information Technology",
+            )
+
+            clear_strategy_caches()
+            with patch("src.trade.service.load_active_strategies", return_value={"technology": strategy}):
+                with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                    message = TradeService(db).buy(ticker="NBIS", price=178.22, shares=120)
+
+            self.assertEqual(message, "Bought NBIS: 120 shares at 178.22 using strategy slot 'technology'")
+            latest_trade = db.get_latest_trade("NBIS")
+            self.assertIsNotNone(latest_trade)
+            self.assertEqual(latest_trade["status"], "open")
+            self.assertEqual(latest_trade["strategy_slot"], "technology")
+            self.assertEqual(latest_trade["strategy_id"], 172365)
+            self.assertEqual(latest_trade["shares"], 120)

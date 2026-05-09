@@ -168,6 +168,10 @@ def load_signal_model_config() -> dict:
             str(name): float(value)
             for name, value in config.get("score_spans", {}).items()
         },
+        "score_weights": {
+            str(name): float(value)
+            for name, value in config.get("score_weights", {}).items()
+        },
     }
 
 
@@ -214,16 +218,18 @@ def indicator_score(indicator_name: str, actual_value: float, threshold_value: f
     config = load_signal_model_config()
     if not math.isfinite(actual_value):
         return 0.0
+    weight = float(config["score_weights"].get(indicator_name, 1.0))
+    max_score = 10.0 * max(weight, 0.0)
     span = config["score_spans"].get(indicator_name)
     if span is None or span <= 0:
-        return 10.0 if indicator_condition(indicator_name, actual_value, threshold_value) else 0.0
+        return max_score if indicator_condition(indicator_name, actual_value, threshold_value) else 0.0
     if indicator_name.endswith("_max"):
-        raw_score = ((threshold_value + span) - actual_value) / span * 10.0
+        raw_score = ((threshold_value + span) - actual_value) / span * max_score
     elif indicator_name.endswith("_min"):
-        raw_score = (actual_value - (threshold_value - span)) / span * 10.0
+        raw_score = (actual_value - (threshold_value - span)) / span * max_score
     else:
-        raw_score = 10.0 if actual_value == threshold_value else 0.0
-    return max(0.0, min(10.0, raw_score))
+        raw_score = max_score if actual_value == threshold_value else 0.0
+    return max(0.0, min(max_score, raw_score))
 
 
 def evaluate_signal_gate(

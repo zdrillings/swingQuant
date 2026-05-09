@@ -51,6 +51,7 @@ The authoritative product spec is [Spec.md](/home/zdrillings/code/SwingQuant/Spe
    - Keep `relative_strength_index_vs_spy_min` as a hard filter.
    - Keep the confluence score threshold driven by `signal_score_min`.
    - Keep `roc_63` available as a scored trend-strength component.
+   - Keep breakout and pullback families separate; do not silently merge them into a single hybrid score model.
 7. Do not hardcode current strategy thresholds; read `production_strategy.json`.
    - When multiple slots are active, use `production_strategies.json` and preserve slot isolation.
 
@@ -78,6 +79,10 @@ The authoritative product spec is [Spec.md](/home/zdrillings/code/SwingQuant/Spe
 - Supports ATR-based exits; keep sweep and runtime exit semantics aligned.
 - Applies configurable execution costs from `config.yaml` to every simulated trade.
 - Stores sector scope inside `params_json` so `sq evaluate --sector` can filter without changing the SQLite schema.
+- Supports multiple model families through `sweep_modes`.
+  - Pullback family uses shallow/deep pullback-with-trend logic.
+  - Breakout v1 family uses explicit base / breakout / volume-confirmation features.
+  - Breakout modes must replace the base sweep grid instead of inheriting pullback axes.
 - The current trade simulation still contains row iteration inside ticker partitions.
   - This is acceptable at current scope.
   - Future optimization should target vectorized exits or a more specialized engine path.
@@ -107,6 +112,17 @@ The authoritative product spec is [Spec.md](/home/zdrillings/code/SwingQuant/Spe
 - Applies regime filter before signal evaluation.
 - Uses the promoted strategy’s thresholds, relative-strength hard filter, and confluence score.
 - Current score components include `rsi_14`, `vol_alpha`, `sma_200_dist`, and `roc_63`.
+- Breakout v1 strategies additionally rely on:
+  - `sma_50_dist`
+  - `ma_alignment_50_200`
+  - `ma_slope_50_20`
+  - `ma_slope_200_20`
+  - `breakout_above_20d_high`
+  - `distance_above_20d_high`
+  - `base_range_pct_20`
+  - `base_atr_contraction_20`
+  - `base_volume_dryup_ratio_20`
+  - `breakout_volume_ratio_50`
 - Position sizing must respect the promoted stop model, including ATR-based stops.
 - Sends one evening brief containing the top five signals.
 
@@ -189,6 +205,11 @@ python3 -m compileall src
 - `sq sweep` is compliant but not fully vectorized internally.
 - The launcher supports `.vendor/` automatically for local dependency installs.
 - Runtime validations in development may use synthetic data and mocked email delivery.
+- Breakout v1 currently uses only price/volume structure.
+  - No fundamental overlay yet.
+  - No 52-week-high feature yet.
+  - No breadth or institutional-ownership overlay yet.
+  - No breakout freshness feature yet, so some live matches may still be detected later in the move than desired.
 
 ## Safe Change Patterns
 

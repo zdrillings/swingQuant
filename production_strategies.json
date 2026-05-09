@@ -1,16 +1,37 @@
 {
   "strategies": {
     "materials": {
-      "strategy_id": 244786,
+      "strategy_id": 911472,
       "sector": "Materials",
-      "promoted_at": "2026-05-05T21:34:07",
+      "promoted_at": "2026-05-09T07:27:40",
       "indicators": {
-        "relative_strength_index_vs_spy_min": 80.0,
-        "roc_63_min": 0.1,
-        "rsi_14_max": 60.0,
+        "relative_strength_index_vs_spy_min": 75.0,
+        "roc_63_min": 0.15,
+        "rsi_14_max": 55.0,
         "signal_score_min": 30.0,
-        "sma_200_dist_min": 0.19,
-        "vol_alpha_min": 1.8
+        "sma_200_dist_min": 0.22,
+        "vol_alpha_min": 1.0
+      },
+      "exit_rules": {
+        "trailing_stop_pct": null,
+        "profit_target_pct": null,
+        "time_limit_days": 20,
+        "trailing_stop_atr_mult": 2.5,
+        "profit_target_atr_mult": 4.5
+      }
+    },
+    "energy": {
+      "strategy_id": 986970,
+      "sector": "Energy",
+      "promoted_at": "2026-05-09T08:28:38",
+      "indicators": {
+        "oil_corr_60_min": 0.4,
+        "relative_strength_index_vs_spy_min": 75.0,
+        "roc_63_min": 0.05,
+        "rsi_14_max": 55.0,
+        "signal_score_min": 32.0,
+        "sma_200_dist_min": 0.14,
+        "vol_alpha_min": 1.2
       },
       "exit_rules": {
         "trailing_stop_pct": null,
@@ -20,24 +41,24 @@
         "profit_target_atr_mult": 3.5
       }
     },
-    "technology": {
-      "strategy_id": 172365,
-      "sector": "Information Technology",
-      "promoted_at": "2026-05-05T21:34:15",
+    "industrials": {
+      "strategy_id": 987978,
+      "sector": "Industrials",
+      "promoted_at": "2026-05-09T08:49:58",
       "indicators": {
-        "relative_strength_index_vs_spy_min": 80.0,
-        "roc_63_min": 0.1,
-        "rsi_14_max": 40.0,
-        "signal_score_min": 30.0,
-        "sma_200_dist_min": 0.2,
-        "vol_alpha_min": 1.8
+        "relative_strength_index_vs_spy_min": 90.0,
+        "roc_63_min": 0.2,
+        "rsi_14_max": 55.0,
+        "signal_score_min": 32.0,
+        "sma_200_dist_min": 0.14,
+        "vol_alpha_min": 0.8
       },
       "exit_rules": {
         "trailing_stop_pct": null,
         "profit_target_pct": null,
         "time_limit_days": 20,
         "trailing_stop_atr_mult": 3.0,
-        "profit_target_atr_mult": 4.0
+        "profit_target_atr_mult": 4.5
       }
     }
   }

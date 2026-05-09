@@ -1,18 +1,27 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 import math
 
+import pandas as pd
+
 from src.settings import get_settings
+from src.sync.market_data import MarketDataClient, chunked, extract_ticker_history
 from src.utils.db_manager import DatabaseManager
-from src.utils.signal_engine import latest_atr_14_with_intraday
+from src.utils.signal_engine import latest_atr_14_with_intraday, overlay_price_history
 from src.utils.sizing import compute_position_size
 from src.utils.strategy import ProductionStrategy, load_active_strategies, load_active_strategy_for_slot
 
 
 class TradeService:
-    def __init__(self, db_manager: DatabaseManager) -> None:
+    def __init__(
+        self,
+        db_manager: DatabaseManager,
+        *,
+        market_data_client: MarketDataClient | None = None,
+    ) -> None:
         self.db_manager = db_manager
+        self.market_data_client = market_data_client or MarketDataClient()
 
     def buy(self, *, ticker: str, price: float, shares: int | None = None, strategy_slot: str | None = None) -> str:
         self.db_manager.initialize()
@@ -51,9 +60,14 @@ class TradeService:
         return f"Realized P&L for {ticker}: {pnl:.2f}"
 
     def _load_entry_atr(self, *, ticker: str, current_price: float) -> float:
-        history = self.db_manager.load_price_history([ticker])
+        base_history = self.db_manager.load_price_history([ticker])
+        recent_history = self._download_recent_daily_history([ticker])
+        history = overlay_price_history(base_history, recent_history)
         if history.empty:
-            raise ValueError(f"Historical prices are unavailable for {ticker}. Run `sq sync` first.")
+            raise ValueError(
+                f"Historical prices are unavailable for {ticker}. "
+                "Unable to load enough daily history for ATR-based sizing."
+            )
         entry_atr = latest_atr_14_with_intraday(
             price_history=history,
             ticker=ticker,
@@ -64,11 +78,43 @@ class TradeService:
             raise ValueError(f"ATR_14 is unavailable for {ticker}. More history is required before opening an ATR-based trade.")
         return entry_atr
 
+    def _download_recent_daily_history(self, tickers: list[str]) -> pd.DataFrame:
+        frames = []
+        unresolved = list(tickers)
+        for lookback_days in (450, 180, 90, 45):
+            if not unresolved:
+                break
+            start_date = date.today() - timedelta(days=lookback_days)
+            newly_resolved: list[str] = []
+            for ticker_batch in chunked(unresolved, 50):
+                raw_batch = self.market_data_client.download_daily_history(ticker_batch, start_date)
+                for ticker in ticker_batch:
+                    history = extract_ticker_history(raw_batch, ticker)
+                    if history.empty:
+                        continue
+                    frames.append(history)
+                    newly_resolved.append(ticker)
+            unresolved = [ticker for ticker in unresolved if ticker not in newly_resolved]
+        return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
     def _resolve_strategy_for_buy(self, *, ticker: str, strategy_slot: str | None) -> ProductionStrategy:
         if strategy_slot:
             return load_active_strategy_for_slot(strategy_slot)
 
         strategies = load_active_strategies()
+        latest_trade = self.db_manager.get_latest_trade(ticker)
+        if latest_trade is not None:
+            stored_slot = latest_trade["strategy_slot"]
+            if stored_slot:
+                strategy = strategies.get(str(stored_slot))
+                if strategy is not None:
+                    return strategy
+            stored_strategy_id = latest_trade["strategy_id"]
+            if stored_strategy_id is not None:
+                for strategy in strategies.values():
+                    if strategy.strategy_id == int(stored_strategy_id):
+                        return strategy
+
         universe_rows = self.db_manager.list_universe_rows(active_only=False)
         sector_map = {row["ticker"]: row["sector"] for row in universe_rows}
         ticker_sector = sector_map.get(ticker)

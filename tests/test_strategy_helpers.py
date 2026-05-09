@@ -7,7 +7,7 @@ import pandas as pd
 from src.utils.feature_engineering import apply_feature_definitions
 from src.utils.regime import regime_etf_for_sector
 from src.utils.signal_engine import filter_signal_candidates
-from src.utils.strategy import ExitRules, profit_target_price, stop_risk_per_share, trailing_stop_price
+from src.utils.strategy import ExitRules, indicator_score, profit_target_price, stop_risk_per_share, trailing_stop_price
 
 
 class StrategyHelperTests(unittest.TestCase):
@@ -55,6 +55,104 @@ class StrategyHelperTests(unittest.TestCase):
 
         self.assertEqual(candidates["ticker"].tolist(), ["AAA"])
         self.assertGreaterEqual(float(candidates.iloc[0]["signal_score"]), 30.0)
+
+    def test_filter_signal_candidates_supports_breakout_model_family(self) -> None:
+        frame = pd.DataFrame(
+            [
+                {
+                    "ticker": "AAA",
+                    "sma_50_dist": 0.04,
+                    "ma_alignment_50_200": 0.08,
+                    "ma_slope_50_20": 0.06,
+                    "ma_slope_200_20": 0.02,
+                    "breakout_above_20d_high": 1.0,
+                    "distance_above_20d_high": 0.01,
+                    "relative_strength_index_vs_spy": 88.0,
+                    "roc_63": 0.16,
+                    "rsi_14": 58.0,
+                    "sma_200_dist": 0.22,
+                    "base_range_pct_20": 0.11,
+                    "base_atr_contraction_20": 0.92,
+                    "base_volume_dryup_ratio_20": 0.88,
+                    "breakout_volume_ratio_50": 1.9,
+                },
+                {
+                    "ticker": "BBB",
+                    "sma_50_dist": 0.04,
+                    "ma_alignment_50_200": 0.08,
+                    "ma_slope_50_20": 0.06,
+                    "ma_slope_200_20": 0.02,
+                    "breakout_above_20d_high": 0.0,
+                    "distance_above_20d_high": -0.01,
+                    "relative_strength_index_vs_spy": 88.0,
+                    "roc_63": 0.16,
+                    "rsi_14": 58.0,
+                    "sma_200_dist": 0.22,
+                    "base_range_pct_20": 0.11,
+                    "base_atr_contraction_20": 0.92,
+                    "base_volume_dryup_ratio_20": 0.88,
+                    "breakout_volume_ratio_50": 1.9,
+                },
+                {
+                    "ticker": "CCC",
+                    "sma_50_dist": 0.04,
+                    "ma_alignment_50_200": 0.08,
+                    "ma_slope_50_20": 0.06,
+                    "ma_slope_200_20": 0.02,
+                    "breakout_above_20d_high": 1.0,
+                    "distance_above_20d_high": 0.01,
+                    "relative_strength_index_vs_spy": 72.0,
+                    "roc_63": 0.16,
+                    "rsi_14": 58.0,
+                    "sma_200_dist": 0.22,
+                    "base_range_pct_20": 0.11,
+                    "base_atr_contraction_20": 0.92,
+                    "base_volume_dryup_ratio_20": 0.88,
+                    "breakout_volume_ratio_50": 1.9,
+                },
+                {
+                    "ticker": "DDD",
+                    "sma_50_dist": 0.04,
+                    "ma_alignment_50_200": 0.08,
+                    "ma_slope_50_20": 0.06,
+                    "ma_slope_200_20": 0.02,
+                    "breakout_above_20d_high": 1.0,
+                    "distance_above_20d_high": 0.05,
+                    "relative_strength_index_vs_spy": 88.0,
+                    "roc_63": 0.16,
+                    "rsi_14": 58.0,
+                    "sma_200_dist": 0.22,
+                    "base_range_pct_20": 0.11,
+                    "base_atr_contraction_20": 0.92,
+                    "base_volume_dryup_ratio_20": 0.88,
+                    "breakout_volume_ratio_50": 1.9,
+                },
+            ]
+        )
+
+        candidates = filter_signal_candidates(
+            frame,
+            {
+                "sma_50_dist_min": 0.0,
+                "ma_alignment_50_200_min": 0.0,
+                "ma_slope_50_20_min": 0.0,
+                "ma_slope_200_20_min": 0.0,
+                "breakout_above_20d_high_min": 1.0,
+                "distance_above_20d_high_max": 0.02,
+                "relative_strength_index_vs_spy_min": 80.0,
+                "roc_63_min": 0.10,
+                "rsi_14_min": 50.0,
+                "sma_200_dist_max": 0.30,
+                "base_range_pct_20_max": 0.15,
+                "base_atr_contraction_20_max": 1.0,
+                "base_volume_dryup_ratio_20_max": 1.0,
+                "breakout_volume_ratio_50_min": 1.5,
+                "signal_score_min": 34.0,
+            },
+        )
+
+        self.assertEqual(candidates["ticker"].tolist(), ["AAA"])
+        self.assertGreaterEqual(float(candidates.iloc[0]["signal_score"]), 34.0)
 
     def test_relative_strength_feature_ranks_tickers_vs_spy(self) -> None:
         dates = pd.bdate_range("2026-01-01", periods=70)
@@ -152,6 +250,82 @@ class StrategyHelperTests(unittest.TestCase):
 
         self.assertAlmostEqual(float(latest["roc_63"]), expected)
 
+    def test_breakout_feature_family_detects_base_and_breakout(self) -> None:
+        dates = pd.bdate_range("2026-01-01", periods=80)
+        rows = []
+        for index, day in enumerate(dates):
+            if index < 60:
+                close = 100.0 + index * 0.5
+                volume = 1_000_000
+            elif index < 79:
+                close = 130.0 + ((index % 4) - 1.5)
+                volume = 700_000
+            else:
+                close = 136.0
+                volume = 2_200_000
+            rows.append(
+                {
+                    "ticker": "AAA",
+                    "date": day.date(),
+                    "open": close - 0.5,
+                    "high": close + 1.0,
+                    "low": close - 1.0,
+                    "close": close,
+                    "volume": volume,
+                    "adj_close": close,
+                }
+            )
+        frame, _ = apply_feature_definitions(
+            pd.DataFrame(rows),
+            {
+                "features": {
+                    "trend": [
+                        {"name": "sma_50_dist", "type": "pct_diff", "params": {"window": 50}},
+                        {
+                            "name": "ma_alignment_50_200",
+                            "type": "moving_average_gap",
+                            "params": {"short_window": 50, "long_window": 70},
+                        },
+                        {
+                            "name": "ma_slope_50_20",
+                            "type": "moving_average_slope",
+                            "params": {"window": 50, "slope_window": 10},
+                        },
+                    ],
+                    "volume": [
+                        {"name": "breakout_volume_ratio_50", "type": "ratio_to_avg", "params": {"window": 50}},
+                        {
+                            "name": "base_volume_dryup_ratio_20",
+                            "type": "volume_dryup_ratio",
+                            "params": {"recent_window": 10, "prior_window": 10},
+                        },
+                    ],
+                    "price_structure": [
+                        {"name": "base_range_pct_20", "type": "base_range_pct", "params": {"window": 20}},
+                        {
+                            "name": "base_atr_contraction_20",
+                            "type": "base_atr_contraction",
+                            "params": {"atr_window": 14, "recent_window": 10, "prior_window": 10},
+                        },
+                        {"name": "breakout_above_20d_high", "type": "breakout_above_high", "params": {"window": 20}},
+                        {
+                            "name": "distance_above_20d_high",
+                            "type": "distance_above_high",
+                            "params": {"window": 20},
+                        },
+                    ],
+                }
+            },
+        )
+        ordered = frame.sort_values("date").reset_index(drop=True)
+        pre_breakout = ordered.iloc[-2]
+        latest = ordered.iloc[-1]
+
+        self.assertEqual(float(latest["breakout_above_20d_high"]), 1.0)
+        self.assertGreater(float(latest["distance_above_20d_high"]), 0.0)
+        self.assertGreater(float(latest["breakout_volume_ratio_50"]), 1.5)
+        self.assertLess(float(pre_breakout["base_volume_dryup_ratio_20"]), 1.0)
+
     def test_non_tech_sectors_default_to_spy_regime(self) -> None:
         self.assertEqual(regime_etf_for_sector("Industrials"), "SPY")
         self.assertEqual(regime_etf_for_sector("Information Technology"), "QQQ")
@@ -208,3 +382,10 @@ class StrategyHelperTests(unittest.TestCase):
             stop_risk_per_share(price=100.0, entry_atr=4.0, exit_rules=exit_rules),
             10.0,
         )
+
+    def test_vol_alpha_score_is_downweighted_relative_to_other_components(self) -> None:
+        vol_score = indicator_score("vol_alpha_min", actual_value=1.8, threshold_value=1.4)
+        rsi_score = indicator_score("rsi_14_max", actual_value=35.0, threshold_value=35.0)
+
+        self.assertAlmostEqual(vol_score, 4.0)
+        self.assertAlmostEqual(rsi_score, 10.0)

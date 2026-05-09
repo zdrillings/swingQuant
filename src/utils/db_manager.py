@@ -43,6 +43,8 @@ CREATE TABLE IF NOT EXISTS Backtest_Results (
     norm_score REAL,
     profit_factor REAL,
     expectancy REAL,
+    alpha_vs_spy REAL,
+    alpha_vs_sector REAL,
     mdd REAL,
     win_rate REAL,
     trade_count INTEGER
@@ -83,6 +85,8 @@ class BacktestResultRow:
     mdd: float
     win_rate: float
     trade_count: int | None = None
+    alpha_vs_spy: float | None = None
+    alpha_vs_sector: float | None = None
 
 
 @dataclass(frozen=True)
@@ -130,6 +134,10 @@ class DatabaseManager:
             connection.execute("ALTER TABLE Backtest_Results ADD COLUMN run_id INTEGER")
         if "trade_count" not in backtest_columns:
             connection.execute("ALTER TABLE Backtest_Results ADD COLUMN trade_count INTEGER")
+        if "alpha_vs_spy" not in backtest_columns:
+            connection.execute("ALTER TABLE Backtest_Results ADD COLUMN alpha_vs_spy REAL")
+        if "alpha_vs_sector" not in backtest_columns:
+            connection.execute("ALTER TABLE Backtest_Results ADD COLUMN alpha_vs_sector REAL")
         active_trade_columns = {
             row["name"]
             for row in connection.execute("PRAGMA table_info(Active_Trades)").fetchall()
@@ -372,6 +380,8 @@ class DatabaseManager:
                 result.norm_score,
                 result.profit_factor,
                 result.expectancy,
+                result.alpha_vs_spy,
+                result.alpha_vs_sector,
                 result.mdd,
                 result.win_rate,
                 result.trade_count,
@@ -385,9 +395,9 @@ class DatabaseManager:
             connection.executemany(
                 """
                 INSERT INTO Backtest_Results (
-                    run_id, strategy_id, params_json, norm_score, profit_factor, expectancy, mdd, win_rate, trade_count
+                    run_id, strategy_id, params_json, norm_score, profit_factor, expectancy, alpha_vs_spy, alpha_vs_sector, mdd, win_rate, trade_count
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 rows,
             )
@@ -395,7 +405,7 @@ class DatabaseManager:
 
     def list_backtest_results(self, run_id: int | None = None) -> list[sqlite3.Row]:
         query = """
-            SELECT id, run_id, strategy_id, params_json, norm_score, profit_factor, expectancy, mdd, win_rate, trade_count
+            SELECT id, run_id, strategy_id, params_json, norm_score, profit_factor, expectancy, alpha_vs_spy, alpha_vs_sector, mdd, win_rate, trade_count
             FROM Backtest_Results
         """
         params: tuple = ()
@@ -422,7 +432,7 @@ class DatabaseManager:
         with self.sqlite_connection() as connection:
             return connection.execute(
                 """
-                SELECT id, run_id, strategy_id, params_json, norm_score, profit_factor, expectancy, mdd, win_rate, trade_count
+                SELECT id, run_id, strategy_id, params_json, norm_score, profit_factor, expectancy, alpha_vs_spy, alpha_vs_sector, mdd, win_rate, trade_count
                 FROM Backtest_Results
                 WHERE id = ?
                 """,
@@ -472,6 +482,19 @@ class DatabaseManager:
                 SELECT rowid, ticker, entry_date, entry_price, entry_atr, strategy_id, strategy_slot, shares, max_price_seen, status, exit_date, exit_price
                 FROM Active_Trades
                 WHERE ticker = ? AND status = 'open'
+                ORDER BY entry_date DESC, rowid DESC
+                LIMIT 1
+                """,
+                (ticker,),
+            ).fetchone()
+
+    def get_latest_trade(self, ticker: str) -> sqlite3.Row | None:
+        with self.sqlite_connection() as connection:
+            return connection.execute(
+                """
+                SELECT rowid, ticker, entry_date, entry_price, entry_atr, strategy_id, strategy_slot, shares, max_price_seen, status, exit_date, exit_price
+                FROM Active_Trades
+                WHERE ticker = ?
                 ORDER BY entry_date DESC, rowid DESC
                 LIMIT 1
                 """,

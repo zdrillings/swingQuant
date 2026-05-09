@@ -533,6 +533,87 @@ class MonitorServiceTests(unittest.TestCase):
         self.assertIn("trailing stop", email_calls[0].html_body)
         self.assertIn("<td>sell</td>", email_calls[0].html_body)
 
+    def test_monitor_uses_watch_breakout_for_breakout_only_rows(self) -> None:
+        class FakeDB:
+            def initialize(self): return None
+            def list_open_trades(self):
+                return [
+                    {
+                        "ticker": "AAA",
+                        "entry_date": "2026-05-05",
+                        "entry_price": 100.0,
+                        "entry_atr": None,
+                        "shares": 10,
+                        "max_price_seen": 100.0,
+                        "status": "open",
+                    }
+                ]
+            def load_price_history(self, tickers):
+                rows = []
+                for ticker in tickers:
+                    for day in pd.bdate_range("2025-06-01", periods=220):
+                        rows.append(
+                            {
+                                "ticker": ticker,
+                                "date": day.date(),
+                                "open": 100.0,
+                                "high": 101.0,
+                                "low": 99.0,
+                                "close": 100.0,
+                                "volume": 1000,
+                                "adj_close": 100.0,
+                            }
+                        )
+                return pd.DataFrame(rows)
+            def list_universe_rows(self, active_only=False):
+                return [{"ticker": "AAA", "sector": "Industrials", "md_volume_30d": 30_000_000}]
+            def get_latest_open_trade(self, ticker):
+                return {"rowid": 1, "entry_price": 100.0, "shares": 10}
+            def update_trade_max_price(self, trade_rowid, max_price_seen): return None
+            def close_trade(self, trade_rowid, exit_date, exit_price): return None
+            def load_recent_highs(self, ticker, limit=2):
+                return pd.DataFrame([{"date": "2026-05-05", "high": 105.0}, {"date": "2026-05-04", "high": 100.0}])
+
+        email_calls: list[EmailCall] = []
+        service = MonitorService(FakeDB(), email_sender=lambda subject, html_body, settings: email_calls.append(EmailCall(subject, html_body)))
+        settings = RuntimeSettings(
+            paths=AppPaths(
+                root_dir=Path("."),
+                data_dir=Path("data"),
+                duckdb_path=Path("data/market_data.duckdb"),
+                sqlite_path=Path("data/ledger.sqlite"),
+                reports_dir=Path("reports"),
+                logs_dir=Path("logs"),
+                config_path=Path("config.yaml"),
+                env_path=Path(".env"),
+                production_strategy_path=Path("production_strategy.json"),
+            ),
+            env={},
+            total_capital=50_000.0,
+            risk_per_trade=0.02,
+        )
+        strategy = ProductionStrategy(
+            strategy_id=1,
+            promoted_at="2026-05-05T17:00:00",
+            indicators={"rsi_14_max": 35.0},
+            exit_rules=ExitRules(0.05, 0.12, 20),
+        )
+        analysis_frame = pd.DataFrame(
+            [{"ticker": "SPY", "date": pd.Timestamp("2026-05-05"), "spy_sma_200": 100.0, "qqq_sma_200": None}]
+        )
+
+        with patch.object(service, "_load_intraday_last_prices", return_value={"AAA": 101.0, "SPY": 105.0, "QQQ": 110.0}), \
+             patch("src.monitor.service.get_settings", return_value=settings), \
+             patch("src.monitor.service.load_active_strategies", return_value={"default": strategy}), \
+             patch("src.monitor.service.build_analysis_frame", return_value=(analysis_frame, [])), \
+             patch("src.monitor.service.latest_rsi_2_with_intraday", return_value=20.0):
+            report = service.run()
+
+        self.assertTrue(report.emailed)
+        self.assertEqual(report.triggered_count, 1)
+        self.assertIn("breakout alert", email_calls[0].html_body)
+        self.assertIn("<td>watch breakout</td>", email_calls[0].html_body)
+
     def test_monitor_uses_central_regime_helper(self) -> None:
         class FakeDB:
             def initialize(self): return None
@@ -618,6 +699,725 @@ class SweepServiceTests(unittest.TestCase):
         self.assertEqual(len(grid), 18)
         self.assertEqual(grid[0]["exit_rules"]["trailing_stop_atr_mult"], 2.0)
         self.assertIn("rsi_14_max", grid[0]["indicators"])
+
+    def test_resolve_low_drawdown_technology_sweep_mode(self) -> None:
+        service = SweepService(DatabaseManager(AppPaths(
+            root_dir=Path("."),
+            data_dir=Path("data"),
+            duckdb_path=Path("data/market_data.duckdb"),
+            sqlite_path=Path("data/ledger.sqlite"),
+            reports_dir=Path("reports"),
+            logs_dir=Path("logs"),
+            config_path=Path("config.yaml"),
+            env_path=Path(".env"),
+            production_strategy_path=Path("production_strategy.json"),
+        )))
+        config = {
+            "sweep_grid": {
+                "rsi_14_max": {"min": 25, "max": 60, "step": 5},
+                "vol_alpha_min": {"min": 0.8, "max": 1.8, "step": 0.2},
+            },
+            "sweep_modes": {
+                "low_drawdown_technology": {
+                    "sector_whitelist": ["Information Technology"],
+                    "grid_overrides": {
+                        "rsi_14_max": {"min": 30, "max": 45, "step": 5},
+                        "vol_alpha_min": {"min": 0.8, "max": 1.2, "step": 0.2},
+                    },
+                }
+            },
+        }
+
+        resolved, sectors = service._resolve_sweep_mode(config, "low_drawdown_technology")
+        grid = service._build_parameter_grid(resolved)
+
+        self.assertEqual(sectors, ["Information Technology"])
+        self.assertEqual(len(grid), 12)
+        self.assertEqual(grid[0]["indicators"]["rsi_14_max"], 30.0)
+
+    def test_resolve_promotable_live_technology_sweep_mode(self) -> None:
+        service = SweepService(DatabaseManager(AppPaths(
+            root_dir=Path("."),
+            data_dir=Path("data"),
+            duckdb_path=Path("data/market_data.duckdb"),
+            sqlite_path=Path("data/ledger.sqlite"),
+            reports_dir=Path("reports"),
+            logs_dir=Path("logs"),
+            config_path=Path("config.yaml"),
+            env_path=Path(".env"),
+            production_strategy_path=Path("production_strategy.json"),
+        )))
+        config = {
+            "sweep_grid": {
+                "rsi_14_max": {"min": 25, "max": 60, "step": 5},
+                "vol_alpha_min": {"min": 0.8, "max": 1.8, "step": 0.2},
+                "sma_200_dist_min": {"min": 0.0, "max": 0.2, "step": 0.02},
+                "roc_63_min": {"min": 0.1, "max": 0.15, "step": 0.05},
+                "relative_strength_index_vs_spy_min": {"min": 80, "max": 90, "step": 5},
+                "signal_score_min": {"min": 30, "max": 34, "step": 2},
+                "trailing_stop_atr_mult": {"min": 2.0, "max": 2.5, "step": 0.5},
+                "profit_target_atr_mult": {"min": 2.5, "max": 3.0, "step": 0.5},
+            },
+            "sweep_modes": {
+                "promotable_live_technology": {
+                    "sector_whitelist": ["Information Technology"],
+                    "grid_overrides": {
+                        "rsi_14_max": {"min": 40, "max": 45, "step": 5},
+                        "vol_alpha_min": {"min": 0.8, "max": 1.0, "step": 0.2},
+                        "sma_200_dist_min": {"min": 0.18, "max": 0.20, "step": 0.02},
+                        "relative_strength_index_vs_spy_min": {"min": 85, "max": 90, "step": 5},
+                        "signal_score_min": {"min": 32, "max": 34, "step": 2},
+                        "trailing_stop_atr_mult": {"min": 2.5, "max": 2.5, "step": 0.5},
+                        "profit_target_atr_mult": {"min": 3.0, "max": 3.0, "step": 0.5},
+                    },
+                }
+            },
+        }
+
+        resolved, sectors = service._resolve_sweep_mode(config, "promotable_live_technology")
+        grid = service._build_parameter_grid(resolved)
+
+        self.assertEqual(sectors, ["Information Technology"])
+        self.assertEqual(len(grid), 64)
+        self.assertEqual(grid[0]["indicators"]["rsi_14_max"], 40.0)
+        self.assertEqual(grid[0]["exit_rules"]["trailing_stop_atr_mult"], 2.5)
+        self.assertEqual(grid[0]["exit_rules"]["profit_target_atr_mult"], 3.0)
+
+    def test_resolve_promotable_live_technology_v2_sweep_mode(self) -> None:
+        service = SweepService(DatabaseManager(AppPaths(
+            root_dir=Path("."),
+            data_dir=Path("data"),
+            duckdb_path=Path("data/market_data.duckdb"),
+            sqlite_path=Path("data/ledger.sqlite"),
+            reports_dir=Path("reports"),
+            logs_dir=Path("logs"),
+            config_path=Path("config.yaml"),
+            env_path=Path(".env"),
+            production_strategy_path=Path("production_strategy.json"),
+        )))
+        config = {
+            "sweep_grid": {
+                "rsi_14_max": {"min": 25, "max": 60, "step": 5},
+                "vol_alpha_min": {"min": 0.8, "max": 1.8, "step": 0.2},
+                "sma_200_dist_min": {"min": 0.0, "max": 0.2, "step": 0.02},
+                "roc_63_min": {"min": 0.1, "max": 0.15, "step": 0.05},
+                "relative_strength_index_vs_spy_min": {"min": 80, "max": 90, "step": 5},
+                "signal_score_min": {"min": 30, "max": 34, "step": 2},
+                "trailing_stop_atr_mult": {"min": 2.0, "max": 2.5, "step": 0.5},
+                "profit_target_atr_mult": {"min": 2.5, "max": 3.0, "step": 0.5},
+            },
+            "sweep_modes": {
+                "promotable_live_technology_v2": {
+                    "sector_whitelist": ["Information Technology"],
+                    "grid_overrides": {
+                        "rsi_14_max": {"min": 40, "max": 40, "step": 5},
+                        "vol_alpha_min": {"min": 0.8, "max": 0.8, "step": 0.2},
+                        "sma_200_dist_min": {"min": 0.18, "max": 0.20, "step": 0.02},
+                        "roc_63_min": {"min": 0.10, "max": 0.10, "step": 0.05},
+                        "relative_strength_index_vs_spy_min": {"min": 85, "max": 85, "step": 5},
+                        "signal_score_min": {"min": 30, "max": 32, "step": 2},
+                        "trailing_stop_atr_mult": {"min": 2.5, "max": 2.5, "step": 0.5},
+                        "profit_target_atr_mult": {"min": 3.0, "max": 3.0, "step": 0.5},
+                    },
+                }
+            },
+        }
+
+        resolved, sectors = service._resolve_sweep_mode(config, "promotable_live_technology_v2")
+        grid = service._build_parameter_grid(resolved)
+
+        self.assertEqual(sectors, ["Information Technology"])
+        self.assertEqual(len(grid), 4)
+        self.assertEqual(grid[0]["indicators"]["rsi_14_max"], 40.0)
+        self.assertEqual(grid[0]["indicators"]["vol_alpha_min"], 0.8)
+        self.assertEqual(grid[0]["exit_rules"]["trailing_stop_atr_mult"], 2.5)
+        self.assertEqual(grid[0]["exit_rules"]["profit_target_atr_mult"], 3.0)
+
+    def test_resolve_promotable_live_technology_v3_sweep_mode(self) -> None:
+        service = SweepService(DatabaseManager(AppPaths(
+            root_dir=Path("."),
+            data_dir=Path("data"),
+            duckdb_path=Path("data/market_data.duckdb"),
+            sqlite_path=Path("data/ledger.sqlite"),
+            reports_dir=Path("reports"),
+            logs_dir=Path("logs"),
+            config_path=Path("config.yaml"),
+            env_path=Path(".env"),
+            production_strategy_path=Path("production_strategy.json"),
+        )))
+        config = {
+            "sweep_grid": {
+                "rsi_14_max": {"min": 25, "max": 60, "step": 5},
+                "vol_alpha_min": {"min": 0.8, "max": 1.8, "step": 0.2},
+                "sma_200_dist_min": {"min": 0.0, "max": 0.2, "step": 0.02},
+                "roc_63_min": {"min": 0.1, "max": 0.15, "step": 0.05},
+                "relative_strength_index_vs_spy_min": {"min": 80, "max": 90, "step": 5},
+                "signal_score_min": {"min": 30, "max": 34, "step": 2},
+                "trailing_stop_atr_mult": {"min": 2.0, "max": 2.5, "step": 0.5},
+                "profit_target_atr_mult": {"min": 2.5, "max": 3.0, "step": 0.5},
+            },
+            "sweep_modes": {
+                "promotable_live_technology_v3": {
+                    "sector_whitelist": ["Information Technology"],
+                    "grid_overrides": {
+                        "rsi_14_max": {"min": 40, "max": 40, "step": 5},
+                        "vol_alpha_min": {"min": 0.8, "max": 0.8, "step": 0.2},
+                        "sma_200_dist_min": {"min": 0.18, "max": 0.20, "step": 0.02},
+                        "roc_63_min": {"min": 0.10, "max": 0.10, "step": 0.05},
+                        "relative_strength_index_vs_spy_min": {"min": 85, "max": 85, "step": 5},
+                        "signal_score_min": {"min": 31, "max": 31, "step": 2},
+                        "trailing_stop_atr_mult": {"min": 2.5, "max": 2.5, "step": 0.5},
+                        "profit_target_atr_mult": {"min": 3.0, "max": 3.0, "step": 0.5},
+                    },
+                }
+            },
+        }
+
+        resolved, sectors = service._resolve_sweep_mode(config, "promotable_live_technology_v3")
+        grid = service._build_parameter_grid(resolved)
+
+        self.assertEqual(sectors, ["Information Technology"])
+        self.assertEqual(len(grid), 2)
+        self.assertEqual(grid[0]["indicators"]["signal_score_min"], 31.0)
+        self.assertEqual(grid[0]["exit_rules"]["trailing_stop_atr_mult"], 2.5)
+        self.assertEqual(grid[0]["exit_rules"]["profit_target_atr_mult"], 3.0)
+
+    def test_resolve_promotable_live_technology_v4_sweep_mode(self) -> None:
+        service = SweepService(DatabaseManager(AppPaths(
+            root_dir=Path("."),
+            data_dir=Path("data"),
+            duckdb_path=Path("data/market_data.duckdb"),
+            sqlite_path=Path("data/ledger.sqlite"),
+            reports_dir=Path("reports"),
+            logs_dir=Path("logs"),
+            config_path=Path("config.yaml"),
+            env_path=Path(".env"),
+            production_strategy_path=Path("production_strategy.json"),
+        )))
+        config = {
+            "sweep_grid": {
+                "rsi_14_max": {"min": 25, "max": 60, "step": 5},
+                "vol_alpha_min": {"min": 0.8, "max": 1.8, "step": 0.2},
+                "sma_200_dist_min": {"min": 0.0, "max": 0.2, "step": 0.02},
+                "roc_63_min": {"min": 0.1, "max": 0.15, "step": 0.05},
+                "relative_strength_index_vs_spy_min": {"min": 80, "max": 90, "step": 5},
+                "signal_score_min": {"min": 30, "max": 34, "step": 2},
+                "trailing_stop_atr_mult": {"min": 2.0, "max": 2.5, "step": 0.5},
+                "profit_target_atr_mult": {"min": 2.5, "max": 3.0, "step": 0.5},
+            },
+            "sweep_modes": {
+                "promotable_live_technology_v4": {
+                    "sector_whitelist": ["Information Technology"],
+                    "grid_overrides": {
+                        "rsi_14_max": {"min": 40, "max": 40, "step": 5},
+                        "vol_alpha_min": {"min": 0.8, "max": 0.8, "step": 0.2},
+                        "sma_200_dist_min": {"min": 0.18, "max": 0.20, "step": 0.02},
+                        "roc_63_min": {"min": 0.10, "max": 0.10, "step": 0.05},
+                        "relative_strength_index_vs_spy_min": {"min": 85, "max": 90, "step": 5},
+                        "signal_score_min": {"min": 30, "max": 30, "step": 2},
+                        "trailing_stop_atr_mult": {"min": 2.5, "max": 2.5, "step": 0.5},
+                        "profit_target_atr_mult": {"min": 2.5, "max": 3.0, "step": 0.5},
+                    },
+                }
+            },
+        }
+
+        resolved, sectors = service._resolve_sweep_mode(config, "promotable_live_technology_v4")
+        grid = service._build_parameter_grid(resolved)
+
+        self.assertEqual(sectors, ["Information Technology"])
+        self.assertEqual(len(grid), 8)
+        self.assertEqual(grid[0]["indicators"]["signal_score_min"], 30.0)
+        self.assertIn(grid[0]["indicators"]["relative_strength_index_vs_spy_min"], {85.0, 90.0})
+        self.assertIn(grid[0]["exit_rules"]["profit_target_atr_mult"], {2.5, 3.0})
+
+    def test_resolve_promotable_live_technology_v5_sweep_mode(self) -> None:
+        service = SweepService(DatabaseManager(AppPaths(
+            root_dir=Path("."),
+            data_dir=Path("data"),
+            duckdb_path=Path("data/market_data.duckdb"),
+            sqlite_path=Path("data/ledger.sqlite"),
+            reports_dir=Path("reports"),
+            logs_dir=Path("logs"),
+            config_path=Path("config.yaml"),
+            env_path=Path(".env"),
+            production_strategy_path=Path("production_strategy.json"),
+        )))
+        config = {
+            "sweep_grid": {
+                "rsi_14_max": {"min": 25, "max": 60, "step": 5},
+                "vol_alpha_min": {"min": 0.8, "max": 1.8, "step": 0.2},
+                "sma_200_dist_min": {"min": 0.0, "max": 0.2, "step": 0.02},
+                "roc_63_min": {"min": 0.1, "max": 0.15, "step": 0.05},
+                "relative_strength_index_vs_spy_min": {"min": 80, "max": 90, "step": 5},
+                "signal_score_min": {"min": 30, "max": 34, "step": 2},
+                "trailing_stop_atr_mult": {"min": 2.0, "max": 2.5, "step": 0.25},
+                "profit_target_atr_mult": {"min": 2.5, "max": 3.0, "step": 0.5},
+            },
+            "sweep_modes": {
+                "promotable_live_technology_v5": {
+                    "sector_whitelist": ["Information Technology"],
+                    "grid_overrides": {
+                        "rsi_14_max": {"min": 40, "max": 40, "step": 5},
+                        "vol_alpha_min": {"min": 0.8, "max": 0.8, "step": 0.2},
+                        "sma_200_dist_min": {"min": 0.18, "max": 0.20, "step": 0.02},
+                        "roc_63_min": {"min": 0.10, "max": 0.10, "step": 0.05},
+                        "relative_strength_index_vs_spy_min": {"min": 85, "max": 90, "step": 5},
+                        "signal_score_min": {"min": 30, "max": 30, "step": 2},
+                        "trailing_stop_atr_mult": {"min": 2.0, "max": 2.25, "step": 0.25},
+                        "profit_target_atr_mult": {"min": 2.5, "max": 3.0, "step": 0.5},
+                    },
+                }
+            },
+        }
+
+        resolved, sectors = service._resolve_sweep_mode(config, "promotable_live_technology_v5")
+        grid = service._build_parameter_grid(resolved)
+
+        self.assertEqual(sectors, ["Information Technology"])
+        self.assertEqual(len(grid), 16)
+        self.assertEqual(grid[0]["indicators"]["signal_score_min"], 30.0)
+        self.assertIn(grid[0]["indicators"]["relative_strength_index_vs_spy_min"], {85.0, 90.0})
+        self.assertIn(grid[0]["exit_rules"]["trailing_stop_atr_mult"], {2.0, 2.25})
+        self.assertIn(grid[0]["exit_rules"]["profit_target_atr_mult"], {2.5, 3.0})
+
+    def test_resolve_high_performance_energy_sweep_mode(self) -> None:
+        service = SweepService(DatabaseManager(AppPaths(
+            root_dir=Path("."),
+            data_dir=Path("data"),
+            duckdb_path=Path("data/market_data.duckdb"),
+            sqlite_path=Path("data/ledger.sqlite"),
+            reports_dir=Path("reports"),
+            logs_dir=Path("logs"),
+            config_path=Path("config.yaml"),
+            env_path=Path(".env"),
+            production_strategy_path=Path("production_strategy.json"),
+        )))
+        config = {
+            "sweep_grid": {
+                "rsi_14_max": {"min": 25, "max": 60, "step": 5},
+                "vol_alpha_min": {"min": 0.8, "max": 1.8, "step": 0.2},
+                "sma_200_dist_min": {"min": 0.0, "max": 0.2, "step": 0.02},
+                "roc_63_min": {"min": 0.1, "max": 0.15, "step": 0.05},
+                "relative_strength_index_vs_spy_min": {"min": 80, "max": 90, "step": 5},
+                "signal_score_min": {"min": 30, "max": 34, "step": 2},
+                "trailing_stop_atr_mult": {"min": 2.0, "max": 2.5, "step": 0.25},
+                "profit_target_atr_mult": {"min": 2.5, "max": 3.0, "step": 0.5},
+            },
+            "sweep_modes": {
+                "high_performance_energy": {
+                    "sector_whitelist": ["Energy"],
+                    "grid_overrides": {
+                        "rsi_14_max": {"min": 40, "max": 45, "step": 5},
+                        "vol_alpha_min": {"min": 0.8, "max": 1.0, "step": 0.2},
+                        "sma_200_dist_min": {"min": 0.10, "max": 0.14, "step": 0.04},
+                        "roc_63_min": {"min": 0.05, "max": 0.10, "step": 0.05},
+                        "relative_strength_index_vs_spy_min": {"min": 75, "max": 80, "step": 5},
+                        "oil_corr_60_min": {"min": 0.10, "max": 0.40, "step": 0.30},
+                        "signal_score_min": {"min": 30, "max": 32, "step": 2},
+                        "trailing_stop_atr_mult": {"min": 2.5, "max": 3.0, "step": 0.5},
+                        "profit_target_atr_mult": {"min": 3.0, "max": 3.5, "step": 0.5},
+                    },
+                }
+            },
+        }
+
+        resolved, sectors = service._resolve_sweep_mode(config, "high_performance_energy")
+        grid = service._build_parameter_grid(resolved)
+
+        self.assertEqual(sectors, ["Energy"])
+        self.assertEqual(len(grid), 512)
+        self.assertIn("oil_corr_60_min", grid[0]["indicators"])
+        self.assertIn(grid[0]["indicators"]["signal_score_min"], {30.0, 32.0})
+
+    def test_resolve_high_performance_energy_refined_sweep_mode(self) -> None:
+        service = SweepService(DatabaseManager(AppPaths(
+            root_dir=Path("."),
+            data_dir=Path("data"),
+            duckdb_path=Path("data/market_data.duckdb"),
+            sqlite_path=Path("data/ledger.sqlite"),
+            reports_dir=Path("reports"),
+            logs_dir=Path("logs"),
+            config_path=Path("config.yaml"),
+            env_path=Path(".env"),
+            production_strategy_path=Path("production_strategy.json"),
+        )))
+        config = {
+            "sweep_grid": {
+                "rsi_14_max": {"min": 25, "max": 60, "step": 5},
+                "vol_alpha_min": {"min": 0.8, "max": 1.8, "step": 0.2},
+                "sma_200_dist_min": {"min": 0.0, "max": 0.2, "step": 0.02},
+                "roc_63_min": {"min": 0.1, "max": 0.15, "step": 0.05},
+                "relative_strength_index_vs_spy_min": {"min": 80, "max": 90, "step": 5},
+                "signal_score_min": {"min": 30, "max": 34, "step": 2},
+                "trailing_stop_atr_mult": {"min": 2.0, "max": 2.5, "step": 0.25},
+                "profit_target_atr_mult": {"min": 2.5, "max": 3.0, "step": 0.5},
+            },
+            "sweep_modes": {
+                "high_performance_energy_refined": {
+                    "sector_whitelist": ["Energy"],
+                    "grid_overrides": {
+                        "rsi_14_max": {"min": 55, "max": 60, "step": 5},
+                        "vol_alpha_min": {"min": 1.0, "max": 1.2, "step": 0.2},
+                        "sma_200_dist_min": {"min": 0.10, "max": 0.14, "step": 0.04},
+                        "roc_63_min": {"min": 0.05, "max": 0.15, "step": 0.05},
+                        "relative_strength_index_vs_spy_min": {"min": 75, "max": 80, "step": 5},
+                        "oil_corr_60_min": {"min": 0.10, "max": 0.40, "step": 0.30},
+                        "signal_score_min": {"min": 30, "max": 32, "step": 2},
+                        "trailing_stop_atr_mult": {"min": 3.0, "max": 3.5, "step": 0.5},
+                        "profit_target_atr_mult": {"min": 3.5, "max": 4.0, "step": 0.5},
+                    },
+                }
+            },
+        }
+
+        resolved, sectors = service._resolve_sweep_mode(config, "high_performance_energy_refined")
+        grid = service._build_parameter_grid(resolved)
+
+        self.assertEqual(sectors, ["Energy"])
+        self.assertEqual(len(grid), 768)
+        self.assertIn("oil_corr_60_min", grid[0]["indicators"])
+        self.assertIn(grid[0]["indicators"]["rsi_14_max"], {55.0, 60.0})
+        self.assertIn(grid[0]["exit_rules"]["trailing_stop_atr_mult"], {3.0, 3.5})
+        self.assertIn(grid[0]["exit_rules"]["profit_target_atr_mult"], {3.5, 4.0})
+
+    def test_resolve_high_performance_materials_refined_sweep_mode(self) -> None:
+        service = SweepService(DatabaseManager(AppPaths(
+            root_dir=Path("."),
+            data_dir=Path("data"),
+            duckdb_path=Path("data/market_data.duckdb"),
+            sqlite_path=Path("data/ledger.sqlite"),
+            reports_dir=Path("reports"),
+            logs_dir=Path("logs"),
+            config_path=Path("config.yaml"),
+            env_path=Path(".env"),
+            production_strategy_path=Path("production_strategy.json"),
+        )))
+        config = {
+            "sweep_grid": {
+                "rsi_14_max": {"min": 25, "max": 60, "step": 5},
+                "vol_alpha_min": {"min": 0.8, "max": 1.8, "step": 0.2},
+                "sma_200_dist_min": {"min": 0.0, "max": 0.2, "step": 0.02},
+                "roc_63_min": {"min": 0.1, "max": 0.15, "step": 0.05},
+                "relative_strength_index_vs_spy_min": {"min": 80, "max": 90, "step": 5},
+                "signal_score_min": {"min": 30, "max": 34, "step": 2},
+                "trailing_stop_atr_mult": {"min": 2.0, "max": 2.5, "step": 0.25},
+                "profit_target_atr_mult": {"min": 2.5, "max": 3.0, "step": 0.5},
+            },
+            "sweep_modes": {
+                "high_performance_materials_refined": {
+                    "sector_whitelist": ["Materials"],
+                    "grid_overrides": {
+                        "rsi_14_max": {"min": 55, "max": 60, "step": 5},
+                        "vol_alpha_min": {"min": 1.0, "max": 1.2, "step": 0.2},
+                        "sma_200_dist_min": {"min": 0.14, "max": 0.22, "step": 0.04},
+                        "roc_63_min": {"min": 0.05, "max": 0.15, "step": 0.05},
+                        "relative_strength_index_vs_spy_min": {"min": 75, "max": 80, "step": 5},
+                        "signal_score_min": {"min": 30, "max": 32, "step": 2},
+                        "trailing_stop_atr_mult": {"min": 2.5, "max": 2.5, "step": 0.5},
+                        "profit_target_atr_mult": {"min": 4.0, "max": 4.5, "step": 0.5},
+                    },
+                }
+            },
+        }
+
+        resolved, sectors = service._resolve_sweep_mode(config, "high_performance_materials_refined")
+        grid = service._build_parameter_grid(resolved)
+
+        self.assertEqual(sectors, ["Materials"])
+        self.assertEqual(len(grid), 288)
+        self.assertIn(grid[0]["indicators"]["rsi_14_max"], {55.0, 60.0})
+        self.assertIn(grid[0]["indicators"]["sma_200_dist_min"], {0.14, 0.18, 0.22})
+        self.assertEqual(grid[0]["exit_rules"]["trailing_stop_atr_mult"], 2.5)
+        self.assertIn(grid[0]["exit_rules"]["profit_target_atr_mult"], {4.0, 4.5})
+
+    def test_resolve_high_performance_industrials_refined_sweep_mode(self) -> None:
+        service = SweepService(DatabaseManager(AppPaths(
+            root_dir=Path("."),
+            data_dir=Path("data"),
+            duckdb_path=Path("data/market_data.duckdb"),
+            sqlite_path=Path("data/ledger.sqlite"),
+            reports_dir=Path("reports"),
+            logs_dir=Path("logs"),
+            config_path=Path("config.yaml"),
+            env_path=Path(".env"),
+            production_strategy_path=Path("production_strategy.json"),
+        )))
+        config = {
+            "sweep_grid": {
+                "rsi_14_max": {"min": 25, "max": 60, "step": 5},
+                "vol_alpha_min": {"min": 0.8, "max": 1.8, "step": 0.2},
+                "sma_200_dist_min": {"min": 0.0, "max": 0.2, "step": 0.02},
+                "roc_63_min": {"min": 0.1, "max": 0.15, "step": 0.05},
+                "relative_strength_index_vs_spy_min": {"min": 80, "max": 90, "step": 5},
+                "signal_score_min": {"min": 30, "max": 34, "step": 2},
+                "trailing_stop_atr_mult": {"min": 2.0, "max": 2.5, "step": 0.25},
+                "profit_target_atr_mult": {"min": 2.5, "max": 3.0, "step": 0.5},
+            },
+            "sweep_modes": {
+                "high_performance_industrials_refined": {
+                    "sector_whitelist": ["Industrials"],
+                    "grid_overrides": {
+                        "rsi_14_max": {"min": 50, "max": 60, "step": 5},
+                        "vol_alpha_min": {"min": 0.8, "max": 1.2, "step": 0.2},
+                        "sma_200_dist_min": {"min": 0.10, "max": 0.14, "step": 0.04},
+                        "roc_63_min": {"min": 0.15, "max": 0.20, "step": 0.05},
+                        "relative_strength_index_vs_spy_min": {"min": 85, "max": 90, "step": 5},
+                        "signal_score_min": {"min": 32, "max": 34, "step": 2},
+                        "trailing_stop_atr_mult": {"min": 3.0, "max": 3.5, "step": 0.5},
+                        "profit_target_atr_mult": {"min": 4.0, "max": 4.5, "step": 0.5},
+                    },
+                }
+            },
+        }
+
+        resolved, sectors = service._resolve_sweep_mode(config, "high_performance_industrials_refined")
+        grid = service._build_parameter_grid(resolved)
+
+        self.assertEqual(sectors, ["Industrials"])
+        self.assertEqual(len(grid), 576)
+        self.assertIn(grid[0]["indicators"]["rsi_14_max"], {50.0, 55.0, 60.0})
+        self.assertIn(grid[0]["indicators"]["relative_strength_index_vs_spy_min"], {85.0, 90.0})
+        self.assertIn(grid[0]["exit_rules"]["trailing_stop_atr_mult"], {3.0, 3.5})
+        self.assertIn(grid[0]["exit_rules"]["profit_target_atr_mult"], {4.0, 4.5})
+
+    def test_resolve_high_performance_real_economy_sweep_mode(self) -> None:
+        service = SweepService(DatabaseManager(AppPaths(
+            root_dir=Path("."),
+            data_dir=Path("data"),
+            duckdb_path=Path("data/market_data.duckdb"),
+            sqlite_path=Path("data/ledger.sqlite"),
+            reports_dir=Path("reports"),
+            logs_dir=Path("logs"),
+            config_path=Path("config.yaml"),
+            env_path=Path(".env"),
+            production_strategy_path=Path("production_strategy.json"),
+        )))
+        config = {
+            "sweep_grid": {
+                "rsi_14_max": {"min": 25, "max": 60, "step": 5},
+            },
+            "sweep_modes": {
+                "high_performance_real_economy": {
+                    "sector_whitelist": ["Energy", "Materials", "Industrials", "Financials"],
+                    "grid_overrides": {
+                        "rsi_14_max": {"min": 40, "max": 45, "step": 5},
+                        "signal_score_min": {"min": 28, "max": 30, "step": 2},
+                    },
+                }
+            },
+        }
+
+        resolved, sectors = service._resolve_sweep_mode(config, "high_performance_real_economy")
+        grid = service._build_parameter_grid(resolved)
+
+        self.assertEqual(sectors, ["Energy", "Materials", "Industrials", "Financials"])
+        self.assertEqual(len(grid), 4)
+        self.assertIn(grid[0]["indicators"]["rsi_14_max"], {40.0, 45.0})
+        self.assertIn(grid[0]["indicators"]["signal_score_min"], {28.0, 30.0})
+
+    def test_resolve_breakout_v1_growth_leaders_sweep_mode(self) -> None:
+        service = SweepService(DatabaseManager(AppPaths(
+            root_dir=Path("."),
+            data_dir=Path("data"),
+            duckdb_path=Path("data/market_data.duckdb"),
+            sqlite_path=Path("data/ledger.sqlite"),
+            reports_dir=Path("reports"),
+            logs_dir=Path("logs"),
+            config_path=Path("config.yaml"),
+            env_path=Path(".env"),
+            production_strategy_path=Path("production_strategy.json"),
+        )))
+        config = {
+            "sweep_grid": {
+                "trailing_stop_atr_mult": {"min": 2.0, "max": 2.5, "step": 0.5},
+            },
+            "sweep_modes": {
+                "breakout_v1_growth_leaders": {
+                    "sector_whitelist": ["Information Technology", "Industrials", "Financials"],
+                    "replace_base_grid": True,
+                    "grid_overrides": {
+                        "sma_50_dist_min": {"min": 0.0, "max": 0.0, "step": 0.1},
+                        "ma_alignment_50_200_min": {"min": 0.0, "max": 0.0, "step": 0.1},
+                        "ma_slope_50_20_min": {"min": 0.0, "max": 0.0, "step": 0.1},
+                        "ma_slope_200_20_min": {"min": 0.0, "max": 0.0, "step": 0.1},
+                        "breakout_above_20d_high_min": {"min": 1.0, "max": 1.0, "step": 1.0},
+                        "distance_above_20d_high_max": {"min": 0.01, "max": 0.02, "step": 0.01},
+                        "relative_strength_index_vs_spy_min": {"min": 85, "max": 90, "step": 5},
+                        "roc_63_min": {"min": 0.10, "max": 0.10, "step": 0.05},
+                        "rsi_14_min": {"min": 50, "max": 50, "step": 5},
+                        "sma_200_dist_max": {"min": 0.30, "max": 0.30, "step": 0.05},
+                        "base_range_pct_20_max": {"min": 0.08, "max": 0.12, "step": 0.04},
+                        "base_atr_contraction_20_max": {"min": 0.95, "max": 0.95, "step": 0.10},
+                        "base_volume_dryup_ratio_20_max": {"min": 0.95, "max": 0.95, "step": 0.10},
+                        "breakout_volume_ratio_50_min": {"min": 2.0, "max": 2.5, "step": 0.5},
+                        "signal_score_min": {"min": 34, "max": 36, "step": 2},
+                        "trailing_stop_atr_mult": {"min": 1.5, "max": 2.0, "step": 0.5},
+                        "profit_target_atr_mult": {"min": 3.0, "max": 3.0, "step": 1.0},
+                    },
+                }
+            },
+        }
+
+        resolved, sectors = service._resolve_sweep_mode(config, "breakout_v1_growth_leaders")
+        grid = service._build_parameter_grid(resolved)
+
+        self.assertEqual(sectors, ["Information Technology", "Industrials", "Financials"])
+        self.assertEqual(len(grid), 64)
+        self.assertIn("breakout_above_20d_high_min", grid[0]["indicators"])
+        self.assertIn("distance_above_20d_high_max", grid[0]["indicators"])
+        self.assertIn("breakout_volume_ratio_50_min", grid[0]["indicators"])
+        self.assertIsNone(grid[0]["exit_rules"]["trailing_stop_pct"])
+        self.assertIsNone(grid[0]["exit_rules"]["profit_target_pct"])
+        self.assertNotIn("rsi_14_max", grid[0]["indicators"])
+
+    def test_resolve_breakout_v1_information_technology_v2_sweep_mode(self) -> None:
+        service = SweepService(DatabaseManager(AppPaths(
+            root_dir=Path("."),
+            data_dir=Path("data"),
+            duckdb_path=Path("data/market_data.duckdb"),
+            sqlite_path=Path("data/ledger.sqlite"),
+            reports_dir=Path("reports"),
+            logs_dir=Path("logs"),
+            config_path=Path("config.yaml"),
+            env_path=Path(".env"),
+            production_strategy_path=Path("production_strategy.json"),
+        )))
+        config = {
+            "sweep_grid": {},
+            "sweep_modes": {
+                "breakout_v1_information_technology_v2": {
+                    "sector_whitelist": ["Information Technology"],
+                    "replace_base_grid": True,
+                    "grid_overrides": {
+                        "sma_50_dist_min": {"min": 0.0, "max": 0.0, "step": 0.1},
+                        "ma_alignment_50_200_min": {"min": 0.0, "max": 0.0, "step": 0.1},
+                        "ma_slope_50_20_min": {"min": 0.0, "max": 0.0, "step": 0.1},
+                        "ma_slope_200_20_min": {"min": 0.0, "max": 0.0, "step": 0.1},
+                        "breakout_above_20d_high_min": {"min": 1.0, "max": 1.0, "step": 1.0},
+                        "distance_above_20d_high_max": {"min": 0.01, "max": 0.02, "step": 0.01},
+                        "relative_strength_index_vs_spy_min": {"min": 85, "max": 90, "step": 5},
+                        "roc_63_min": {"min": 0.10, "max": 0.10, "step": 0.05},
+                        "rsi_14_min": {"min": 50, "max": 50, "step": 5},
+                        "sma_200_dist_max": {"min": 0.30, "max": 0.30, "step": 0.05},
+                        "base_range_pct_20_max": {"min": 0.08, "max": 0.12, "step": 0.04},
+                        "base_atr_contraction_20_max": {"min": 0.95, "max": 0.95, "step": 0.10},
+                        "base_volume_dryup_ratio_20_max": {"min": 0.95, "max": 0.95, "step": 0.10},
+                        "breakout_volume_ratio_50_min": {"min": 2.0, "max": 2.5, "step": 0.5},
+                        "signal_score_min": {"min": 32, "max": 34, "step": 2},
+                        "trailing_stop_atr_mult": {"min": 1.5, "max": 2.0, "step": 0.5},
+                        "profit_target_atr_mult": {"min": 3.0, "max": 3.0, "step": 1.0},
+                    },
+                }
+            },
+        }
+
+        resolved, sectors = service._resolve_sweep_mode(config, "breakout_v1_information_technology_v2")
+        grid = service._build_parameter_grid(resolved)
+
+        self.assertEqual(sectors, ["Information Technology"])
+        self.assertEqual(len(grid), 64)
+        self.assertEqual({entry["indicators"]["signal_score_min"] for entry in grid}, {32.0, 34.0})
+        self.assertEqual({entry["indicators"]["distance_above_20d_high_max"] for entry in grid}, {0.01, 0.02})
+
+    def test_resolve_breakout_v1_information_technology_v3_sweep_mode(self) -> None:
+        service = SweepService(DatabaseManager(AppPaths(
+            root_dir=Path("."),
+            data_dir=Path("data"),
+            duckdb_path=Path("data/market_data.duckdb"),
+            sqlite_path=Path("data/ledger.sqlite"),
+            reports_dir=Path("reports"),
+            logs_dir=Path("logs"),
+            config_path=Path("config.yaml"),
+            env_path=Path(".env"),
+            production_strategy_path=Path("production_strategy.json"),
+        )))
+        config = {
+            "sweep_grid": {},
+            "sweep_modes": {
+                "breakout_v1_information_technology_v3": {
+                    "sector_whitelist": ["Information Technology"],
+                    "replace_base_grid": True,
+                    "grid_overrides": {
+                        "sma_50_dist_min": {"min": 0.0, "max": 0.0, "step": 0.1},
+                        "ma_alignment_50_200_min": {"min": 0.0, "max": 0.0, "step": 0.1},
+                        "ma_slope_50_20_min": {"min": 0.0, "max": 0.0, "step": 0.1},
+                        "ma_slope_200_20_min": {"min": 0.0, "max": 0.0, "step": 0.1},
+                        "breakout_above_20d_high_min": {"min": 1.0, "max": 1.0, "step": 1.0},
+                        "distance_above_20d_high_max": {"min": 0.02, "max": 0.03, "step": 0.01},
+                        "relative_strength_index_vs_spy_min": {"min": 85, "max": 90, "step": 5},
+                        "roc_63_min": {"min": 0.10, "max": 0.10, "step": 0.05},
+                        "rsi_14_min": {"min": 50, "max": 50, "step": 5},
+                        "sma_200_dist_max": {"min": 0.30, "max": 0.30, "step": 0.05},
+                        "base_range_pct_20_max": {"min": 0.08, "max": 0.12, "step": 0.04},
+                        "base_atr_contraction_20_max": {"min": 0.95, "max": 0.95, "step": 0.10},
+                        "base_volume_dryup_ratio_20_max": {"min": 0.95, "max": 0.95, "step": 0.10},
+                        "breakout_volume_ratio_50_min": {"min": 2.0, "max": 2.5, "step": 0.5},
+                        "signal_score_min": {"min": 32, "max": 34, "step": 2},
+                        "trailing_stop_atr_mult": {"min": 1.5, "max": 2.0, "step": 0.5},
+                        "profit_target_atr_mult": {"min": 3.0, "max": 3.0, "step": 1.0},
+                    },
+                }
+            },
+        }
+
+        resolved, sectors = service._resolve_sweep_mode(config, "breakout_v1_information_technology_v3")
+        grid = service._build_parameter_grid(resolved)
+
+        self.assertEqual(sectors, ["Information Technology"])
+        self.assertEqual(len(grid), 64)
+        self.assertEqual({entry["indicators"]["signal_score_min"] for entry in grid}, {32.0, 34.0})
+        self.assertEqual({entry["indicators"]["distance_above_20d_high_max"] for entry in grid}, {0.02, 0.03})
+
+    def test_resolve_breakout_v1_information_technology_v4_sweep_mode(self) -> None:
+        service = SweepService(DatabaseManager(AppPaths(
+            root_dir=Path("."),
+            data_dir=Path("data"),
+            duckdb_path=Path("data/market_data.duckdb"),
+            sqlite_path=Path("data/ledger.sqlite"),
+            reports_dir=Path("reports"),
+            logs_dir=Path("logs"),
+            config_path=Path("config.yaml"),
+            env_path=Path(".env"),
+            production_strategy_path=Path("production_strategy.json"),
+        )))
+        config = {
+            "sweep_grid": {},
+            "sweep_modes": {
+                "breakout_v1_information_technology_v4": {
+                    "sector_whitelist": ["Information Technology"],
+                    "replace_base_grid": True,
+                    "grid_overrides": {
+                        "sma_50_dist_min": {"min": 0.0, "max": 0.0, "step": 0.1},
+                        "ma_alignment_50_200_min": {"min": 0.0, "max": 0.0, "step": 0.1},
+                        "ma_slope_50_20_min": {"min": 0.0, "max": 0.0, "step": 0.1},
+                        "ma_slope_200_20_min": {"min": 0.0, "max": 0.0, "step": 0.1},
+                        "breakout_above_20d_high_min": {"min": 1.0, "max": 1.0, "step": 1.0},
+                        "distance_above_20d_high_max": {"min": 0.01, "max": 0.02, "step": 0.01},
+                        "relative_strength_index_vs_spy_min": {"min": 80, "max": 85, "step": 5},
+                        "roc_63_min": {"min": 0.10, "max": 0.10, "step": 0.05},
+                        "rsi_14_min": {"min": 50, "max": 50, "step": 5},
+                        "sma_200_dist_max": {"min": 0.30, "max": 0.30, "step": 0.05},
+                        "base_range_pct_20_max": {"min": 0.08, "max": 0.12, "step": 0.04},
+                        "base_atr_contraction_20_max": {"min": 0.95, "max": 0.95, "step": 0.10},
+                        "base_volume_dryup_ratio_20_max": {"min": 0.95, "max": 0.95, "step": 0.10},
+                        "breakout_volume_ratio_50_min": {"min": 2.0, "max": 2.5, "step": 0.5},
+                        "signal_score_min": {"min": 32, "max": 34, "step": 2},
+                        "trailing_stop_atr_mult": {"min": 1.5, "max": 2.0, "step": 0.5},
+                        "profit_target_atr_mult": {"min": 3.0, "max": 3.0, "step": 1.0},
+                    },
+                }
+            },
+        }
+
+        resolved, sectors = service._resolve_sweep_mode(config, "breakout_v1_information_technology_v4")
+        grid = service._build_parameter_grid(resolved)
+
+        self.assertEqual(sectors, ["Information Technology"])
+        self.assertEqual(len(grid), 64)
+        self.assertEqual({entry["indicators"]["signal_score_min"] for entry in grid}, {32.0, 34.0})
+        self.assertEqual({entry["indicators"]["distance_above_20d_high_max"] for entry in grid}, {0.01, 0.02})
+        self.assertEqual({entry["indicators"]["relative_strength_index_vs_spy_min"] for entry in grid}, {80.0, 85.0})
 
     def test_sweep_signal_expression_uses_rs_hard_filter_and_score_threshold(self) -> None:
         try:

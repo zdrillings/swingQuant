@@ -127,7 +127,12 @@ class MonitorService:
                 exit_flags[name]
                 for name in ("trailing_stop", "profit_target", "rsi_2", "time_limit", "regime_flip")
             )
-            recommended_action = "sell" if should_exit else "hold"
+            if should_exit:
+                recommended_action = "sell"
+            elif exit_flags["breakout_alert"]:
+                recommended_action = "watch breakout"
+            else:
+                recommended_action = "hold"
 
             if exit_flags["breakout_alert"] or should_exit:
                 triggered_rows.append(

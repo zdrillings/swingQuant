@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import json
 
-from src.settings import load_feature_config
 from src.utils.db_manager import DatabaseManager
+from src.utils.promotion_policy import promotion_policy_violations
 from src.utils.strategy import ExitRules, build_production_strategy_payload, clear_strategy_caches
 
 
@@ -76,27 +76,12 @@ class PromoteService:
         )
 
     def _validate_promotion_quality(self, row) -> None:
-        policy = load_feature_config().get("promotion_policy", {})
-        if not policy:
-            return
-        violations: list[str] = []
-        profit_factor = float(row["profit_factor"])
-        expectancy = float(row["expectancy"])
-        mdd = float(row["mdd"])
-        trade_count = int(row["trade_count"]) if row["trade_count"] is not None else None
-        min_profit_factor = policy.get("min_profit_factor")
-        min_expectancy = policy.get("min_expectancy")
-        min_trade_count = policy.get("min_trade_count")
-        max_mdd = policy.get("max_mdd")
-        if min_profit_factor is not None and profit_factor < float(min_profit_factor):
-            violations.append(f"profit_factor {profit_factor:.6f} < {float(min_profit_factor):.6f}")
-        if min_expectancy is not None and expectancy < float(min_expectancy):
-            violations.append(f"expectancy {expectancy:.6f} < {float(min_expectancy):.6f}")
-        if min_trade_count is not None:
-            if trade_count is None or trade_count < int(min_trade_count):
-                violations.append(f"trade_count {trade_count if trade_count is not None else 'unknown'} < {int(min_trade_count)}")
-        if max_mdd is not None and mdd > float(max_mdd):
-            violations.append(f"mdd {mdd:.6f} > {float(max_mdd):.6f}")
+        violations = promotion_policy_violations(
+            profit_factor=float(row["profit_factor"]),
+            expectancy=float(row["expectancy"]),
+            mdd=float(row["mdd"]),
+            trade_count=int(row["trade_count"]) if row["trade_count"] is not None else None,
+        )
         if violations:
             joined = "; ".join(violations)
             raise ValueError(f"Backtest result {row['id']} does not satisfy promotion policy: {joined}")

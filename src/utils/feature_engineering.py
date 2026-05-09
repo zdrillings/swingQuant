@@ -38,6 +38,48 @@ def add_pct_diff_feature(frame: pd.DataFrame, *, feature_name: str, window: int)
     frame[feature_name] = (frame["close"] - rolling_average) / rolling_average
 
 
+def add_sma_feature(frame: pd.DataFrame, *, feature_name: str, window: int) -> None:
+    frame[feature_name] = (
+        frame.groupby("ticker", group_keys=False)["close"]
+        .transform(lambda series: series.rolling(window=window, min_periods=window).mean())
+    )
+
+
+def add_moving_average_gap_feature(
+    frame: pd.DataFrame,
+    *,
+    feature_name: str,
+    short_window: int,
+    long_window: int,
+) -> None:
+    short_sma = (
+        frame.groupby("ticker", group_keys=False)["close"]
+        .transform(lambda series: series.rolling(window=short_window, min_periods=short_window).mean())
+    )
+    long_sma = (
+        frame.groupby("ticker", group_keys=False)["close"]
+        .transform(lambda series: series.rolling(window=long_window, min_periods=long_window).mean())
+    )
+    frame[feature_name] = (short_sma - long_sma) / long_sma
+
+
+def add_moving_average_slope_feature(
+    frame: pd.DataFrame,
+    *,
+    feature_name: str,
+    window: int,
+    slope_window: int,
+) -> None:
+    frame[feature_name] = (
+        frame.groupby("ticker", group_keys=False)["close"]
+        .transform(
+            lambda series: series.rolling(window=window, min_periods=window)
+            .mean()
+            .pct_change(periods=slope_window)
+        )
+    )
+
+
 def add_rsi_feature(frame: pd.DataFrame, *, feature_name: str, window: int) -> None:
     frame[feature_name] = frame.groupby("ticker", group_keys=False)["close"].transform(
         lambda series: compute_rsi(series, window)
@@ -67,6 +109,86 @@ def add_atr_feature(frame: pd.DataFrame, *, feature_name: str, window: int) -> N
             group["close"],
             window,
         ).to_numpy()
+
+
+def add_atr_pct_feature(frame: pd.DataFrame, *, feature_name: str, window: int) -> None:
+    frame[feature_name] = pd.NA
+    for _, group in frame.groupby("ticker", sort=False):
+        atr_values = compute_atr(
+            group["high"],
+            group["low"],
+            group["close"],
+            window,
+        )
+        frame.loc[group.index, feature_name] = (atr_values / group["close"]).to_numpy()
+
+
+def add_base_range_pct_feature(frame: pd.DataFrame, *, feature_name: str, window: int) -> None:
+    rolling_high = (
+        frame.groupby("ticker", group_keys=False)["high"]
+        .transform(lambda series: series.rolling(window=window, min_periods=window).max())
+    )
+    rolling_low = (
+        frame.groupby("ticker", group_keys=False)["low"]
+        .transform(lambda series: series.rolling(window=window, min_periods=window).min())
+    )
+    frame[feature_name] = (rolling_high - rolling_low) / rolling_low
+
+
+def add_base_atr_contraction_feature(
+    frame: pd.DataFrame,
+    *,
+    feature_name: str,
+    atr_window: int,
+    recent_window: int,
+    prior_window: int,
+) -> None:
+    frame[feature_name] = pd.NA
+    for _, group in frame.groupby("ticker", sort=False):
+        atr_values = compute_atr(
+            group["high"],
+            group["low"],
+            group["close"],
+            atr_window,
+        )
+        atr_pct = atr_values / group["close"]
+        recent_avg = atr_pct.rolling(window=recent_window, min_periods=recent_window).mean()
+        prior_avg = atr_pct.shift(recent_window).rolling(window=prior_window, min_periods=prior_window).mean()
+        frame.loc[group.index, feature_name] = (recent_avg / prior_avg).to_numpy()
+
+
+def add_volume_dryup_ratio_feature(
+    frame: pd.DataFrame,
+    *,
+    feature_name: str,
+    recent_window: int,
+    prior_window: int,
+) -> None:
+    frame[feature_name] = (
+        frame.groupby("ticker", group_keys=False)["volume"]
+        .transform(
+            lambda series: (
+                series.rolling(window=recent_window, min_periods=recent_window).mean()
+                / series.shift(recent_window).rolling(window=prior_window, min_periods=prior_window).mean()
+            )
+        )
+    )
+
+
+def add_breakout_above_high_feature(frame: pd.DataFrame, *, feature_name: str, window: int) -> None:
+    prior_high = (
+        frame.groupby("ticker", group_keys=False)["high"]
+        .transform(lambda series: series.shift(1).rolling(window=window, min_periods=window).max())
+    )
+    frame[feature_name] = (frame["close"] > prior_high).astype(float)
+
+
+def add_distance_above_high_feature(frame: pd.DataFrame, *, feature_name: str, window: int) -> None:
+    prior_high = (
+        frame.groupby("ticker", group_keys=False)["high"]
+        .transform(lambda series: series.shift(1).rolling(window=window, min_periods=window).max())
+    )
+    frame[feature_name] = (frame["close"] / prior_high) - 1.0
 
 
 def add_correlation_feature(
@@ -131,6 +253,22 @@ def apply_feature_definitions(price_history: pd.DataFrame, feature_config: dict)
             params = feature.get("params", {})
             if feature_type == "pct_diff":
                 add_pct_diff_feature(frame, feature_name=feature_name, window=int(params["window"]))
+            elif feature_type == "sma":
+                add_sma_feature(frame, feature_name=feature_name, window=int(params["window"]))
+            elif feature_type == "moving_average_gap":
+                add_moving_average_gap_feature(
+                    frame,
+                    feature_name=feature_name,
+                    short_window=int(params["short_window"]),
+                    long_window=int(params["long_window"]),
+                )
+            elif feature_type == "moving_average_slope":
+                add_moving_average_slope_feature(
+                    frame,
+                    feature_name=feature_name,
+                    window=int(params["window"]),
+                    slope_window=int(params["slope_window"]),
+                )
             elif feature_type == "rsi":
                 add_rsi_feature(frame, feature_name=feature_name, window=int(params["window"]))
             elif feature_type == "ratio_to_avg":
@@ -139,6 +277,29 @@ def apply_feature_definitions(price_history: pd.DataFrame, feature_config: dict)
                 add_roc_feature(frame, feature_name=feature_name, window=int(params["window"]))
             elif feature_type == "atr":
                 add_atr_feature(frame, feature_name=feature_name, window=int(params["window"]))
+            elif feature_type == "atr_pct":
+                add_atr_pct_feature(frame, feature_name=feature_name, window=int(params["window"]))
+            elif feature_type == "base_range_pct":
+                add_base_range_pct_feature(frame, feature_name=feature_name, window=int(params["window"]))
+            elif feature_type == "base_atr_contraction":
+                add_base_atr_contraction_feature(
+                    frame,
+                    feature_name=feature_name,
+                    atr_window=int(params["atr_window"]),
+                    recent_window=int(params["recent_window"]),
+                    prior_window=int(params["prior_window"]),
+                )
+            elif feature_type == "volume_dryup_ratio":
+                add_volume_dryup_ratio_feature(
+                    frame,
+                    feature_name=feature_name,
+                    recent_window=int(params["recent_window"]),
+                    prior_window=int(params["prior_window"]),
+                )
+            elif feature_type == "breakout_above_high":
+                add_breakout_above_high_feature(frame, feature_name=feature_name, window=int(params["window"]))
+            elif feature_type == "distance_above_high":
+                add_distance_above_high_feature(frame, feature_name=feature_name, window=int(params["window"]))
             elif feature_type == "correlation":
                 add_correlation_feature(
                     frame,

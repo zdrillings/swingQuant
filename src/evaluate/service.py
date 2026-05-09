@@ -11,6 +11,7 @@ import pandas as pd
 from src.sync.service import REFERENCE_TICKERS
 from src.utils.db_manager import DatabaseManager
 from src.utils.logging import get_logger
+from src.utils.promotion_policy import promotion_policy_violations
 from src.utils.signal_engine import build_analysis_frame, filter_signal_candidates, latest_snapshot
 from src.utils.strategy import SIGNAL_SCORE_MIN_KEY, evaluate_signal_gate, split_signal_indicators
 
@@ -51,6 +52,8 @@ class EvaluateService:
                     "sector": row_sector,
                     "profit_factor": float(row["profit_factor"]),
                     "expectancy": float(row["expectancy"]),
+                    "alpha_vs_spy": float(row["alpha_vs_spy"]) if row["alpha_vs_spy"] is not None else np.nan,
+                    "alpha_vs_sector": float(row["alpha_vs_sector"]) if row["alpha_vs_sector"] is not None else np.nan,
                     "mdd": float(row["mdd"]),
                     "win_rate": float(row["win_rate"]),
                     "trade_count": int(row["trade_count"]) if row["trade_count"] is not None else None,
@@ -83,6 +86,7 @@ class EvaluateService:
         deduped = self._dedupe_plateaus(frame)
         candidate_links, gate_diagnostics = self._build_live_candidate_metadata(deduped)
         deduped = self._apply_practical_scoring(deduped, candidate_links)
+        deduped = self._apply_promotion_policy_metadata(deduped)
 
         ranked = deduped.sort_values(
             ["practical_score", "norm_score", "expectancy"],
@@ -116,6 +120,7 @@ class EvaluateService:
             f"- run_id: {selected_run_id}",
             f"- min_trades: {min_trades}",
             "- ranking: practical_score desc, then norm_score desc, then expectancy desc",
+            "- practical_score includes live-match bonus, trade-count bonus, and alpha bonuses vs SPY/sector",
             "",
         ]
         lines.extend(
@@ -154,6 +159,15 @@ class EvaluateService:
         )
         lines.extend(
             self._render_report_section(
+                "Best Promotable Candidate Per Sector",
+                self._best_per_sector(ranked[ranked["promotion_policy_passed"]].copy()),
+                candidate_links,
+                gate_diagnostics,
+                empty_message="No sectors currently satisfy promotion policy.",
+            )
+        )
+        lines.extend(
+            self._render_report_section(
                 "Best Live Candidate Per Sector",
                 self._best_per_sector(ranked[ranked["live_match_count"] > 0].copy()),
                 candidate_links,
@@ -163,8 +177,9 @@ class EvaluateService:
         )
         lines.extend(
             self._render_pair_section(
-                "Best Portfolio Pairs",
-                self._build_portfolio_pairs(ranked),
+                "Best Promotable Portfolio Pairs",
+                self._build_portfolio_pairs(ranked[ranked["promotion_policy_passed"]].copy()),
+                empty_message="No portfolio pairs currently satisfy promotion policy.",
             )
         )
         report_path.write_text("\n".join(lines), encoding="utf-8")
@@ -190,34 +205,43 @@ class EvaluateService:
 
         links: dict[int, dict[str, list[str] | int]] = {}
         diagnostics: dict[int, dict[str, object]] = {}
+        signature_cache: dict[tuple[str, str], tuple[dict[str, list[str] | int], dict[str, object]]] = {}
         for row in ranked_frame.itertuples(index=False):
             params = json.loads(row.params_json)
-            diagnostics[int(row.id)] = self._build_gate_diagnostic(
-                full_snapshot=full_snapshot,
-                regime_snapshot=regime_snapshot,
-                indicators=params["indicators"],
-                sector=row.sector,
-            )
-            candidates = filter_signal_candidates(regime_snapshot, params["indicators"])
-            if row.sector != "ALL":
-                candidates = candidates[candidates["sector"] == row.sector]
-            if "signal_score" not in candidates.columns:
-                candidates["signal_score"] = 0.0
-            candidates = candidates.sort_values(
-                ["signal_score", "md_volume_30d", "ticker"],
-                ascending=[False, False, True],
-            )
-            live_match_count = len(candidates.index)
-            top_candidates = candidates.head(5).copy()
-            tickers = [candidate.ticker for candidate in top_candidates.itertuples(index=False)]
-            links[int(row.id)] = {
-                "count": live_match_count,
-                "tickers": tickers,
-                "links": [
-                    f"https://www.tradingview.com/chart/?symbol={candidate.ticker}"
-                    for candidate in top_candidates.itertuples(index=False)
-                ],
-            }
+            signature = self._metadata_signature(row.sector, params["indicators"])
+            cached = signature_cache.get(signature)
+            if cached is None:
+                row_diagnostic = self._build_gate_diagnostic(
+                    full_snapshot=full_snapshot,
+                    regime_snapshot=regime_snapshot,
+                    indicators=params["indicators"],
+                    sector=row.sector,
+                )
+                candidates = filter_signal_candidates(regime_snapshot, params["indicators"])
+                if row.sector != "ALL":
+                    candidates = candidates[candidates["sector"] == row.sector]
+                if "signal_score" not in candidates.columns:
+                    candidates["signal_score"] = 0.0
+                candidates = candidates.sort_values(
+                    ["signal_score", "md_volume_30d", "ticker"],
+                    ascending=[False, False, True],
+                )
+                live_match_count = len(candidates.index)
+                top_candidates = candidates.head(5).copy()
+                tickers = [candidate.ticker for candidate in top_candidates.itertuples(index=False)]
+                row_links = {
+                    "count": live_match_count,
+                    "tickers": tickers,
+                    "links": [
+                        f"https://www.tradingview.com/chart/?symbol={candidate.ticker}"
+                        for candidate in top_candidates.itertuples(index=False)
+                    ],
+                }
+                cached = (row_links, row_diagnostic)
+                signature_cache[signature] = cached
+            row_links, row_diagnostic = cached
+            links[int(row.id)] = row_links
+            diagnostics[int(row.id)] = row_diagnostic
         return links, diagnostics
 
     def _build_gate_diagnostic(
@@ -288,6 +312,8 @@ class EvaluateService:
         normalized = series.astype(float).copy()
         finite_mask = np.isfinite(normalized)
         finite_values = normalized[finite_mask]
+        if finite_values.empty:
+            return pd.Series([0.0] * len(normalized.index), index=normalized.index)
         if not finite_values.empty and (~finite_mask).any():
             finite_min = float(finite_values.min())
             finite_max = float(finite_values.max())
@@ -328,17 +354,24 @@ class EvaluateService:
             lambda row_id: int(candidate_links.get(int(row_id), {}).get("count", 0))
         )
         scored["trade_count_value"] = scored["trade_count"].fillna(0).astype(int)
+        scored["norm_alpha_vs_spy"] = self._min_max(scored["alpha_vs_spy"])
+        scored["norm_alpha_vs_sector"] = self._min_max(scored["alpha_vs_sector"])
         scored["live_match_bonus"] = scored["live_match_count"].map(
             lambda count: 0.0 if int(count) <= 0 else 0.30 + (min(int(count), 5) - 1) * 0.05
         )
         scored["trade_count_bonus"] = (
             (scored["trade_count_value"].clip(lower=12, upper=30) - 12) / 18
         ) * 0.05
+        scored["alpha_bonus"] = (
+            scored["norm_alpha_vs_spy"] * 0.08
+            + scored["norm_alpha_vs_sector"] * 0.12
+        )
         scored["low_trade_penalty"] = scored["trade_count_value"].map(lambda count: 0.08 if count <= 12 else 0.0)
         scored["infinite_pf_penalty"] = scored["profit_factor"].map(lambda value: 0.08 if math.isinf(value) else 0.0)
         scored["no_live_penalty"] = scored["live_match_count"].map(lambda count: 0.12 if count == 0 else 0.0)
         scored["practical_score"] = (
             scored["norm_score"]
+            + scored["alpha_bonus"]
             + scored["live_match_bonus"]
             + scored["trade_count_bonus"]
             - scored["low_trade_penalty"]
@@ -346,6 +379,9 @@ class EvaluateService:
             - scored["no_live_penalty"]
         )
         return scored
+
+    def _metadata_signature(self, sector: str, indicators: dict[str, float]) -> tuple[str, str]:
+        return sector, json.dumps(indicators, sort_keys=True)
 
     def _dedupe_plateaus(self, frame: pd.DataFrame) -> pd.DataFrame:
         dedupe_frame = frame.copy()
@@ -413,6 +449,19 @@ class EvaluateService:
             weighted_profit_factor = (
                 (float(left["profit_factor"]) * left_trades) + (float(right["profit_factor"]) * right_trades)
             ) / total_trades
+            weighted_alpha_vs_spy = (
+                (float(left["alpha_vs_spy"]) * left_trades) + (float(right["alpha_vs_spy"]) * right_trades)
+            ) / total_trades
+            sector_alpha_values = [
+                (float(left["alpha_vs_sector"]), left_trades),
+                (float(right["alpha_vs_sector"]), right_trades),
+            ]
+            finite_sector_alpha = [(value, weight) for value, weight in sector_alpha_values if np.isfinite(value)]
+            weighted_alpha_vs_sector = (
+                sum(value * weight for value, weight in finite_sector_alpha) / sum(weight for _, weight in finite_sector_alpha)
+                if finite_sector_alpha
+                else np.nan
+            )
             worst_mdd = max(float(left["mdd"]), float(right["mdd"]))
             combined_live = int(left["live_match_count"]) + int(right["live_match_count"])
             pair_score = (
@@ -431,6 +480,8 @@ class EvaluateService:
                     "combined_trade_count": total_trades,
                     "weighted_expectancy": weighted_expectancy,
                     "weighted_profit_factor": weighted_profit_factor,
+                    "weighted_alpha_vs_spy": weighted_alpha_vs_spy,
+                    "weighted_alpha_vs_sector": weighted_alpha_vs_sector,
                     "worst_mdd": worst_mdd,
                     "pair_score": pair_score,
                 }
@@ -441,6 +492,20 @@ class EvaluateService:
             ["pair_score", "combined_live_match_count", "weighted_expectancy"],
             ascending=[False, False, False],
         ).reset_index(drop=True)
+
+    def _apply_promotion_policy_metadata(self, frame: pd.DataFrame) -> pd.DataFrame:
+        enriched = frame.copy()
+        enriched["promotion_policy_violations"] = enriched.apply(
+            lambda row: promotion_policy_violations(
+                profit_factor=float(row["profit_factor"]),
+                expectancy=float(row["expectancy"]),
+                mdd=float(row["mdd"]),
+                trade_count=int(row["trade_count"]) if pd.notna(row["trade_count"]) else None,
+            ),
+            axis=1,
+        )
+        enriched["promotion_policy_passed"] = enriched["promotion_policy_violations"].map(lambda violations: len(violations) == 0)
+        return enriched
 
     def _render_report_section(
         self,
@@ -478,6 +543,12 @@ class EvaluateService:
             lines.append(f"- norm_score: {row.norm_score:.6f}")
             lines.append(f"- expectancy: {row.expectancy:.6f}")
             lines.append(f"- profit_factor: {row.profit_factor:.6f}")
+            lines.append(
+                f"- alpha_vs_spy: {row.alpha_vs_spy:.6f}" if np.isfinite(float(row.alpha_vs_spy)) else "- alpha_vs_spy: unknown"
+            )
+            lines.append(
+                f"- alpha_vs_sector: {row.alpha_vs_sector:.6f}" if np.isfinite(float(row.alpha_vs_sector)) else "- alpha_vs_sector: unknown"
+            )
             lines.append(f"- mdd: {row.mdd:.6f}")
             lines.append(f"- win_rate: {row.win_rate:.6f}")
             lines.append(f"- trade_count: {trade_count if trade_count is not None else 'unknown'}")
@@ -485,6 +556,10 @@ class EvaluateService:
             lines.append(f"- collapsed_result_ids: {', '.join(str(value) for value in row.collapsed_result_ids)}")
             lines.append(f"- live_match_count: {candidate_info['count']}")
             lines.append(f"- live_match_tickers: {', '.join(candidate_info['tickers']) if candidate_info['tickers'] else 'none'}")
+            lines.append(f"- promotion_policy_passed: {'yes' if bool(row.promotion_policy_passed) else 'no'}")
+            lines.append(
+                f"- promotion_policy_violations: {', '.join(row.promotion_policy_violations) if row.promotion_policy_violations else 'none'}"
+            )
             if gate_debug["counts"]:
                 counts_rendered = " -> ".join(
                     f"{label}={count}" for label, count in gate_debug["counts"]
@@ -528,6 +603,12 @@ class EvaluateService:
             lines.append(f"- combined_trade_count: {row.combined_trade_count}")
             lines.append(f"- weighted_expectancy: {row.weighted_expectancy:.6f}")
             lines.append(f"- weighted_profit_factor: {row.weighted_profit_factor:.6f}")
+            lines.append(f"- weighted_alpha_vs_spy: {row.weighted_alpha_vs_spy:.6f}")
+            lines.append(
+                f"- weighted_alpha_vs_sector: {row.weighted_alpha_vs_sector:.6f}"
+                if np.isfinite(float(row.weighted_alpha_vs_sector))
+                else "- weighted_alpha_vs_sector: unknown"
+            )
             lines.append(f"- worst_mdd: {row.worst_mdd:.6f}")
             lines.append("- note: heuristic pair score based on sector-best models; no covariance model is stored yet")
             lines.append("")

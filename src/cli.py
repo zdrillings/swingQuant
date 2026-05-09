@@ -22,7 +22,8 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("init-db", help="Initialize DuckDB and SQLite schemas.")
     subparsers.add_parser("sync", help="Bootstrap the universe and sync OHLCV history.")
     subparsers.add_parser("research", help="Run the research model and print feature importance.")
-    subparsers.add_parser("sweep", help="Run the sweep grid and persist backtest results.")
+    sweep_parser = subparsers.add_parser("sweep", help="Run the sweep grid and persist backtest results.")
+    sweep_parser.add_argument("--mode", type=str, default="default")
 
     evaluate_parser = subparsers.add_parser("evaluate", help="Rank backtest results and write candidates.md.")
     evaluate_parser.add_argument("--top", type=int, default=10)
@@ -82,8 +83,11 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "sweep":
-            report = SweepService(db_manager).run()
-            print(f"Sweep completed: combinations={report.combinations} inserted_results={report.inserted_results}")
+            report = SweepService(db_manager).run(mode=args.mode)
+            print(
+                f"Sweep completed: mode={args.mode} combinations={report.combinations} "
+                f"inserted_results={report.inserted_results}"
+            )
             return 0
 
         if args.command == "evaluate":

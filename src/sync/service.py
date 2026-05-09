@@ -13,7 +13,7 @@ from src.utils.db_manager import DatabaseManager
 from src.utils.logging import get_logger
 
 
-REFERENCE_TICKERS = ("USO", "CPER", "GLD", "SPY", "QQQ")
+REFERENCE_TICKERS = ("USO", "CPER", "GLD", "SPY", "QQQ", "XLB", "XLE", "XLI", "XLK", "XLF", "XLC", "XLV", "XLY", "XLP", "XLRE", "XLU")
 LIQUIDITY_THRESHOLD = 20_000_000
 BATCH_SIZE = 50
 
