@@ -5,7 +5,12 @@ from datetime import date
 import pandas as pd
 
 from src.settings import load_feature_config
-from src.utils.feature_engineering import apply_feature_definitions, compute_atr, compute_rsi
+from src.utils.feature_engineering import (
+    add_sector_breadth_features,
+    apply_feature_definitions,
+    compute_atr,
+    compute_rsi,
+)
 from src.utils.regime import regime_etf_for_sector
 from src.utils.strategy import evaluate_signal_gate
 
@@ -34,9 +39,17 @@ def _compute_regime_frame(frame: pd.DataFrame, ticker: str) -> pd.DataFrame:
     return reference[["date", "sma_200", "regime_green"]]
 
 
-def build_analysis_frame(price_history: pd.DataFrame, universe_rows: list[dict] | list[pd.Series] | list) -> tuple[pd.DataFrame, list[str]]:
+def build_analysis_frame(
+    price_history: pd.DataFrame,
+    universe_rows: list[dict] | list[pd.Series] | list,
+    earnings_calendar: pd.DataFrame | None = None,
+) -> tuple[pd.DataFrame, list[str]]:
     feature_config = load_feature_config()
-    frame, feature_columns = apply_feature_definitions(price_history, feature_config)
+    frame, feature_columns = apply_feature_definitions(
+        price_history,
+        feature_config,
+        earnings_calendar=earnings_calendar,
+    )
 
     sector_map = {
         row["ticker"] if isinstance(row, dict) else row["ticker"]: (
@@ -64,6 +77,7 @@ def build_analysis_frame(price_history: pd.DataFrame, universe_rows: list[dict] 
         lambda row: row["qqq_regime_green"] if row["regime_etf"] == "QQQ" else row["spy_regime_green"],
         axis=1,
     )
+    add_sector_breadth_features(frame)
     return frame, feature_columns
 
 

@@ -41,6 +41,16 @@ class ScanServiceTests(unittest.TestCase):
                     "adj_close": 80.0,
                     "atr_14": 4.0,
                     "md_volume_30d": 30_000_000,
+                    "signal_score": 32.0,
+                    "roc_63": 0.10,
+                    "relative_strength_index_vs_spy": 85.0,
+                    "vol_alpha": 1.2,
+                    "sma_200_dist": 0.10,
+                    "sma_50_dist": 0.05,
+                    "rsi_14": 48.0,
+                    "sector_pct_above_50": 0.8,
+                    "sector_pct_above_200": 0.8,
+                    "sector_median_roc_63": 0.08,
                 }
             ]
         )
@@ -74,7 +84,7 @@ class ScanServiceTests(unittest.TestCase):
              patch("src.scan.service.latest_snapshot", return_value=snapshot), \
              patch("src.scan.service.filter_signal_candidates", return_value=snapshot.copy()), \
              patch("src.scan.service.get_settings", return_value=settings), \
-             patch("src.scan.service.load_feature_config", return_value={"scan_policy": {"max_candidates_total": 6, "max_candidates_per_slot": 3, "max_candidates_per_sector": 2, "pre_cap_candidates_per_slot": 5}}), \
+             patch("src.scan.service.load_feature_config", return_value={"scan_policy": {"max_candidates_total": 6, "max_candidates_per_slot": 3, "max_candidates_per_sector": 2, "pre_cap_candidates_per_slot": 5, "min_opportunity_score": 0.0}}), \
              patch("src.scan.service.load_active_strategies", return_value={"default": strategy}):
             report = service.run()
 
@@ -83,6 +93,10 @@ class ScanServiceTests(unittest.TestCase):
         self.assertEqual(len(email_calls), 1)
         self.assertIn("Slot: default", email_calls[0].html_body)
         self.assertIn("<td>250</td>", email_calls[0].html_body)
+        self.assertIn("chart", email_calls[0].html_body)
+        self.assertIn("<td>76.00</td>", email_calls[0].html_body)
+        self.assertIn("<td>89.60</td>", email_calls[0].html_body)
+        self.assertIn("Opportunity", email_calls[0].html_body)
 
     def test_scan_groups_output_by_slot_and_applies_portfolio_caps(self) -> None:
         class FakeDB:
@@ -146,7 +160,7 @@ class ScanServiceTests(unittest.TestCase):
              patch("src.scan.service.latest_snapshot", return_value=snapshot), \
              patch("src.scan.service.filter_signal_candidates", side_effect=lambda frame, indicators: frame.copy()), \
              patch("src.scan.service.get_settings", return_value=settings), \
-             patch("src.scan.service.load_feature_config", return_value={"scan_policy": {"max_candidates_total": 3, "max_candidates_per_slot": 2, "max_candidates_per_sector": 2, "pre_cap_candidates_per_slot": 5}}), \
+             patch("src.scan.service.load_feature_config", return_value={"scan_policy": {"max_candidates_total": 3, "max_candidates_per_slot": 2, "max_candidates_per_sector": 2, "pre_cap_candidates_per_slot": 5, "min_opportunity_score": 0.0}}), \
              patch("src.scan.service.load_active_strategies", return_value={"materials": materials, "technology": technology}):
             report = service.run()
 
@@ -161,6 +175,229 @@ class ScanServiceTests(unittest.TestCase):
         self.assertIn("MAT2", html)
         self.assertNotIn("MAT3", html)
         self.assertIn("TECH1", html)
+        self.assertIn("Why", html)
+        self.assertIn("Chart", html)
+        self.assertIn("Rank Context", html)
+
+    def test_scan_skips_email_when_candidates_fail_opportunity_threshold_and_persists_snapshots(self) -> None:
+        class FakeDB:
+            def __init__(self):
+                self.persisted = []
+            def initialize(self): return None
+            def list_universe_rows(self, active_only=True):
+                return [{"ticker": "AAA", "sector": "Industrials", "md_volume_30d": 30_000_000}]
+            def load_price_history(self, tickers): return pd.DataFrame()
+            def list_open_trades(self): return []
+            def replace_scan_candidates(self, *, scan_date, rows):
+                self.persisted = list(rows)
+                return len(self.persisted)
+
+        service = ScanService(FakeDB(), email_sender=lambda subject, html_body, settings: None)
+        snapshot = pd.DataFrame(
+            [
+                {
+                    "ticker": "AAA",
+                    "sector": "Industrials",
+                    "regime_green": True,
+                    "regime_etf": "SPY",
+                    "adj_close": 80.0,
+                    "atr_14": 4.0,
+                    "md_volume_30d": 30_000_000,
+                    "signal_score": 12.0,
+                    "rsi_14": 78.0,
+                    "vol_alpha": 0.9,
+                    "sma_50_dist": 0.18,
+                    "sma_200_dist": 0.01,
+                    "roc_63": 0.01,
+                    "relative_strength_index_vs_spy": 60.0,
+                    "sector_pct_above_50": 0.2,
+                    "sector_pct_above_200": 0.2,
+                    "sector_median_roc_63": -0.02,
+                }
+            ]
+        )
+        settings = RuntimeSettings(
+            paths=AppPaths(
+                root_dir=Path("."),
+                data_dir=Path("data"),
+                duckdb_path=Path("data/market_data.duckdb"),
+                sqlite_path=Path("data/ledger.sqlite"),
+                reports_dir=Path("reports"),
+                logs_dir=Path("logs"),
+                config_path=Path("config.yaml"),
+                env_path=Path(".env"),
+                production_strategy_path=Path("production_strategy.json"),
+            ),
+            env={},
+            total_capital=50_000.0,
+            risk_per_trade=0.02,
+        )
+        strategy = ProductionStrategy(
+            strategy_id=1,
+            promoted_at="2026-05-05T17:00:00",
+            indicators={"rsi_14_max": 35.0},
+            exit_rules=ExitRules(0.05, 0.12, 20),
+            slot="industrials",
+            sector="Industrials",
+        )
+
+        with patch.object(service, "_download_recent_daily_history", return_value=pd.DataFrame()), \
+             patch("src.scan.service.build_analysis_frame", return_value=(pd.DataFrame(), [])), \
+             patch("src.scan.service.latest_snapshot", return_value=snapshot), \
+             patch("src.scan.service.filter_signal_candidates", return_value=snapshot.copy()), \
+             patch("src.scan.service.get_settings", return_value=settings), \
+             patch("src.scan.service.load_feature_config", return_value={"scan_policy": {"min_opportunity_score": 0.95}}), \
+             patch("src.scan.service.load_active_strategies", return_value={"industrials": strategy}):
+            report = service.run()
+
+        self.assertFalse(report.emailed)
+        self.assertEqual(report.candidate_count, 0)
+        self.assertEqual(len(service.db_manager.persisted), 1)
+        self.assertFalse(service.db_manager.persisted[0]["selected"])
+
+    def test_scan_penalizes_overlap_with_existing_positions(self) -> None:
+        class FakeDB:
+            def initialize(self): return None
+            def list_universe_rows(self, active_only=True):
+                return [
+                    {"ticker": "AAA", "sector": "Industrials", "md_volume_30d": 40_000_000},
+                    {"ticker": "BBB", "sector": "Industrials", "md_volume_30d": 35_000_000},
+                ]
+            def load_price_history(self, tickers): return pd.DataFrame()
+            def list_open_trades(self):
+                return [
+                    {
+                        "ticker": "AAA",
+                        "entry_date": "2026-05-05",
+                        "entry_price": 100.0,
+                        "entry_atr": 2.0,
+                        "strategy_id": 1,
+                        "strategy_slot": "industrials",
+                        "shares": 10,
+                        "max_price_seen": 100.0,
+                        "status": "open",
+                    }
+                ]
+
+        email_calls: list[EmailCall] = []
+        service = ScanService(FakeDB(), email_sender=lambda subject, html_body, settings: email_calls.append(EmailCall(subject, html_body)))
+        snapshot = pd.DataFrame(
+            [
+                {"ticker": "AAA", "sector": "Industrials", "regime_green": True, "regime_etf": "SPY", "adj_close": 50.0, "atr_14": 2.0, "md_volume_30d": 40_000_000, "signal_score": 40.0, "roc_63": 0.12, "relative_strength_index_vs_spy": 85.0, "vol_alpha": 1.2, "sma_200_dist": 0.12, "sma_50_dist": 0.08, "rsi_14": 50.0, "sector_pct_above_50": 0.8, "sector_pct_above_200": 0.8, "sector_median_roc_63": 0.08},
+                {"ticker": "BBB", "sector": "Industrials", "regime_green": True, "regime_etf": "SPY", "adj_close": 48.0, "atr_14": 2.0, "md_volume_30d": 35_000_000, "signal_score": 35.0, "roc_63": 0.11, "relative_strength_index_vs_spy": 84.0, "vol_alpha": 1.2, "sma_200_dist": 0.12, "sma_50_dist": 0.08, "rsi_14": 49.0, "sector_pct_above_50": 0.8, "sector_pct_above_200": 0.8, "sector_median_roc_63": 0.08},
+            ]
+        )
+        settings = RuntimeSettings(
+            paths=AppPaths(
+                root_dir=Path("."),
+                data_dir=Path("data"),
+                duckdb_path=Path("data/market_data.duckdb"),
+                sqlite_path=Path("data/ledger.sqlite"),
+                reports_dir=Path("reports"),
+                logs_dir=Path("logs"),
+                config_path=Path("config.yaml"),
+                env_path=Path(".env"),
+                production_strategy_path=Path("production_strategy.json"),
+            ),
+            env={},
+            total_capital=50_000.0,
+            risk_per_trade=0.02,
+        )
+        strategy = ProductionStrategy(
+            strategy_id=1,
+            promoted_at="2026-05-05T17:00:00",
+            indicators={"rsi_14_max": 35.0},
+            exit_rules=ExitRules(0.05, 0.12, 20),
+            slot="industrials",
+            sector="Industrials",
+        )
+
+        with patch.object(service, "_download_recent_daily_history", return_value=pd.DataFrame()), \
+             patch("src.scan.service.build_analysis_frame", return_value=(pd.DataFrame(), [])), \
+             patch("src.scan.service.latest_snapshot", return_value=snapshot), \
+             patch("src.scan.service.filter_signal_candidates", side_effect=lambda frame, indicators: frame.copy()), \
+             patch("src.scan.service.get_settings", return_value=settings), \
+             patch("src.scan.service.load_feature_config", return_value={"scan_policy": {"max_candidates_total": 2, "min_opportunity_score": 0.0}}), \
+             patch("src.scan.service.load_active_strategies", return_value={"industrials": strategy}):
+            report = service.run()
+
+        self.assertTrue(report.emailed)
+        self.assertEqual(report.candidate_count, 1)
+        html = email_calls[0].html_body
+        self.assertIn("BBB", html)
+        self.assertNotIn("AAA</td>", html)
+
+    def test_scan_same_slot_overlap_remains_a_nudge_not_a_veto(self) -> None:
+        class FakeDB:
+            def initialize(self): return None
+            def list_universe_rows(self, active_only=True):
+                return [
+                    {"ticker": "AAA", "sector": "Industrials", "md_volume_30d": 40_000_000},
+                    {"ticker": "BBB", "sector": "Industrials", "md_volume_30d": 35_000_000},
+                ]
+            def load_price_history(self, tickers): return pd.DataFrame()
+            def list_open_trades(self):
+                return [
+                    {
+                        "ticker": "AAA",
+                        "entry_date": "2026-05-05",
+                        "entry_price": 100.0,
+                        "entry_atr": 2.0,
+                        "strategy_id": 1,
+                        "strategy_slot": "industrials",
+                        "shares": 10,
+                        "max_price_seen": 100.0,
+                        "status": "open",
+                    }
+                ]
+
+        email_calls: list[EmailCall] = []
+        service = ScanService(FakeDB(), email_sender=lambda subject, html_body, settings: email_calls.append(EmailCall(subject, html_body)))
+        snapshot = pd.DataFrame(
+            [
+                {"ticker": "AAA", "sector": "Industrials", "regime_green": True, "regime_etf": "SPY", "adj_close": 50.0, "atr_14": 2.0, "md_volume_30d": 40_000_000, "signal_score": 40.0, "roc_63": 0.12, "relative_strength_index_vs_spy": 85.0, "vol_alpha": 1.2, "sma_200_dist": 0.12, "sma_50_dist": 0.08, "rsi_14": 50.0, "sector_pct_above_50": 0.8, "sector_pct_above_200": 0.8, "sector_median_roc_63": 0.08},
+                {"ticker": "BBB", "sector": "Industrials", "regime_green": True, "regime_etf": "SPY", "adj_close": 48.0, "atr_14": 2.0, "md_volume_30d": 35_000_000, "signal_score": 35.0, "roc_63": 0.11, "relative_strength_index_vs_spy": 84.0, "vol_alpha": 1.2, "sma_200_dist": 0.12, "sma_50_dist": 0.08, "rsi_14": 49.0, "sector_pct_above_50": 0.8, "sector_pct_above_200": 0.8, "sector_median_roc_63": 0.08},
+            ]
+        )
+        settings = RuntimeSettings(
+            paths=AppPaths(
+                root_dir=Path("."),
+                data_dir=Path("data"),
+                duckdb_path=Path("data/market_data.duckdb"),
+                sqlite_path=Path("data/ledger.sqlite"),
+                reports_dir=Path("reports"),
+                logs_dir=Path("logs"),
+                config_path=Path("config.yaml"),
+                env_path=Path(".env"),
+                production_strategy_path=Path("production_strategy.json"),
+            ),
+            env={},
+            total_capital=50_000.0,
+            risk_per_trade=0.02,
+        )
+        strategy = ProductionStrategy(
+            strategy_id=1,
+            promoted_at="2026-05-05T17:00:00",
+            indicators={"rsi_14_max": 35.0},
+            exit_rules=ExitRules(0.05, 0.12, 20),
+            slot="industrials",
+            sector="Industrials",
+        )
+
+        with patch.object(service, "_download_recent_daily_history", return_value=pd.DataFrame()), \
+             patch("src.scan.service.build_analysis_frame", return_value=(pd.DataFrame(), [])), \
+             patch("src.scan.service.latest_snapshot", return_value=snapshot), \
+             patch("src.scan.service.filter_signal_candidates", side_effect=lambda frame, indicators: frame.copy()), \
+             patch("src.scan.service.get_settings", return_value=settings), \
+             patch("src.scan.service.load_feature_config", return_value={"scan_policy": {"max_candidates_total": 2, "min_opportunity_score": 0.55}}), \
+             patch("src.scan.service.load_active_strategies", return_value={"industrials": strategy}):
+            report = service.run()
+
+        self.assertTrue(report.emailed)
+        self.assertEqual(report.candidate_count, 1)
+        html = email_calls[0].html_body
+        self.assertIn("BBB", html)
+        self.assertIn("overlap -0.08", html)
 
 
 class MonitorServiceTests(unittest.TestCase):
@@ -345,6 +582,92 @@ class MonitorServiceTests(unittest.TestCase):
         self.assertEqual(report.watchlist_size, 1)
         self.assertEqual(report.triggered_count, 0)
 
+    def test_monitor_resolves_inactive_legacy_strategy_from_backtest_results(self) -> None:
+        class FakeDB:
+            def initialize(self): return None
+            def list_open_trades(self):
+                return [
+                    {
+                        "ticker": "RKLB",
+                        "entry_date": "2026-05-05",
+                        "entry_price": 100.0,
+                        "shares": 10,
+                        "max_price_seen": 100.0,
+                        "status": "open",
+                        "entry_atr": None,
+                        "strategy_id": 172365,
+                        "strategy_slot": "technology",
+                    }
+                ]
+            def load_price_history(self, tickers):
+                rows = []
+                for ticker in ("RKLB", "SPY", "QQQ"):
+                    for day in pd.bdate_range("2025-06-01", periods=220):
+                        rows.append(
+                            {
+                                "ticker": ticker,
+                                "date": day.date(),
+                                "open": 100.0,
+                                "high": 101.0,
+                                "low": 99.0,
+                                "close": 100.0,
+                                "volume": 1000,
+                                "adj_close": 100.0,
+                            }
+                        )
+                return pd.DataFrame(rows)
+            def list_universe_rows(self, active_only=False):
+                return []
+            def get_latest_open_trade(self, ticker):
+                return {"rowid": 1, "entry_price": 100.0, "entry_atr": None, "shares": 10, "strategy_id": 172365, "strategy_slot": "technology"}
+            def get_backtest_result_by_strategy_id(self, strategy_id):
+                if strategy_id != 172365:
+                    return None
+                return {
+                    "strategy_id": 172365,
+                    "params_json": '{"sector":"Information Technology","indicators":{"rsi_14_max":35.0},"exit_rules":{"trailing_stop_pct":0.05,"profit_target_pct":0.12,"time_limit_days":20}}',
+                }
+            def update_trade_max_price(self, trade_rowid, max_price_seen): return None
+            def close_trade(self, trade_rowid, exit_date, exit_price): return None
+            def load_recent_highs(self, ticker, limit=2):
+                return pd.DataFrame([{"date": "2026-05-05", "high": 100.0}, {"date": "2026-05-04", "high": 100.0}])
+
+        service = MonitorService(FakeDB(), email_sender=lambda subject, html_body, settings: None)
+        settings = RuntimeSettings(
+            paths=AppPaths(
+                root_dir=Path("."),
+                data_dir=Path("data"),
+                duckdb_path=Path("data/market_data.duckdb"),
+                sqlite_path=Path("data/ledger.sqlite"),
+                reports_dir=Path("reports"),
+                logs_dir=Path("logs"),
+                config_path=Path("config.yaml"),
+                env_path=Path(".env"),
+                production_strategy_path=Path("production_strategy.json"),
+            ),
+            env={},
+            total_capital=50_000.0,
+            risk_per_trade=0.02,
+        )
+        materials = ProductionStrategy(
+            strategy_id=1,
+            promoted_at="2026-05-05T17:00:00",
+            indicators={"rsi_14_max": 35.0},
+            exit_rules=ExitRules(0.05, 0.12, 20),
+            slot="materials",
+            sector="Materials",
+        )
+
+        with patch.object(service, "_load_intraday_last_prices", return_value={"RKLB": 100.0, "SPY": 105.0, "QQQ": 110.0}), \
+             patch.object(service, "_download_recent_daily_history", return_value=pd.DataFrame()), \
+             patch("src.monitor.service.get_settings", return_value=settings), \
+             patch("src.monitor.service.load_active_strategies", return_value={"materials": materials}), \
+             patch("src.monitor.service.latest_rsi_2_with_intraday", return_value=20.0):
+            report = service.run()
+
+        self.assertFalse(report.emailed)
+        self.assertEqual(report.watchlist_size, 1)
+
     def test_monitor_sends_single_consolidated_digest_and_evaluates_exit_paths_without_closing_trades(self) -> None:
         class FakeDB:
             def __init__(self):
@@ -433,6 +756,7 @@ class MonitorServiceTests(unittest.TestCase):
             "SPY": 105.0,
             "QQQ": 110.0,
         }), \
+             patch.object(service, "_download_recent_daily_history", return_value=pd.DataFrame()), \
              patch("src.monitor.service.get_settings", return_value=settings), \
              patch("src.monitor.service.load_active_strategies", return_value={"industrials": strategy, "information_technology": ProductionStrategy(strategy_id=2, promoted_at='2026-05-05T17:00:00', indicators={'rsi_14_max': 35.0}, exit_rules=ExitRules(0.05, 0.12, 20), slot='information_technology', sector='Information Technology')}), \
              patch("src.monitor.service.build_analysis_frame", return_value=(analysis_frame, [])), \
@@ -522,6 +846,7 @@ class MonitorServiceTests(unittest.TestCase):
         )
 
         with patch.object(service, "_load_intraday_last_prices", return_value={"AAA": 91.0, "SPY": 105.0, "QQQ": 110.0}), \
+             patch.object(service, "_download_recent_daily_history", return_value=pd.DataFrame()), \
              patch("src.monitor.service.get_settings", return_value=settings), \
              patch("src.monitor.service.load_active_strategies", return_value={"default": strategy}), \
              patch("src.monitor.service.build_analysis_frame", return_value=(analysis_frame, [])), \
@@ -603,6 +928,7 @@ class MonitorServiceTests(unittest.TestCase):
         )
 
         with patch.object(service, "_load_intraday_last_prices", return_value={"AAA": 101.0, "SPY": 105.0, "QQQ": 110.0}), \
+             patch.object(service, "_download_recent_daily_history", return_value=pd.DataFrame()), \
              patch("src.monitor.service.get_settings", return_value=settings), \
              patch("src.monitor.service.load_active_strategies", return_value={"default": strategy}), \
              patch("src.monitor.service.build_analysis_frame", return_value=(analysis_frame, [])), \
@@ -613,6 +939,91 @@ class MonitorServiceTests(unittest.TestCase):
         self.assertEqual(report.triggered_count, 1)
         self.assertIn("breakout alert", email_calls[0].html_body)
         self.assertIn("<td>watch breakout</td>", email_calls[0].html_body)
+
+    def test_monitor_uses_pre_earnings_exit_flag(self) -> None:
+        class FakeDB:
+            def initialize(self): return None
+            def list_open_trades(self):
+                return [
+                    {
+                        "ticker": "AAA",
+                        "entry_date": "2026-05-05",
+                        "entry_price": 100.0,
+                        "entry_atr": None,
+                        "shares": 10,
+                        "max_price_seen": 100.0,
+                        "status": "open",
+                    }
+                ]
+            def load_price_history(self, tickers):
+                rows = []
+                for ticker in tickers:
+                    for day in pd.bdate_range("2025-06-01", periods=220):
+                        rows.append(
+                            {
+                                "ticker": ticker,
+                                "date": day.date(),
+                                "open": 100.0,
+                                "high": 101.0,
+                                "low": 99.0,
+                                "close": 100.0,
+                                "volume": 1000,
+                                "adj_close": 100.0,
+                            }
+                        )
+                return pd.DataFrame(rows)
+            def list_universe_rows(self, active_only=False):
+                return [{"ticker": "AAA", "sector": "Industrials", "md_volume_30d": 30_000_000}]
+            def get_latest_open_trade(self, ticker):
+                return {"rowid": 1, "entry_price": 100.0, "shares": 10}
+            def update_trade_max_price(self, trade_rowid, max_price_seen): return None
+            def close_trade(self, trade_rowid, exit_date, exit_price): return None
+            def load_recent_highs(self, ticker, limit=2):
+                return pd.DataFrame([{"date": "2026-05-05", "high": 105.0}, {"date": "2026-05-04", "high": 100.0}])
+
+        email_calls: list[EmailCall] = []
+        service = MonitorService(FakeDB(), email_sender=lambda subject, html_body, settings: email_calls.append(EmailCall(subject, html_body)))
+        settings = RuntimeSettings(
+            paths=AppPaths(
+                root_dir=Path("."),
+                data_dir=Path("data"),
+                duckdb_path=Path("data/market_data.duckdb"),
+                sqlite_path=Path("data/ledger.sqlite"),
+                reports_dir=Path("reports"),
+                logs_dir=Path("logs"),
+                config_path=Path("config.yaml"),
+                env_path=Path(".env"),
+                production_strategy_path=Path("production_strategy.json"),
+            ),
+            env={},
+            total_capital=50_000.0,
+            risk_per_trade=0.02,
+        )
+        strategy = ProductionStrategy(
+            strategy_id=1,
+            promoted_at="2026-05-05T17:00:00",
+            indicators={"rsi_14_max": 35.0},
+            exit_rules=ExitRules(0.05, 0.12, 20, exit_before_earnings_days=2),
+        )
+        analysis_frame = pd.DataFrame(
+            [
+                {"ticker": "SPY", "date": pd.Timestamp("2026-05-05"), "spy_sma_200": 100.0, "qqq_sma_200": None},
+                {"ticker": "AAA", "date": pd.Timestamp("2026-05-05"), "days_to_next_earnings": 1.0},
+            ]
+        )
+
+        with patch.object(service, "_load_intraday_last_prices", return_value={"AAA": 101.0, "SPY": 105.0, "QQQ": 110.0}), \
+             patch.object(service, "_download_recent_daily_history", return_value=pd.DataFrame()), \
+             patch("src.monitor.service.get_settings", return_value=settings), \
+             patch("src.monitor.service.load_active_strategies", return_value={"default": strategy}), \
+             patch("src.monitor.service.build_analysis_frame", return_value=(analysis_frame, [])), \
+             patch("src.monitor.service.latest_rsi_2_with_intraday", return_value=20.0):
+            report = service.run()
+
+        self.assertTrue(report.emailed)
+        self.assertEqual(report.triggered_count, 1)
+        self.assertIn("pre earnings exit", email_calls[0].html_body)
+        self.assertIn("<td>sell</td>", email_calls[0].html_body)
 
     def test_monitor_uses_central_regime_helper(self) -> None:
         class FakeDB:
@@ -656,6 +1067,7 @@ class MonitorServiceTests(unittest.TestCase):
         )
 
         with patch.object(service, "_load_intraday_last_prices", return_value={"AAA": 101.0, "SPY": 105.0, "QQQ": 110.0}), \
+             patch.object(service, "_download_recent_daily_history", return_value=pd.DataFrame()), \
              patch("src.monitor.service.get_settings", return_value=settings), \
              patch("src.monitor.service.load_active_strategies", return_value={"default": strategy}), \
              patch("src.monitor.service.build_analysis_frame", return_value=(analysis_frame, [])), \
@@ -782,6 +1194,82 @@ class SweepServiceTests(unittest.TestCase):
         self.assertEqual(grid[0]["indicators"]["rsi_14_max"], 40.0)
         self.assertEqual(grid[0]["exit_rules"]["trailing_stop_atr_mult"], 2.5)
         self.assertEqual(grid[0]["exit_rules"]["profit_target_atr_mult"], 3.0)
+
+    def test_resolve_energy_earnings_refined_mode(self) -> None:
+        service = SweepService(DatabaseManager(AppPaths(
+            root_dir=Path("."),
+            data_dir=Path("data"),
+            duckdb_path=Path("data/market_data.duckdb"),
+            sqlite_path=Path("data/ledger.sqlite"),
+            reports_dir=Path("reports"),
+            logs_dir=Path("logs"),
+            config_path=Path("config.yaml"),
+            env_path=Path(".env"),
+            production_strategy_path=Path("production_strategy.json"),
+        )))
+        config = {
+            "sweep_grid": {
+                "rsi_14_max": {"min": 25, "max": 60, "step": 5},
+            },
+            "sweep_modes": {
+                "high_performance_energy_earnings_refined": {
+                    "sector_whitelist": ["Energy"],
+                    "grid_overrides": {
+                        "rsi_14_max": {"min": 55, "max": 60, "step": 5},
+                        "days_to_next_earnings_min": {"min": 0, "max": 6, "step": 2},
+                        "days_since_last_earnings_min": {"min": 0, "max": 4, "step": 2},
+                        "signal_score_min": {"min": 30, "max": 32, "step": 2},
+                        "exit_before_earnings_days": {"min": 0, "max": 2, "step": 1},
+                    },
+                }
+            },
+        }
+
+        resolved, sectors = service._resolve_sweep_mode(config, "high_performance_energy_earnings_refined")
+        grid = service._build_parameter_grid(resolved)
+
+        self.assertEqual(sectors, ["Energy"])
+        self.assertEqual(len(grid), 144)
+        self.assertTrue(any("days_to_next_earnings_min" in row["indicators"] for row in grid))
+        self.assertTrue(any("days_since_last_earnings_min" in row["indicators"] for row in grid))
+        self.assertIsNone(grid[0]["exit_rules"]["exit_before_earnings_days"])
+
+    def test_resolve_production_sleeves_gap_refined_mode(self) -> None:
+        service = SweepService(DatabaseManager(AppPaths(
+            root_dir=Path("."),
+            data_dir=Path("data"),
+            duckdb_path=Path("data/market_data.duckdb"),
+            sqlite_path=Path("data/ledger.sqlite"),
+            reports_dir=Path("reports"),
+            logs_dir=Path("logs"),
+            config_path=Path("config.yaml"),
+            env_path=Path(".env"),
+            production_strategy_path=Path("production_strategy.json"),
+        )))
+        config = {
+            "sweep_grid": {
+                "rsi_14_max": {"min": 25, "max": 60, "step": 5},
+            },
+            "sweep_modes": {
+                "production_sleeves_gap_refined": {
+                    "sector_whitelist": ["Energy", "Materials", "Industrials"],
+                    "grid_overrides": {
+                        "rsi_14_max": {"min": 55, "max": 60, "step": 5},
+                        "avg_abs_gap_pct_20_max": {"min": 0.02, "max": 0.04, "step": 0.01},
+                        "max_gap_down_pct_60_max": {"min": 0.04, "max": 0.08, "step": 0.02},
+                        "signal_score_min": {"min": 30, "max": 32, "step": 2},
+                    },
+                }
+            },
+        }
+
+        resolved, sectors = service._resolve_sweep_mode(config, "production_sleeves_gap_refined")
+        grid = service._build_parameter_grid(resolved)
+
+        self.assertEqual(sectors, ["Energy", "Materials", "Industrials"])
+        self.assertEqual(len(grid), 36)
+        self.assertIn("avg_abs_gap_pct_20_max", grid[0]["indicators"])
+        self.assertIn("max_gap_down_pct_60_max", grid[0]["indicators"])
 
     def test_resolve_promotable_live_technology_v2_sweep_mode(self) -> None:
         service = SweepService(DatabaseManager(AppPaths(
@@ -1080,6 +1568,60 @@ class SweepServiceTests(unittest.TestCase):
         self.assertIn(grid[0]["indicators"]["rsi_14_max"], {55.0, 60.0})
         self.assertIn(grid[0]["exit_rules"]["trailing_stop_atr_mult"], {3.0, 3.5})
         self.assertIn(grid[0]["exit_rules"]["profit_target_atr_mult"], {3.5, 4.0})
+
+    def test_resolve_high_performance_energy_stability_refined_sweep_mode(self) -> None:
+        service = SweepService(DatabaseManager(AppPaths(
+            root_dir=Path("."),
+            data_dir=Path("data"),
+            duckdb_path=Path("data/market_data.duckdb"),
+            sqlite_path=Path("data/ledger.sqlite"),
+            reports_dir=Path("reports"),
+            logs_dir=Path("logs"),
+            config_path=Path("config.yaml"),
+            env_path=Path(".env"),
+            production_strategy_path=Path("production_strategy.json"),
+        )))
+        config = {
+            "sweep_grid": {
+                "rsi_14_max": {"min": 25, "max": 60, "step": 5},
+                "vol_alpha_min": {"min": 0.8, "max": 1.8, "step": 0.2},
+                "sma_200_dist_min": {"min": 0.0, "max": 0.2, "step": 0.02},
+                "roc_63_min": {"min": 0.1, "max": 0.15, "step": 0.05},
+                "relative_strength_index_vs_spy_min": {"min": 80, "max": 90, "step": 5},
+                "signal_score_min": {"min": 30, "max": 34, "step": 2},
+                "trailing_stop_atr_mult": {"min": 2.0, "max": 2.5, "step": 0.25},
+                "profit_target_atr_mult": {"min": 2.5, "max": 3.0, "step": 0.5},
+            },
+            "sweep_modes": {
+                "high_performance_energy_stability_refined": {
+                    "sector_whitelist": ["Energy"],
+                    "grid_overrides": {
+                        "rsi_14_max": {"min": 45, "max": 55, "step": 5},
+                        "vol_alpha_min": {"min": 0.8, "max": 1.2, "step": 0.2},
+                        "sma_200_dist_min": {"min": 0.14, "max": 0.14, "step": 0.04},
+                        "roc_63_min": {"min": 0.05, "max": 0.10, "step": 0.05},
+                        "relative_strength_index_vs_spy_min": {"min": 75, "max": 80, "step": 5},
+                        "oil_corr_60_min": {"min": 0.30, "max": 0.50, "step": 0.10},
+                        "signal_score_min": {"min": 32, "max": 34, "step": 2},
+                        "trailing_stop_atr_mult": {"min": 3.0, "max": 3.5, "step": 0.5},
+                        "profit_target_atr_mult": {"min": 3.5, "max": 4.5, "step": 0.5},
+                    },
+                }
+            },
+        }
+
+        resolved, sectors = service._resolve_sweep_mode(config, "high_performance_energy_stability_refined")
+        grid = service._build_parameter_grid(resolved)
+
+        self.assertEqual(sectors, ["Energy"])
+        self.assertEqual(len(grid), 1296)
+        self.assertIn(grid[0]["indicators"]["rsi_14_max"], {45.0, 50.0, 55.0})
+        self.assertIn(grid[0]["indicators"]["vol_alpha_min"], {0.8, 1.0, 1.2})
+        self.assertEqual(grid[0]["indicators"]["sma_200_dist_min"], 0.14)
+        self.assertIn(grid[0]["indicators"]["oil_corr_60_min"], {0.3, 0.4, 0.5})
+        self.assertIn(grid[0]["indicators"]["signal_score_min"], {32.0, 34.0})
+        self.assertIn(grid[0]["exit_rules"]["trailing_stop_atr_mult"], {3.0, 3.5})
+        self.assertIn(grid[0]["exit_rules"]["profit_target_atr_mult"], {3.5, 4.0, 4.5})
 
     def test_resolve_high_performance_materials_refined_sweep_mode(self) -> None:
         service = SweepService(DatabaseManager(AppPaths(

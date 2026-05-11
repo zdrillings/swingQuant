@@ -1,945 +1,945 @@
 # Ranked Candidates
 
-- run_id: 29
+- run_id: 32
 - min_trades: 12
 - ranking: practical_score desc, then norm_score desc, then expectancy desc
 - practical_score includes live-match bonus, trade-count bonus, and alpha bonuses vs SPY/sector
 
 ## Top Ranked Candidates
 
-### Result 987870
-- run_id: 29
-- strategy_id: 987870
+### Result 1106098
+- run_id: 32
+- strategy_id: 1106098
 - global_rank: 1
 - sector_rank: 1
-- sector: Industrials
-- practical_score: 0.830000
-- norm_score: 0.700000
-- expectancy: 0.019041
-- profit_factor: 3.965527
-- alpha_vs_spy: 0.015605
-- alpha_vs_sector: 0.016783
-- mdd: 0.092386
-- win_rate: 0.682927
-- trade_count: 41
-- duplicate_group_size: 2
-- collapsed_result_ids: 987870, 987902
-- live_match_count: 0
-- live_match_tickers: none
-- promotion_policy_passed: no
-- promotion_policy_violations: trade_count 41 < 100
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=0
-- first_zero_gate: signal_score_min
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
-- warnings: no_current_live_matches
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.15, "rsi_14_max": 50.0, "signal_score_min": 34.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: none
+- sector: Energy
+- practical_score: 1.291086
+- norm_score: 0.641338
+- expectancy: 0.005171
+- profit_factor: 1.703517
+- alpha_vs_spy: 0.004271
+- alpha_vs_sector: 0.001961
+- mdd: 0.178475
+- win_rate: 0.708531
+- trade_count: 422
+- duplicate_group_size: 1
+- collapsed_result_ids: 1106098
+- live_match_count: 3
+- live_match_tickers: OXY, EOG, VLO
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.4, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.05, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO
 
-### Result 987886
-- run_id: 29
-- strategy_id: 987886
+### Result 1106170
+- run_id: 32
+- strategy_id: 1106170
 - global_rank: 2
 - sector_rank: 2
-- sector: Industrials
-- practical_score: 0.782891
-- norm_score: 0.662291
-- expectancy: 0.018523
-- profit_factor: 3.744105
-- alpha_vs_spy: 0.014821
-- alpha_vs_sector: 0.016262
-- mdd: 0.092386
-- win_rate: 0.666667
-- trade_count: 39
-- duplicate_group_size: 2
-- collapsed_result_ids: 987886, 987918
-- live_match_count: 0
-- live_match_tickers: none
-- promotion_policy_passed: no
-- promotion_policy_violations: trade_count 39 < 100
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=0
-- first_zero_gate: signal_score_min
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
-- warnings: no_current_live_matches
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 50.0, "signal_score_min": 34.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: none
+- sector: Energy
+- practical_score: 1.290139
+- norm_score: 0.641190
+- expectancy: 0.005180
+- profit_factor: 1.701419
+- alpha_vs_spy: 0.004290
+- alpha_vs_sector: 0.001943
+- mdd: 0.178475
+- win_rate: 0.707143
+- trade_count: 420
+- duplicate_group_size: 1
+- collapsed_result_ids: 1106170
+- live_match_count: 3
+- live_match_tickers: OXY, EOG, VLO
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.4, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.1, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO
 
-### Result 987869
-- run_id: 29
-- strategy_id: 987869
+### Result 1106104
+- run_id: 32
+- strategy_id: 1106104
 - global_rank: 3
 - sector_rank: 3
-- sector: Industrials
-- practical_score: 0.776845
-- norm_score: 0.660739
-- expectancy: 0.018120
-- profit_factor: 3.822064
-- alpha_vs_spy: 0.014684
-- alpha_vs_sector: 0.015862
-- mdd: 0.092386
-- win_rate: 0.682927
-- trade_count: 41
-- duplicate_group_size: 2
-- collapsed_result_ids: 987869, 987901
-- live_match_count: 0
-- live_match_tickers: none
-- promotion_policy_passed: no
-- promotion_policy_violations: trade_count 41 < 100
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=0
-- first_zero_gate: signal_score_min
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
-- warnings: no_current_live_matches
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.15, "rsi_14_max": 50.0, "signal_score_min": 34.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: none
+- sector: Energy
+- practical_score: 1.288085
+- norm_score: 0.639267
+- expectancy: 0.005158
+- profit_factor: 1.701760
+- alpha_vs_spy: 0.004258
+- alpha_vs_sector: 0.001948
+- mdd: 0.178475
+- win_rate: 0.708531
+- trade_count: 422
+- duplicate_group_size: 1
+- collapsed_result_ids: 1106104
+- live_match_count: 3
+- live_match_tickers: OXY, EOG, VLO
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.4, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.05, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO
 
-### Result 987872
-- run_id: 29
-- strategy_id: 987872
+### Result 1106176
+- run_id: 32
+- strategy_id: 1106176
 - global_rank: 4
 - sector_rank: 4
-- sector: Industrials
-- practical_score: 0.773442
-- norm_score: 0.649673
-- expectancy: 0.018618
-- profit_factor: 3.720557
-- alpha_vs_spy: 0.015099
-- alpha_vs_sector: 0.016428
-- mdd: 0.103684
-- win_rate: 0.682927
-- trade_count: 41
-- duplicate_group_size: 2
-- collapsed_result_ids: 987872, 987904
-- live_match_count: 0
-- live_match_tickers: none
-- promotion_policy_passed: no
-- promotion_policy_violations: trade_count 41 < 100
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=0
-- first_zero_gate: signal_score_min
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
-- warnings: no_current_live_matches
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.15, "rsi_14_max": 50.0, "signal_score_min": 34.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: none
+- sector: Energy
+- practical_score: 1.287128
+- norm_score: 0.639114
+- expectancy: 0.005167
+- profit_factor: 1.699663
+- alpha_vs_spy: 0.004277
+- alpha_vs_sector: 0.001930
+- mdd: 0.178475
+- win_rate: 0.707143
+- trade_count: 420
+- duplicate_group_size: 1
+- collapsed_result_ids: 1106176
+- live_match_count: 3
+- live_match_tickers: OXY, EOG, VLO
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.4, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.1, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO
 
-### Result 987885
-- run_id: 29
-- strategy_id: 987885
+### Result 1106101
+- run_id: 32
+- strategy_id: 1106101
 - global_rank: 5
 - sector_rank: 5
-- sector: Industrials
-- practical_score: 0.727827
-- norm_score: 0.621834
-- expectancy: 0.017554
-- profit_factor: 3.600642
-- alpha_vs_spy: 0.013853
-- alpha_vs_sector: 0.015293
-- mdd: 0.092386
-- win_rate: 0.666667
-- trade_count: 39
-- duplicate_group_size: 2
-- collapsed_result_ids: 987885, 987917
-- live_match_count: 0
-- live_match_tickers: none
-- promotion_policy_passed: no
-- promotion_policy_violations: trade_count 39 < 100
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=0
-- first_zero_gate: signal_score_min
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
-- warnings: no_current_live_matches
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 50.0, "signal_score_min": 34.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: none
+- sector: Energy
+- practical_score: 1.280972
+- norm_score: 0.634359
+- expectancy: 0.005128
+- profit_factor: 1.697597
+- alpha_vs_spy: 0.004228
+- alpha_vs_sector: 0.001918
+- mdd: 0.178475
+- win_rate: 0.708531
+- trade_count: 422
+- duplicate_group_size: 1
+- collapsed_result_ids: 1106101
+- live_match_count: 3
+- live_match_tickers: OXY, EOG, VLO
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.4, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.05, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO
 
-### Result 987888
-- run_id: 29
-- strategy_id: 987888
+### Result 1106173
+- run_id: 32
+- strategy_id: 1106173
 - global_rank: 6
 - sector_rank: 6
-- sector: Industrials
-- practical_score: 0.726983
-- norm_score: 0.612934
-- expectancy: 0.018078
-- profit_factor: 3.512813
-- alpha_vs_spy: 0.014289
-- alpha_vs_sector: 0.015889
-- mdd: 0.103684
-- win_rate: 0.666667
-- trade_count: 39
-- duplicate_group_size: 2
-- collapsed_result_ids: 987888, 987920
-- live_match_count: 0
-- live_match_tickers: none
-- promotion_policy_passed: no
-- promotion_policy_violations: trade_count 39 < 100
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=0
-- first_zero_gate: signal_score_min
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
-- warnings: no_current_live_matches
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 50.0, "signal_score_min": 34.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: none
+- sector: Energy
+- practical_score: 1.279990
+- norm_score: 0.634192
+- expectancy: 0.005137
+- profit_factor: 1.695499
+- alpha_vs_spy: 0.004246
+- alpha_vs_sector: 0.001900
+- mdd: 0.178475
+- win_rate: 0.707143
+- trade_count: 420
+- duplicate_group_size: 1
+- collapsed_result_ids: 1106173
+- live_match_count: 3
+- live_match_tickers: OXY, EOG, VLO
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.4, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.1, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO
 
-### Result 987871
-- run_id: 29
-- strategy_id: 987871
+### Result 1106171
+- run_id: 32
+- strategy_id: 1106171
 - global_rank: 7
 - sector_rank: 7
-- sector: Industrials
-- practical_score: 0.721271
-- norm_score: 0.611396
-- expectancy: 0.017697
-- profit_factor: 3.585956
-- alpha_vs_spy: 0.014178
-- alpha_vs_sector: 0.015507
-- mdd: 0.103684
-- win_rate: 0.682927
-- trade_count: 41
-- duplicate_group_size: 2
-- collapsed_result_ids: 987871, 987903
-- live_match_count: 0
-- live_match_tickers: none
-- promotion_policy_passed: no
-- promotion_policy_violations: trade_count 41 < 100
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=0
-- first_zero_gate: signal_score_min
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
-- warnings: no_current_live_matches
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.15, "rsi_14_max": 50.0, "signal_score_min": 34.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: none
+- sector: Energy
+- practical_score: 1.225752
+- norm_score: 0.603949
+- expectancy: 0.004877
+- profit_factor: 1.636865
+- alpha_vs_spy: 0.003747
+- alpha_vs_sector: 0.001605
+- mdd: 0.169693
+- win_rate: 0.699229
+- trade_count: 389
+- duplicate_group_size: 1
+- collapsed_result_ids: 1106171
+- live_match_count: 3
+- live_match_tickers: OXY, EOG, VLO
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.5, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.1, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO
 
-### Result 987887
-- run_id: 29
-- strategy_id: 987887
+### Result 1106177
+- run_id: 32
+- strategy_id: 1106177
 - global_rank: 8
 - sector_rank: 8
-- sector: Industrials
-- practical_score: 0.672903
-- norm_score: 0.573460
-- expectancy: 0.017110
-- profit_factor: 3.378212
-- alpha_vs_spy: 0.013321
-- alpha_vs_sector: 0.014921
-- mdd: 0.103684
-- win_rate: 0.666667
-- trade_count: 39
-- duplicate_group_size: 2
-- collapsed_result_ids: 987887, 987919
-- live_match_count: 0
-- live_match_tickers: none
-- promotion_policy_passed: no
-- promotion_policy_violations: trade_count 39 < 100
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=0
-- first_zero_gate: signal_score_min
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
-- warnings: no_current_live_matches
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 50.0, "signal_score_min": 34.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: none
+- sector: Energy
+- practical_score: 1.222534
+- norm_score: 0.601740
+- expectancy: 0.004863
+- profit_factor: 1.635036
+- alpha_vs_spy: 0.003733
+- alpha_vs_sector: 0.001591
+- mdd: 0.169693
+- win_rate: 0.699229
+- trade_count: 389
+- duplicate_group_size: 1
+- collapsed_result_ids: 1106177
+- live_match_count: 3
+- live_match_tickers: OXY, EOG, VLO
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.5, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.1, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO
 
-### Result 987894
-- run_id: 29
-- strategy_id: 987894
+### Result 1106174
+- run_id: 32
+- strategy_id: 1106174
 - global_rank: 9
 - sector_rank: 9
-- sector: Industrials
-- practical_score: 0.562032
-- norm_score: 0.469483
-- expectancy: 0.016096
-- profit_factor: 3.062836
-- alpha_vs_spy: 0.013289
-- alpha_vs_sector: 0.014194
-- mdd: 0.143053
-- win_rate: 0.698113
-- trade_count: 53
+- sector: Energy
+- practical_score: 1.214904
+- norm_score: 0.596504
+- expectancy: 0.004830
+- profit_factor: 1.630700
+- alpha_vs_spy: 0.003699
+- alpha_vs_sector: 0.001558
+- mdd: 0.169693
+- win_rate: 0.699229
+- trade_count: 389
 - duplicate_group_size: 1
-- collapsed_result_ids: 987894
-- live_match_count: 0
-- live_match_tickers: none
-- promotion_policy_passed: no
-- promotion_policy_violations: trade_count 53 < 100
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=0
-- first_zero_gate: signal_score_min
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
-- warnings: no_current_live_matches
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 85.0, "roc_63_min": 0.15, "rsi_14_max": 50.0, "signal_score_min": 34.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: none
+- collapsed_result_ids: 1106174
+- live_match_count: 3
+- live_match_tickers: OXY, EOG, VLO
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.5, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.1, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO
 
-### Result 987862
-- run_id: 29
-- strategy_id: 987862
+### Result 1106099
+- run_id: 32
+- strategy_id: 1106099
 - global_rank: 10
 - sector_rank: 10
-- sector: Industrials
-- practical_score: 0.559339
-- norm_score: 0.468911
-- expectancy: 0.015973
-- profit_factor: 3.085715
-- alpha_vs_spy: 0.013220
-- alpha_vs_sector: 0.014008
-- mdd: 0.143053
-- win_rate: 0.703704
-- trade_count: 54
+- sector: Energy
+- practical_score: 1.207476
+- norm_score: 0.577214
+- expectancy: 0.004841
+- profit_factor: 1.635418
+- alpha_vs_spy: 0.003770
+- alpha_vs_sector: 0.001744
+- mdd: 0.178475
+- win_rate: 0.700767
+- trade_count: 391
 - duplicate_group_size: 1
-- collapsed_result_ids: 987862
-- live_match_count: 0
-- live_match_tickers: none
-- promotion_policy_passed: no
-- promotion_policy_violations: trade_count 54 < 100
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=0
-- first_zero_gate: signal_score_min
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
-- warnings: no_current_live_matches
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 85.0, "roc_63_min": 0.15, "rsi_14_max": 50.0, "signal_score_min": 34.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: none
+- collapsed_result_ids: 1106099
+- live_match_count: 3
+- live_match_tickers: OXY, EOG, VLO
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.5, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.05, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO
 
 ## Top Live Match Candidates
 
-### Result 988172
-- run_id: 29
-- strategy_id: 988172
-- global_rank: 39
-- sector_rank: 39
-- sector: Industrials
-- practical_score: 0.380695
-- norm_score: -0.064602
-- expectancy: 0.006821
-- profit_factor: 1.668439
-- alpha_vs_spy: 0.005592
-- alpha_vs_sector: 0.006372
-- mdd: 0.274334
-- win_rate: 0.695652
-- trade_count: 299
+### Result 1105882
+- run_id: 32
+- strategy_id: 1105882
+- global_rank: 36
+- sector_rank: 36
+- sector: Energy
+- practical_score: 1.126448
+- norm_score: 0.472209
+- expectancy: 0.004422
+- profit_factor: 1.578035
+- alpha_vs_spy: 0.003617
+- alpha_vs_sector: 0.001335
+- mdd: 0.193067
+- win_rate: 0.692135
+- trade_count: 445
 - duplicate_group_size: 1
-- collapsed_result_ids: 988172
-- live_match_count: 2
-- live_match_tickers: GEV, VRT
+- collapsed_result_ids: 1105882
+- live_match_count: 4
+- live_match_tickers: OXY, EOG, VLO, MPC
 - promotion_policy_passed: yes
 - promotion_policy_violations: none
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=4
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.4, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.1, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO, https://www.tradingview.com/chart/?symbol=MPC
 
-### Result 988170
-- run_id: 29
-- strategy_id: 988170
+### Result 1105810
+- run_id: 32
+- strategy_id: 1105810
+- global_rank: 37
+- sector_rank: 37
+- sector: Energy
+- practical_score: 1.126428
+- norm_score: 0.474084
+- expectancy: 0.004434
+- profit_factor: 1.579588
+- alpha_vs_spy: 0.003607
+- alpha_vs_sector: 0.001305
+- mdd: 0.193067
+- win_rate: 0.692135
+- trade_count: 445
+- duplicate_group_size: 1
+- collapsed_result_ids: 1105810
+- live_match_count: 4
+- live_match_tickers: OXY, EOG, VLO, MPC
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=4
+- first_zero_gate: none
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.4, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.05, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO, https://www.tradingview.com/chart/?symbol=MPC
+
+### Result 1105888
+- run_id: 32
+- strategy_id: 1105888
+- global_rank: 40
+- sector_rank: 40
+- sector: Energy
+- practical_score: 1.123634
+- norm_score: 0.470277
+- expectancy: 0.004410
+- profit_factor: 1.576434
+- alpha_vs_spy: 0.003605
+- alpha_vs_sector: 0.001323
+- mdd: 0.193067
+- win_rate: 0.692135
+- trade_count: 445
+- duplicate_group_size: 1
+- collapsed_result_ids: 1105888
+- live_match_count: 4
+- live_match_tickers: OXY, EOG, VLO, MPC
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=4
+- first_zero_gate: none
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.4, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.1, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO, https://www.tradingview.com/chart/?symbol=MPC
+
+### Result 1105816
+- run_id: 32
+- strategy_id: 1105816
 - global_rank: 41
 - sector_rank: 41
-- sector: Industrials
-- practical_score: 0.379476
-- norm_score: -0.063848
-- expectancy: 0.006773
-- profit_factor: 1.686121
-- alpha_vs_spy: 0.005449
-- alpha_vs_sector: 0.006249
-- mdd: 0.274334
-- win_rate: 0.698675
-- trade_count: 302
+- sector: Energy
+- practical_score: 1.123614
+- norm_score: 0.472152
+- expectancy: 0.004422
+- profit_factor: 1.577987
+- alpha_vs_spy: 0.003595
+- alpha_vs_sector: 0.001293
+- mdd: 0.193067
+- win_rate: 0.692135
+- trade_count: 445
 - duplicate_group_size: 1
-- collapsed_result_ids: 988170
-- live_match_count: 2
-- live_match_tickers: GEV, VRT
+- collapsed_result_ids: 1105816
+- live_match_count: 4
+- live_match_tickers: OXY, EOG, VLO, MPC
 - promotion_policy_passed: yes
 - promotion_policy_violations: none
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=4
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.4, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.05, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO, https://www.tradingview.com/chart/?symbol=MPC
 
-### Result 988171
-- run_id: 29
-- strategy_id: 988171
+### Result 1105954
+- run_id: 32
+- strategy_id: 1105954
 - global_rank: 42
 - sector_rank: 42
-- sector: Industrials
-- practical_score: 0.372998
-- norm_score: -0.070035
-- expectancy: 0.006670
-- profit_factor: 1.653733
-- alpha_vs_spy: 0.005442
-- alpha_vs_sector: 0.006222
-- mdd: 0.274334
-- win_rate: 0.695652
-- trade_count: 299
+- sector: Energy
+- practical_score: 1.121963
+- norm_score: 0.468117
+- expectancy: 0.004414
+- profit_factor: 1.571143
+- alpha_vs_spy: 0.003617
+- alpha_vs_sector: 0.001328
+- mdd: 0.193067
+- win_rate: 0.690909
+- trade_count: 440
 - duplicate_group_size: 1
-- collapsed_result_ids: 988171
-- live_match_count: 2
-- live_match_tickers: GEV, VRT
+- collapsed_result_ids: 1105954
+- live_match_count: 4
+- live_match_tickers: OXY, EOG, VLO, MPC
 - promotion_policy_passed: yes
 - promotion_policy_violations: none
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=4
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.4, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.05, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.0}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO, https://www.tradingview.com/chart/?symbol=MPC
 
-### Result 988140
-- run_id: 29
-- strategy_id: 988140
+### Result 1106026
+- run_id: 32
+- strategy_id: 1106026
 - global_rank: 43
 - sector_rank: 43
-- sector: Industrials
-- practical_score: 0.372395
-- norm_score: -0.071764
-- expectancy: 0.006635
-- profit_factor: 1.646156
-- alpha_vs_spy: 0.005529
-- alpha_vs_sector: 0.006288
-- mdd: 0.274334
-- win_rate: 0.694079
-- trade_count: 304
+- sector: Energy
+- practical_score: 1.120480
+- norm_score: 0.465387
+- expectancy: 0.004401
+- profit_factor: 1.568115
+- alpha_vs_spy: 0.003626
+- alpha_vs_sector: 0.001348
+- mdd: 0.193067
+- win_rate: 0.690205
+- trade_count: 439
 - duplicate_group_size: 1
-- collapsed_result_ids: 988140
-- live_match_count: 2
-- live_match_tickers: GEV, VRT
+- collapsed_result_ids: 1106026
+- live_match_count: 4
+- live_match_tickers: OXY, EOG, VLO, MPC
 - promotion_policy_passed: yes
 - promotion_policy_violations: none
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=4
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.4, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.1, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.0}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO, https://www.tradingview.com/chart/?symbol=MPC
 
-### Result 988169
-- run_id: 29
-- strategy_id: 988169
+### Result 1105960
+- run_id: 32
+- strategy_id: 1105960
 - global_rank: 44
 - sector_rank: 44
-- sector: Industrials
-- practical_score: 0.371801
-- norm_score: -0.069282
-- expectancy: 0.006624
-- profit_factor: 1.671071
-- alpha_vs_spy: 0.005301
-- alpha_vs_sector: 0.006100
-- mdd: 0.274334
-- win_rate: 0.698675
-- trade_count: 302
+- sector: Energy
+- practical_score: 1.119124
+- norm_score: 0.466171
+- expectancy: 0.004402
+- profit_factor: 1.569541
+- alpha_vs_spy: 0.003605
+- alpha_vs_sector: 0.001316
+- mdd: 0.193067
+- win_rate: 0.690909
+- trade_count: 440
 - duplicate_group_size: 1
-- collapsed_result_ids: 988169
-- live_match_count: 2
-- live_match_tickers: GEV, VRT
+- collapsed_result_ids: 1105960
+- live_match_count: 4
+- live_match_tickers: OXY, EOG, VLO, MPC
 - promotion_policy_passed: yes
 - promotion_policy_violations: none
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=4
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.4, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.05, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.0}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO, https://www.tradingview.com/chart/?symbol=MPC
 
-### Result 988138
-- run_id: 29
-- strategy_id: 988138
-- global_rank: 45
-- sector_rank: 45
-- sector: Industrials
-- practical_score: 0.371183
-- norm_score: -0.071046
-- expectancy: 0.006590
-- profit_factor: 1.662918
-- alpha_vs_spy: 0.005390
-- alpha_vs_sector: 0.006168
-- mdd: 0.274334
-- win_rate: 0.697068
-- trade_count: 307
+### Result 1106032
+- run_id: 32
+- strategy_id: 1106032
+- global_rank: 46
+- sector_rank: 46
+- sector: Energy
+- practical_score: 1.117637
+- norm_score: 0.463438
+- expectancy: 0.004388
+- profit_factor: 1.566513
+- alpha_vs_spy: 0.003613
+- alpha_vs_sector: 0.001335
+- mdd: 0.193067
+- win_rate: 0.690205
+- trade_count: 439
 - duplicate_group_size: 1
-- collapsed_result_ids: 988138
-- live_match_count: 2
-- live_match_tickers: GEV, VRT
+- collapsed_result_ids: 1106032
+- live_match_count: 4
+- live_match_tickers: OXY, EOG, VLO, MPC
 - promotion_policy_passed: yes
 - promotion_policy_violations: none
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=4
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.4, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.1, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.0}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO, https://www.tradingview.com/chart/?symbol=MPC
 
-### Result 988139
-- run_id: 29
-- strategy_id: 988139
+### Result 1105885
+- run_id: 32
+- strategy_id: 1105885
 - global_rank: 47
 - sector_rank: 47
-- sector: Industrials
-- practical_score: 0.364835
-- norm_score: -0.077098
-- expectancy: 0.006488
-- profit_factor: 1.631784
-- alpha_vs_spy: 0.005382
-- alpha_vs_sector: 0.006141
-- mdd: 0.274334
-- win_rate: 0.694079
-- trade_count: 304
+- sector: Energy
+- practical_score: 1.116962
+- norm_score: 0.465697
+- expectancy: 0.004381
+- profit_factor: 1.572640
+- alpha_vs_spy: 0.003576
+- alpha_vs_sector: 0.001294
+- mdd: 0.193067
+- win_rate: 0.692135
+- trade_count: 445
 - duplicate_group_size: 1
-- collapsed_result_ids: 988139
-- live_match_count: 2
-- live_match_tickers: GEV, VRT
+- collapsed_result_ids: 1105885
+- live_match_count: 4
+- live_match_tickers: OXY, EOG, VLO, MPC
 - promotion_policy_passed: yes
 - promotion_policy_violations: none
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=4
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.4, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.1, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO, https://www.tradingview.com/chart/?symbol=MPC
 
-### Result 988137
-- run_id: 29
-- strategy_id: 988137
-- global_rank: 49
-- sector_rank: 49
-- sector: Industrials
-- practical_score: 0.363644
-- norm_score: -0.076380
-- expectancy: 0.006444
-- profit_factor: 1.648217
-- alpha_vs_spy: 0.005243
-- alpha_vs_sector: 0.006022
-- mdd: 0.274334
-- win_rate: 0.697068
-- trade_count: 307
+### Result 1105813
+- run_id: 32
+- strategy_id: 1105813
+- global_rank: 48
+- sector_rank: 48
+- sector: Energy
+- practical_score: 1.116943
+- norm_score: 0.467572
+- expectancy: 0.004393
+- profit_factor: 1.574194
+- alpha_vs_spy: 0.003566
+- alpha_vs_sector: 0.001264
+- mdd: 0.193067
+- win_rate: 0.692135
+- trade_count: 445
 - duplicate_group_size: 1
-- collapsed_result_ids: 988137
-- live_match_count: 2
-- live_match_tickers: GEV, VRT
+- collapsed_result_ids: 1105813
+- live_match_count: 4
+- live_match_tickers: OXY, EOG, VLO, MPC
 - promotion_policy_passed: yes
 - promotion_policy_violations: none
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=4
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
-
-### Result 988156
-- run_id: 29
-- strategy_id: 988156
-- global_rank: 57
-- sector_rank: 57
-- sector: Industrials
-- practical_score: 0.348042
-- norm_score: -0.090176
-- expectancy: 0.006204
-- profit_factor: 1.578711
-- alpha_vs_spy: 0.005207
-- alpha_vs_sector: 0.005850
-- mdd: 0.274334
-- win_rate: 0.693811
-- trade_count: 307
-- duplicate_group_size: 1
-- collapsed_result_ids: 988156
-- live_match_count: 2
-- live_match_tickers: GEV, VRT
-- promotion_policy_passed: yes
-- promotion_policy_violations: none
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
-- first_zero_gate: none
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
-- warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.15, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
-
-### Result 988155
-- run_id: 29
-- strategy_id: 988155
-- global_rank: 58
-- sector_rank: 58
-- sector: Industrials
-- practical_score: 0.340622
-- norm_score: -0.095391
-- expectancy: 0.006058
-- profit_factor: 1.565079
-- alpha_vs_spy: 0.005060
-- alpha_vs_sector: 0.005704
-- mdd: 0.274334
-- win_rate: 0.693811
-- trade_count: 307
-- duplicate_group_size: 1
-- collapsed_result_ids: 988155
-- live_match_count: 2
-- live_match_tickers: GEV, VRT
-- promotion_policy_passed: yes
-- promotion_policy_violations: none
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
-- first_zero_gate: none
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
-- warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.15, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.4, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.05, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO, https://www.tradingview.com/chart/?symbol=MPC
 
 ## Best Practical Live Candidates
 
-### Result 987978
-- run_id: 29
-- strategy_id: 987978
-- global_rank: 32
-- sector_rank: 32
-- sector: Industrials
-- practical_score: 0.395198
-- norm_score: -0.028208
-- expectancy: 0.007819
-- profit_factor: 1.768417
-- alpha_vs_spy: 0.007327
-- alpha_vs_sector: 0.008317
-- mdd: 0.274334
-- win_rate: 0.698113
-- trade_count: 212
+### Result 1106098
+- run_id: 32
+- strategy_id: 1106098
+- global_rank: 1
+- sector_rank: 1
+- sector: Energy
+- practical_score: 1.291086
+- norm_score: 0.641338
+- expectancy: 0.005171
+- profit_factor: 1.703517
+- alpha_vs_spy: 0.004271
+- alpha_vs_sector: 0.001961
+- mdd: 0.178475
+- win_rate: 0.708531
+- trade_count: 422
 - duplicate_group_size: 1
-- collapsed_result_ids: 987978
-- live_match_count: 1
-- live_match_tickers: GEV
+- collapsed_result_ids: 1106098
+- live_match_count: 3
+- live_match_tickers: OXY, EOG, VLO
 - promotion_policy_passed: yes
 - promotion_policy_violations: none
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=1
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=3
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=GEV
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.4, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.05, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO
 
-### Result 987946
-- run_id: 29
-- strategy_id: 987946
-- global_rank: 33
-- sector_rank: 33
-- sector: Industrials
-- practical_score: 0.394053
-- norm_score: -0.026831
-- expectancy: 0.007845
-- profit_factor: 1.774862
-- alpha_vs_spy: 0.007194
-- alpha_vs_sector: 0.008128
-- mdd: 0.274334
-- win_rate: 0.692308
-- trade_count: 221
+### Result 1106170
+- run_id: 32
+- strategy_id: 1106170
+- global_rank: 2
+- sector_rank: 2
+- sector: Energy
+- practical_score: 1.290139
+- norm_score: 0.641190
+- expectancy: 0.005180
+- profit_factor: 1.701419
+- alpha_vs_spy: 0.004290
+- alpha_vs_sector: 0.001943
+- mdd: 0.178475
+- win_rate: 0.707143
+- trade_count: 420
 - duplicate_group_size: 1
-- collapsed_result_ids: 987946
-- live_match_count: 1
-- live_match_tickers: GEV
+- collapsed_result_ids: 1106170
+- live_match_count: 3
+- live_match_tickers: OXY, EOG, VLO
 - promotion_policy_passed: yes
 - promotion_policy_violations: none
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=1
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=3
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=GEV
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.4, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.1, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO
 
-### Result 987977
-- run_id: 29
-- strategy_id: 987977
-- global_rank: 36
-- sector_rank: 36
-- sector: Industrials
-- practical_score: 0.386948
-- norm_score: -0.034034
-- expectancy: 0.007658
-- profit_factor: 1.752619
-- alpha_vs_spy: 0.007167
-- alpha_vs_sector: 0.008156
-- mdd: 0.274334
-- win_rate: 0.698113
-- trade_count: 212
+### Result 1106104
+- run_id: 32
+- strategy_id: 1106104
+- global_rank: 3
+- sector_rank: 3
+- sector: Energy
+- practical_score: 1.288085
+- norm_score: 0.639267
+- expectancy: 0.005158
+- profit_factor: 1.701760
+- alpha_vs_spy: 0.004258
+- alpha_vs_sector: 0.001948
+- mdd: 0.178475
+- win_rate: 0.708531
+- trade_count: 422
 - duplicate_group_size: 1
-- collapsed_result_ids: 987977
-- live_match_count: 1
-- live_match_tickers: GEV
+- collapsed_result_ids: 1106104
+- live_match_count: 3
+- live_match_tickers: OXY, EOG, VLO
 - promotion_policy_passed: yes
 - promotion_policy_violations: none
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=1
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=3
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=GEV
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.4, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.05, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO
 
-### Result 987945
-- run_id: 29
-- strategy_id: 987945
-- global_rank: 37
-- sector_rank: 37
-- sector: Industrials
-- practical_score: 0.386130
-- norm_score: -0.032428
-- expectancy: 0.007691
-- profit_factor: 1.759631
-- alpha_vs_spy: 0.007040
-- alpha_vs_sector: 0.007974
-- mdd: 0.274334
-- win_rate: 0.692308
-- trade_count: 221
+### Result 1106176
+- run_id: 32
+- strategy_id: 1106176
+- global_rank: 4
+- sector_rank: 4
+- sector: Energy
+- practical_score: 1.287128
+- norm_score: 0.639114
+- expectancy: 0.005167
+- profit_factor: 1.699663
+- alpha_vs_spy: 0.004277
+- alpha_vs_sector: 0.001930
+- mdd: 0.178475
+- win_rate: 0.707143
+- trade_count: 420
 - duplicate_group_size: 1
-- collapsed_result_ids: 987945
-- live_match_count: 1
-- live_match_tickers: GEV
+- collapsed_result_ids: 1106176
+- live_match_count: 3
+- live_match_tickers: OXY, EOG, VLO
 - promotion_policy_passed: yes
 - promotion_policy_violations: none
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=1
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=3
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=GEV
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.4, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.1, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO
 
-### Result 988172
-- run_id: 29
-- strategy_id: 988172
-- global_rank: 39
-- sector_rank: 39
-- sector: Industrials
-- practical_score: 0.380695
-- norm_score: -0.064602
-- expectancy: 0.006821
-- profit_factor: 1.668439
-- alpha_vs_spy: 0.005592
-- alpha_vs_sector: 0.006372
-- mdd: 0.274334
-- win_rate: 0.695652
-- trade_count: 299
+### Result 1106101
+- run_id: 32
+- strategy_id: 1106101
+- global_rank: 5
+- sector_rank: 5
+- sector: Energy
+- practical_score: 1.280972
+- norm_score: 0.634359
+- expectancy: 0.005128
+- profit_factor: 1.697597
+- alpha_vs_spy: 0.004228
+- alpha_vs_sector: 0.001918
+- mdd: 0.178475
+- win_rate: 0.708531
+- trade_count: 422
 - duplicate_group_size: 1
-- collapsed_result_ids: 988172
-- live_match_count: 2
-- live_match_tickers: GEV, VRT
+- collapsed_result_ids: 1106101
+- live_match_count: 3
+- live_match_tickers: OXY, EOG, VLO
 - promotion_policy_passed: yes
 - promotion_policy_violations: none
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=3
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.4, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.05, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO
 
-### Result 988170
-- run_id: 29
-- strategy_id: 988170
-- global_rank: 41
-- sector_rank: 41
-- sector: Industrials
-- practical_score: 0.379476
-- norm_score: -0.063848
-- expectancy: 0.006773
-- profit_factor: 1.686121
-- alpha_vs_spy: 0.005449
-- alpha_vs_sector: 0.006249
-- mdd: 0.274334
-- win_rate: 0.698675
-- trade_count: 302
+### Result 1106173
+- run_id: 32
+- strategy_id: 1106173
+- global_rank: 6
+- sector_rank: 6
+- sector: Energy
+- practical_score: 1.279990
+- norm_score: 0.634192
+- expectancy: 0.005137
+- profit_factor: 1.695499
+- alpha_vs_spy: 0.004246
+- alpha_vs_sector: 0.001900
+- mdd: 0.178475
+- win_rate: 0.707143
+- trade_count: 420
 - duplicate_group_size: 1
-- collapsed_result_ids: 988170
-- live_match_count: 2
-- live_match_tickers: GEV, VRT
+- collapsed_result_ids: 1106173
+- live_match_count: 3
+- live_match_tickers: OXY, EOG, VLO
 - promotion_policy_passed: yes
 - promotion_policy_violations: none
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=3
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.4, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.1, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO
 
-### Result 988171
-- run_id: 29
-- strategy_id: 988171
-- global_rank: 42
-- sector_rank: 42
-- sector: Industrials
-- practical_score: 0.372998
-- norm_score: -0.070035
-- expectancy: 0.006670
-- profit_factor: 1.653733
-- alpha_vs_spy: 0.005442
-- alpha_vs_sector: 0.006222
-- mdd: 0.274334
-- win_rate: 0.695652
-- trade_count: 299
+### Result 1106171
+- run_id: 32
+- strategy_id: 1106171
+- global_rank: 7
+- sector_rank: 7
+- sector: Energy
+- practical_score: 1.225752
+- norm_score: 0.603949
+- expectancy: 0.004877
+- profit_factor: 1.636865
+- alpha_vs_spy: 0.003747
+- alpha_vs_sector: 0.001605
+- mdd: 0.169693
+- win_rate: 0.699229
+- trade_count: 389
 - duplicate_group_size: 1
-- collapsed_result_ids: 988171
-- live_match_count: 2
-- live_match_tickers: GEV, VRT
+- collapsed_result_ids: 1106171
+- live_match_count: 3
+- live_match_tickers: OXY, EOG, VLO
 - promotion_policy_passed: yes
 - promotion_policy_violations: none
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=3
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.5, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.1, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO
 
-### Result 988140
-- run_id: 29
-- strategy_id: 988140
-- global_rank: 43
-- sector_rank: 43
-- sector: Industrials
-- practical_score: 0.372395
-- norm_score: -0.071764
-- expectancy: 0.006635
-- profit_factor: 1.646156
-- alpha_vs_spy: 0.005529
-- alpha_vs_sector: 0.006288
-- mdd: 0.274334
-- win_rate: 0.694079
-- trade_count: 304
+### Result 1106177
+- run_id: 32
+- strategy_id: 1106177
+- global_rank: 8
+- sector_rank: 8
+- sector: Energy
+- practical_score: 1.222534
+- norm_score: 0.601740
+- expectancy: 0.004863
+- profit_factor: 1.635036
+- alpha_vs_spy: 0.003733
+- alpha_vs_sector: 0.001591
+- mdd: 0.169693
+- win_rate: 0.699229
+- trade_count: 389
 - duplicate_group_size: 1
-- collapsed_result_ids: 988140
-- live_match_count: 2
-- live_match_tickers: GEV, VRT
+- collapsed_result_ids: 1106177
+- live_match_count: 3
+- live_match_tickers: OXY, EOG, VLO
 - promotion_policy_passed: yes
 - promotion_policy_violations: none
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=3
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.5, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.5, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.1, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO
 
-### Result 988169
-- run_id: 29
-- strategy_id: 988169
-- global_rank: 44
-- sector_rank: 44
-- sector: Industrials
-- practical_score: 0.371801
-- norm_score: -0.069282
-- expectancy: 0.006624
-- profit_factor: 1.671071
-- alpha_vs_spy: 0.005301
-- alpha_vs_sector: 0.006100
-- mdd: 0.274334
-- win_rate: 0.698675
-- trade_count: 302
+### Result 1106174
+- run_id: 32
+- strategy_id: 1106174
+- global_rank: 9
+- sector_rank: 9
+- sector: Energy
+- practical_score: 1.214904
+- norm_score: 0.596504
+- expectancy: 0.004830
+- profit_factor: 1.630700
+- alpha_vs_spy: 0.003699
+- alpha_vs_sector: 0.001558
+- mdd: 0.169693
+- win_rate: 0.699229
+- trade_count: 389
 - duplicate_group_size: 1
-- collapsed_result_ids: 988169
-- live_match_count: 2
-- live_match_tickers: GEV, VRT
+- collapsed_result_ids: 1106174
+- live_match_count: 3
+- live_match_tickers: OXY, EOG, VLO
 - promotion_policy_passed: yes
 - promotion_policy_violations: none
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=3
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 4.0, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.5, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.1, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO
 
-### Result 988138
-- run_id: 29
-- strategy_id: 988138
-- global_rank: 45
-- sector_rank: 45
-- sector: Industrials
-- practical_score: 0.371183
-- norm_score: -0.071046
-- expectancy: 0.006590
-- profit_factor: 1.662918
-- alpha_vs_spy: 0.005390
-- alpha_vs_sector: 0.006168
-- mdd: 0.274334
-- win_rate: 0.697068
-- trade_count: 307
+### Result 1106099
+- run_id: 32
+- strategy_id: 1106099
+- global_rank: 10
+- sector_rank: 10
+- sector: Energy
+- practical_score: 1.207476
+- norm_score: 0.577214
+- expectancy: 0.004841
+- profit_factor: 1.635418
+- alpha_vs_spy: 0.003770
+- alpha_vs_sector: 0.001744
+- mdd: 0.178475
+- win_rate: 0.700767
+- trade_count: 391
 - duplicate_group_size: 1
-- collapsed_result_ids: 988138
-- live_match_count: 2
-- live_match_tickers: GEV, VRT
+- collapsed_result_ids: 1106099
+- live_match_count: 3
+- live_match_tickers: OXY, EOG, VLO
 - promotion_policy_passed: yes
 - promotion_policy_violations: none
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=2
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=3
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 60.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=GEV, https://www.tradingview.com/chart/?symbol=VRT
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.5, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.05, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO
 
 ## Best Candidate Per Sector
 
-### Result 987870
-- run_id: 29
-- strategy_id: 987870
+### Result 1106098
+- run_id: 32
+- strategy_id: 1106098
 - global_rank: 1
 - sector_rank: 1
-- sector: Industrials
-- practical_score: 0.830000
-- norm_score: 0.700000
-- expectancy: 0.019041
-- profit_factor: 3.965527
-- alpha_vs_spy: 0.015605
-- alpha_vs_sector: 0.016783
-- mdd: 0.092386
-- win_rate: 0.682927
-- trade_count: 41
-- duplicate_group_size: 2
-- collapsed_result_ids: 987870, 987902
-- live_match_count: 0
-- live_match_tickers: none
-- promotion_policy_passed: no
-- promotion_policy_violations: trade_count 41 < 100
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=0
-- first_zero_gate: signal_score_min
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
-- warnings: no_current_live_matches
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.15, "rsi_14_max": 50.0, "signal_score_min": 34.0, "sma_200_dist_min": 0.1, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: none
+- sector: Energy
+- practical_score: 1.291086
+- norm_score: 0.641338
+- expectancy: 0.005171
+- profit_factor: 1.703517
+- alpha_vs_spy: 0.004271
+- alpha_vs_sector: 0.001961
+- mdd: 0.178475
+- win_rate: 0.708531
+- trade_count: 422
+- duplicate_group_size: 1
+- collapsed_result_ids: 1106098
+- live_match_count: 3
+- live_match_tickers: OXY, EOG, VLO
+- promotion_policy_passed: yes
+- promotion_policy_violations: none
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=3
+- first_zero_gate: none
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- warnings: none
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.4, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.05, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO
 
 ## Best Promotable Candidate Per Sector
 
-### Result 987978
-- run_id: 29
-- strategy_id: 987978
-- global_rank: 32
-- sector_rank: 32
-- sector: Industrials
-- practical_score: 0.395198
-- norm_score: -0.028208
-- expectancy: 0.007819
-- profit_factor: 1.768417
-- alpha_vs_spy: 0.007327
-- alpha_vs_sector: 0.008317
-- mdd: 0.274334
-- win_rate: 0.698113
-- trade_count: 212
+### Result 1106098
+- run_id: 32
+- strategy_id: 1106098
+- global_rank: 1
+- sector_rank: 1
+- sector: Energy
+- practical_score: 1.291086
+- norm_score: 0.641338
+- expectancy: 0.005171
+- profit_factor: 1.703517
+- alpha_vs_spy: 0.004271
+- alpha_vs_sector: 0.001961
+- mdd: 0.178475
+- win_rate: 0.708531
+- trade_count: 422
 - duplicate_group_size: 1
-- collapsed_result_ids: 987978
-- live_match_count: 1
-- live_match_tickers: GEV
+- collapsed_result_ids: 1106098
+- live_match_count: 3
+- live_match_tickers: OXY, EOG, VLO
 - promotion_policy_passed: yes
 - promotion_policy_violations: none
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=1
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=3
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=GEV
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.4, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.05, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO
 
 ## Best Live Candidate Per Sector
 
-### Result 987978
-- run_id: 29
-- strategy_id: 987978
-- global_rank: 32
-- sector_rank: 32
-- sector: Industrials
-- practical_score: 0.395198
-- norm_score: -0.028208
-- expectancy: 0.007819
-- profit_factor: 1.768417
-- alpha_vs_spy: 0.007327
-- alpha_vs_sector: 0.008317
-- mdd: 0.274334
-- win_rate: 0.698113
-- trade_count: 212
+### Result 1106098
+- run_id: 32
+- strategy_id: 1106098
+- global_rank: 1
+- sector_rank: 1
+- sector: Energy
+- practical_score: 1.291086
+- norm_score: 0.641338
+- expectancy: 0.005171
+- profit_factor: 1.703517
+- alpha_vs_spy: 0.004271
+- alpha_vs_sector: 0.001961
+- mdd: 0.178475
+- win_rate: 0.708531
+- trade_count: 422
 - duplicate_group_size: 1
-- collapsed_result_ids: 987978
-- live_match_count: 1
-- live_match_tickers: GEV
+- collapsed_result_ids: 1106098
+- live_match_count: 3
+- live_match_tickers: OXY, EOG, VLO
 - promotion_policy_passed: yes
 - promotion_policy_violations: none
-- gate_counts: universe=250 -> regime_green=250 -> sector_scope=39 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=1
+- gate_counts: universe=250 -> regime_green=250 -> sector_scope=17 -> relative_strength_index_vs_spy_min=4 -> signal_score_min=3
 - first_zero_gate: none
-- component_positive_counts: roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
+- component_positive_counts: oil_corr_60_min=4, roc_63_min=4, rsi_14_max=4, sma_200_dist_min=4, vol_alpha_min=4
 - warnings: none
-- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"profit_target_atr_mult": 4.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"relative_strength_index_vs_spy_min": 90.0, "roc_63_min": 0.2, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 0.8}, "scope_size": 250, "sector": "Industrials", "sweep_mode": "high_performance_industrials_refined"}`
-- TradingView: https://www.tradingview.com/chart/?symbol=GEV
+- params: `{"backtest_costs": {"commission_bps_per_side": 0.0, "slippage_bps_per_side": 5.0}, "exit_rules": {"exit_before_earnings_days": null, "profit_target_atr_mult": 3.5, "profit_target_pct": null, "time_limit_days": 20, "trailing_stop_atr_mult": 3.0, "trailing_stop_pct": null}, "indicators": {"oil_corr_60_min": 0.4, "relative_strength_index_vs_spy_min": 75.0, "roc_63_min": 0.05, "rsi_14_max": 55.0, "signal_score_min": 32.0, "sma_200_dist_min": 0.14, "vol_alpha_min": 1.2}, "scope_size": 250, "sector": "Energy", "sweep_mode": "high_performance_energy_stability_refined"}`
+- TradingView: https://www.tradingview.com/chart/?symbol=OXY, https://www.tradingview.com/chart/?symbol=EOG, https://www.tradingview.com/chart/?symbol=VLO
 
 ## Best Promotable Portfolio Pairs
 

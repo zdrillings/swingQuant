@@ -1,15 +1,15 @@
 {
   "strategies": {
     "materials": {
-      "strategy_id": 911472,
+      "strategy_id": 987486,
       "sector": "Materials",
-      "promoted_at": "2026-05-09T07:27:40",
+      "promoted_at": "2026-05-09T19:47:44",
       "indicators": {
-        "relative_strength_index_vs_spy_min": 75.0,
+        "relative_strength_index_vs_spy_min": 80.0,
         "roc_63_min": 0.15,
         "rsi_14_max": 55.0,
         "signal_score_min": 30.0,
-        "sma_200_dist_min": 0.22,
+        "sma_200_dist_min": 0.18,
         "vol_alpha_min": 1.0
       },
       "exit_rules": {

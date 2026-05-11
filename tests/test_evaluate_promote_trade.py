@@ -43,6 +43,82 @@ class FakeMarketDataClient:
 
 
 class EvaluateServiceTests(unittest.TestCase):
+    def test_evaluate_caps_top_section_sector_repetition(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            paths = AppPaths(
+                root_dir=root,
+                data_dir=root / "data",
+                duckdb_path=root / "data" / "market_data.duckdb",
+                sqlite_path=root / "data" / "ledger.sqlite",
+                reports_dir=root / "reports",
+                logs_dir=root / "logs",
+                config_path=root / "config.yaml",
+                env_path=root / ".env",
+                production_strategy_path=root / "production_strategy.json",
+            )
+            db = DatabaseManager(paths)
+            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                db.initialize()
+            db.insert_backtest_results(
+                [
+                    BacktestResultRow(
+                        run_id=5,
+                        strategy_id=101,
+                        params_json=json.dumps({"indicators": {"a": 1}, "exit_rules": {}, "sector": "Energy"}),
+                        norm_score=None,
+                        profit_factor=2.0,
+                        expectancy=0.12,
+                        mdd=0.10,
+                        win_rate=0.6,
+                        trade_count=150,
+                    ),
+                    BacktestResultRow(
+                        run_id=5,
+                        strategy_id=102,
+                        params_json=json.dumps({"indicators": {"a": 2}, "exit_rules": {}, "sector": "Energy"}),
+                        norm_score=None,
+                        profit_factor=1.9,
+                        expectancy=0.11,
+                        mdd=0.11,
+                        win_rate=0.59,
+                        trade_count=150,
+                    ),
+                    BacktestResultRow(
+                        run_id=5,
+                        strategy_id=103,
+                        params_json=json.dumps({"indicators": {"a": 3}, "exit_rules": {}, "sector": "Energy"}),
+                        norm_score=None,
+                        profit_factor=1.8,
+                        expectancy=0.10,
+                        mdd=0.12,
+                        win_rate=0.58,
+                        trade_count=150,
+                    ),
+                    BacktestResultRow(
+                        run_id=5,
+                        strategy_id=104,
+                        params_json=json.dumps({"indicators": {"b": 1}, "exit_rules": {}, "sector": "Materials"}),
+                        norm_score=None,
+                        profit_factor=1.7,
+                        expectancy=0.09,
+                        mdd=0.13,
+                        win_rate=0.57,
+                        trade_count=150,
+                    ),
+                ]
+            )
+            service = EvaluateService(db)
+            service._build_live_candidate_metadata = lambda frame: ({}, {})
+
+            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                service.run(top=3, run_id=5, min_trades=12)
+
+            report_text = (paths.reports_dir / "candidates.md").read_text(encoding="utf-8")
+            top_section = report_text.split("## Top Ranked Candidates", 1)[1].split("## Top Live Match Candidates", 1)[0]
+            self.assertEqual(top_section.count("- sector: Energy"), 2)
+            self.assertEqual(top_section.count("- sector: Materials"), 1)
+
     def test_evaluate_uses_latest_run_and_min_trade_filter_in_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -460,6 +536,103 @@ class EvaluateServiceTests(unittest.TestCase):
             self.assertLess(top_ranked_section.find("strategy_id: 200"), top_ranked_section.find("strategy_id: 201"))
             self.assertIn("alpha_vs_spy: 0.020000", report_text)
             self.assertIn("alpha_vs_sector: 0.020000", report_text)
+
+    def test_evaluate_can_render_walk_forward_stability_section(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            paths = AppPaths(
+                root_dir=root,
+                data_dir=root / "data",
+                duckdb_path=root / "data" / "market_data.duckdb",
+                sqlite_path=root / "data" / "ledger.sqlite",
+                reports_dir=root / "reports",
+                logs_dir=root / "logs",
+                config_path=root / "config.yaml",
+                env_path=root / ".env",
+                production_strategy_path=root / "production_strategy.json",
+            )
+            db = DatabaseManager(paths)
+            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                db.initialize()
+            db.insert_backtest_results(
+                [
+                    BacktestResultRow(
+                        run_id=9,
+                        strategy_id=301,
+                        params_json=json.dumps({"indicators": {}, "exit_rules": {}, "sector": "Materials"}),
+                        norm_score=None,
+                        profit_factor=1.8,
+                        expectancy=0.08,
+                        mdd=0.10,
+                        win_rate=0.6,
+                        trade_count=120,
+                        alpha_vs_spy=0.01,
+                        alpha_vs_sector=0.01,
+                    )
+                ]
+            )
+            service = EvaluateService(db)
+            service._build_live_candidate_metadata = lambda frame: ({}, {})
+            service._build_walk_forward_stability = lambda **kwargs: pd.DataFrame(
+                [
+                    {
+                        "id": 1,
+                        "wf_window_count": 5,
+                        "wf_median_expectancy": 0.02,
+                        "wf_worst_expectancy": -0.01,
+                        "wf_positive_window_ratio": 0.8,
+                        "wf_positive_alpha_window_ratio": 0.6,
+                        "wf_median_alpha_vs_spy": 0.01,
+                        "wf_worst_mdd": 0.12,
+                        "wf_trade_count_min": 14,
+                        "wf_stability_score": 0.55,
+                    }
+                ]
+            )
+
+            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                report = service.run(top=5, run_id=9, min_trades=12, walk_forward=True)
+
+            self.assertEqual(report.rows_written, 1)
+            report_text = (paths.reports_dir / "candidates.md").read_text(encoding="utf-8")
+            self.assertIn("- walk_forward: enabled on shortlist=25 with rolling_windows=5", report_text)
+            self.assertIn("## Best Walk-Forward Stability Candidates", report_text)
+            self.assertIn("wf_stability_score: 0.550000", report_text)
+            self.assertIn("wf_window_count: 5", report_text)
+            self.assertIn("wf_positive_window_ratio: 0.800000", report_text)
+            self.assertIn("wf_positive_alpha_window_ratio: 0.600000", report_text)
+
+    def test_walk_forward_summary_rewards_consistency(self) -> None:
+        service = EvaluateService(DatabaseManager(AppPaths(
+            root_dir=Path("."),
+            data_dir=Path("data"),
+            duckdb_path=Path("data/market_data.duckdb"),
+            sqlite_path=Path("data/ledger.sqlite"),
+            reports_dir=Path("reports"),
+            logs_dir=Path("logs"),
+            config_path=Path("config.yaml"),
+            env_path=Path(".env"),
+            production_strategy_path=Path("production_strategy.json"),
+        )))
+
+        stronger = service._score_walk_forward_summary(
+            median_expectancy=0.01,
+            worst_expectancy=0.002,
+            positive_window_ratio=0.8,
+            positive_alpha_window_ratio=0.8,
+            worst_mdd=0.15,
+            trade_count_min=15,
+        )
+        weaker = service._score_walk_forward_summary(
+            median_expectancy=0.005,
+            worst_expectancy=-0.01,
+            positive_window_ratio=0.4,
+            positive_alpha_window_ratio=0.2,
+            worst_mdd=0.30,
+            trade_count_min=5,
+        )
+
+        self.assertGreater(stronger, weaker)
 
 
 class PromoteAndTradeTests(unittest.TestCase):

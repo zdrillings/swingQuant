@@ -56,6 +56,12 @@ EXIT_RULE_GRID_KEYS = {
     "trailing_stop_atr_mult",
     "profit_target_atr_mult",
     "time_limit_days",
+    "exit_before_earnings_days",
+}
+
+OPTIONAL_EVENT_FILTER_KEYS = {
+    "days_to_next_earnings_min",
+    "days_since_last_earnings_min",
 }
 
 
@@ -97,8 +103,14 @@ class SweepService:
         price_history = self.db_manager.load_price_history(tickers)
         if price_history.empty:
             raise ValueError("Historical prices are unavailable. Run `sq sync` first.")
+        earnings_loader = getattr(self.db_manager, "load_earnings_calendar", None)
+        earnings_calendar = earnings_loader(universe_tickers) if callable(earnings_loader) else pd.DataFrame()
 
-        analysis_frame, feature_columns = build_analysis_frame(price_history, universe_rows)
+        analysis_frame, feature_columns = build_analysis_frame(
+            price_history,
+            universe_rows,
+            earnings_calendar=earnings_calendar,
+        )
         analysis_frame = analysis_frame[analysis_frame["ticker"].isin(universe_tickers)].copy()
         if analysis_frame.empty:
             raise ValueError("No analysis frame could be built for the selected universe.")
@@ -167,6 +179,7 @@ class SweepService:
                             "time_limit_days": strategy_params["exit_rules"]["time_limit_days"],
                             "trailing_stop_atr_mult": strategy_params["exit_rules"].get("trailing_stop_atr_mult"),
                             "profit_target_atr_mult": strategy_params["exit_rules"].get("profit_target_atr_mult"),
+                            "exit_before_earnings_days": strategy_params["exit_rules"].get("exit_before_earnings_days"),
                         },
                         "backtest_costs": {
                             "slippage_bps_per_side": backtest_costs.slippage_bps_per_side,
@@ -246,6 +259,7 @@ class SweepService:
                 name: value
                 for name, value in flat_params.items()
                 if name not in EXIT_RULE_GRID_KEYS
+                and not (name in OPTIONAL_EVENT_FILTER_KEYS and float(value) <= 0)
             }
             trailing_stop_pct = (
                 float(flat_params["trailing_stop_pct"])
@@ -277,6 +291,11 @@ class SweepService:
                 "time_limit_days": int(flat_params.get("time_limit_days", DEFAULT_EXIT_RULES.time_limit_days)),
                 "trailing_stop_atr_mult": trailing_stop_atr_mult,
                 "profit_target_atr_mult": profit_target_atr_mult,
+                "exit_before_earnings_days": (
+                    int(flat_params["exit_before_earnings_days"])
+                    if "exit_before_earnings_days" in flat_params and float(flat_params["exit_before_earnings_days"]) > 0
+                    else DEFAULT_EXIT_RULES.exit_before_earnings_days
+                ),
             }
             combinations.append({"indicators": indicators, "exit_rules": exit_rules})
         return combinations
@@ -346,6 +365,11 @@ class SweepService:
                 if exit_rules.get("profit_target_atr_mult") is not None
                 else None
             ),
+            exit_before_earnings_days=(
+                int(exit_rules["exit_before_earnings_days"])
+                if exit_rules.get("exit_before_earnings_days") is not None
+                else None
+            ),
         )
 
         for ticker, ticker_frame in prepared.partition_by("ticker", as_dict=True).items():
@@ -374,6 +398,13 @@ class SweepService:
                     elif float(row["rsi_2"]) > 90:
                         exit_price = float(row["close"])
                     elif held_days > int(exit_rules["time_limit_days"]):
+                        exit_price = float(row["close"])
+                    elif (
+                        resolved_exit_rules.exit_before_earnings_days is not None
+                        and row.get("days_to_next_earnings") is not None
+                        and math.isfinite(float(row["days_to_next_earnings"]))
+                        and float(row["days_to_next_earnings"]) <= float(resolved_exit_rules.exit_before_earnings_days)
+                    ):
                         exit_price = float(row["close"])
 
                     if exit_price is not None:

@@ -106,6 +106,9 @@ class SyncService:
         inactive_for_liquidity = self._apply_liquidity_filter(
             [ticker for ticker in universe_tickers if ticker not in final_failed_tickers]
         )
+        earnings_tickers = [ticker for ticker in universe_tickers if ticker not in final_failed_tickers]
+        self.logger.info("Syncing earnings calendars for %s tickers", len(earnings_tickers))
+        self._sync_earnings_calendar(earnings_tickers)
         self.logger.info(
             "Sync complete: universe_size=%s inserted_rows=%s failed_tickers=%s illiquid_tickers=%s",
             len(universe_tickers),
@@ -253,3 +256,17 @@ class SyncService:
             if not is_active:
                 inactive.append(ticker)
         return inactive
+
+    def _sync_earnings_calendar(self, tickers: list[str]) -> None:
+        for index, ticker in enumerate(sorted(tickers), start=1):
+            try:
+                earnings_dates = self.market_data_client.download_earnings_dates(ticker, limit=24)
+                self.db_manager.replace_earnings_dates(ticker, earnings_dates)
+            except Exception as exc:
+                self.logger.warning("Failed to sync earnings calendar for %s: %s", ticker, exc)
+            if index == len(tickers) or index % 25 == 0:
+                self.logger.info(
+                    "Earnings sync progress: completed_tickers=%s total_tickers=%s",
+                    index,
+                    len(tickers),
+                )

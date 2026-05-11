@@ -49,6 +49,11 @@ class PromoteService:
                     if exit_rules_payload.get("profit_target_atr_mult") is not None
                     else None
                 ),
+                exit_before_earnings_days=(
+                    int(exit_rules_payload["exit_before_earnings_days"])
+                    if exit_rules_payload.get("exit_before_earnings_days") is not None
+                    else None
+                ),
             ),
         )
         strategies_path = self.db_manager.paths.production_strategies_path or (

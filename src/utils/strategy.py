@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from functools import lru_cache
+import json
 import math
 
 from src.settings import load_feature_config, load_production_strategies, load_production_strategy
@@ -15,6 +16,7 @@ class ExitRules:
     time_limit_days: int
     trailing_stop_atr_mult: float | None = None
     profit_target_atr_mult: float | None = None
+    exit_before_earnings_days: int | None = None
 
 
 @dataclass(frozen=True)
@@ -25,6 +27,12 @@ class ProductionStrategy:
     exit_rules: ExitRules
     slot: str = "default"
     sector: str = "ALL"
+
+
+@dataclass(frozen=True)
+class TradeStrategyResolution:
+    strategy: ProductionStrategy | None
+    source: str
 
 
 DEFAULT_EXIT_RULES = ExitRules(
@@ -70,6 +78,57 @@ def clear_strategy_caches() -> None:
     load_active_strategies.cache_clear()
 
 
+def resolve_trade_strategy(
+    *,
+    trade,
+    strategies: dict[str, ProductionStrategy],
+    sector_map: dict[str, str],
+    backtest_lookup=None,
+) -> TradeStrategyResolution:
+    strategy_slot = _trade_row_value(trade, "strategy_slot")
+    if strategy_slot and strategy_slot in strategies:
+        return TradeStrategyResolution(strategy=strategies[strategy_slot], source="active_slot")
+
+    strategy_id = _trade_row_value(trade, "strategy_id")
+    if strategy_id is not None:
+        for strategy in strategies.values():
+            if strategy.strategy_id == int(strategy_id):
+                return TradeStrategyResolution(strategy=strategy, source="active_strategy_id")
+        if callable(backtest_lookup):
+            historical_row = backtest_lookup(int(strategy_id))
+            if historical_row is not None:
+                return TradeStrategyResolution(
+                    strategy=production_strategy_from_backtest_result(
+                        historical_row,
+                        slot=str(strategy_slot) if strategy_slot not in (None, "") else "legacy",
+                    ),
+                    source="historical_strategy_id",
+                )
+
+    ticker = _trade_row_value(trade, "ticker")
+    ticker_sector = sector_map.get(str(ticker)) if ticker is not None else None
+    exact_matches = [strategy for strategy in strategies.values() if strategy.sector == ticker_sector]
+    if len(exact_matches) == 1:
+        return TradeStrategyResolution(strategy=exact_matches[0], source="active_sector_match")
+
+    from src.utils.regime import regime_etf_for_sector
+
+    ticker_regime = regime_etf_for_sector(ticker_sector or "")
+    regime_matches = [
+        strategy for strategy in strategies.values()
+        if regime_etf_for_sector(strategy.sector) == ticker_regime
+    ]
+    if len(regime_matches) == 1:
+        return TradeStrategyResolution(strategy=regime_matches[0], source="active_regime_match")
+
+    all_matches = [strategy for strategy in strategies.values() if strategy.sector == "ALL"]
+    if len(all_matches) == 1:
+        return TradeStrategyResolution(strategy=all_matches[0], source="active_all_match")
+    if len(strategies) == 1:
+        return TradeStrategyResolution(strategy=next(iter(strategies.values())), source="sole_active_strategy")
+    return TradeStrategyResolution(strategy=None, source="unresolved")
+
+
 def _production_strategy_from_payload(data: dict, *, slot: str) -> ProductionStrategy:
     exit_rules = data.get("exit_rules", {})
     return ProductionStrategy(
@@ -90,6 +149,11 @@ def _production_strategy_from_payload(data: dict, *, slot: str) -> ProductionStr
             profit_target_atr_mult=(
                 float(exit_rules["profit_target_atr_mult"])
                 if exit_rules.get("profit_target_atr_mult") is not None
+                else None
+            ),
+            exit_before_earnings_days=(
+                int(exit_rules["exit_before_earnings_days"])
+                if exit_rules.get("exit_before_earnings_days") is not None
                 else None
             ),
         ),
@@ -114,8 +178,45 @@ def build_production_strategy_payload(
             "time_limit_days": exit_rules.time_limit_days,
             "trailing_stop_atr_mult": exit_rules.trailing_stop_atr_mult,
             "profit_target_atr_mult": exit_rules.profit_target_atr_mult,
+            "exit_before_earnings_days": exit_rules.exit_before_earnings_days,
         },
     }
+
+
+def production_strategy_from_backtest_result(
+    row,
+    *,
+    slot: str | None = None,
+) -> ProductionStrategy:
+    params = json.loads(row["params_json"])
+    exit_rules = params.get("exit_rules", {})
+    return ProductionStrategy(
+        strategy_id=int(row["strategy_id"]),
+        slot=slot or str(params.get("slot", "legacy")),
+        sector=str(params.get("sector", "ALL")),
+        promoted_at=datetime.now().isoformat(timespec="seconds"),
+        indicators={str(key): float(value) for key, value in params.get("indicators", {}).items()},
+        exit_rules=ExitRules(
+            trailing_stop_pct=float(exit_rules["trailing_stop_pct"]) if exit_rules.get("trailing_stop_pct") is not None else None,
+            profit_target_pct=float(exit_rules["profit_target_pct"]) if exit_rules.get("profit_target_pct") is not None else None,
+            time_limit_days=int(exit_rules.get("time_limit_days", DEFAULT_EXIT_RULES.time_limit_days)),
+            trailing_stop_atr_mult=(
+                float(exit_rules["trailing_stop_atr_mult"])
+                if exit_rules.get("trailing_stop_atr_mult") is not None
+                else None
+            ),
+            profit_target_atr_mult=(
+                float(exit_rules["profit_target_atr_mult"])
+                if exit_rules.get("profit_target_atr_mult") is not None
+                else None
+            ),
+            exit_before_earnings_days=(
+                int(exit_rules["exit_before_earnings_days"])
+                if exit_rules.get("exit_before_earnings_days") is not None
+                else None
+            ),
+        ),
+    )
 
 
 def uses_atr_trailing_stop(exit_rules: ExitRules) -> bool:
@@ -202,6 +303,17 @@ def coerce_signal_value(value) -> float:
         return float(value)
     except (TypeError, ValueError):
         return float("nan")
+
+
+def _trade_row_value(row, key: str):
+    if hasattr(row, "keys"):
+        return row[key] if key in row.keys() else None
+    if isinstance(row, dict):
+        return row.get(key)
+    try:
+        return row[key]
+    except Exception:
+        return None
 
 
 def indicator_condition(indicator_name: str, actual_value: float, threshold_value: float) -> bool:

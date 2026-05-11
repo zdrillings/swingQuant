@@ -58,11 +58,23 @@ features:
     - name: "distance_above_20d_high"
       type: "distance_above_high"
       params: { window: 20 }
+  gap_risk:
+    - name: "avg_abs_gap_pct_20"
+      type: "avg_abs_gap_pct"
+      params: { window: 20 }
+    - name: "max_gap_down_pct_60"
+      type: "max_gap_down_pct"
+      params: { window: 60 }
   commodities:
     - name: "oil_corr_60"
       ticker: "USO"
       type: "correlation"
       params: { window: 60 }
+  event_risk:
+    - name: "days_to_next_earnings"
+      type: "days_to_next_event"
+    - name: "days_since_last_earnings"
+      type: "days_since_last_event"
 
 signal_model:
   default_pass_score: 30
@@ -74,6 +86,8 @@ signal_model:
     - "ma_slope_200_20_min"
     - "breakout_above_20d_high_min"
     - "distance_above_20d_high_max"
+    - "days_to_next_earnings_min"
+    - "days_since_last_earnings_min"
   score_spans:
     rsi_14_min: 20
     rsi_14_max: 30
@@ -85,6 +99,8 @@ signal_model:
     base_range_pct_20_max: 0.10
     base_atr_contraction_20_max: 0.40
     base_volume_dryup_ratio_20_max: 0.40
+    avg_abs_gap_pct_20_max: 0.03
+    max_gap_down_pct_60_max: 0.06
     oil_corr_60_min: 0.60
   score_weights:
     rsi_14_min: 0.6
@@ -97,6 +113,8 @@ signal_model:
     base_range_pct_20_max: 1.0
     base_atr_contraction_20_max: 0.8
     base_volume_dryup_ratio_20_max: 0.8
+    avg_abs_gap_pct_20_max: 0.7
+    max_gap_down_pct_60_max: 0.8
     oil_corr_60_min: 0.6
 
 backtest_costs:
@@ -106,14 +124,58 @@ backtest_costs:
 scan_policy:
   max_candidates_total: 6
   max_candidates_per_slot: 3
-  max_candidates_per_sector: 2
+  max_candidates_per_sector: 3
   pre_cap_candidates_per_slot: 5
+  min_opportunity_score: 0.55
+  ranking_weights:
+    signal_score: 0.35
+    expected_alpha: 0.30
+    freshness: 0.20
+    breadth: 0.15
+  overlap_penalties:
+    same_ticker: 1.00
+    same_slot: 0.08
+    same_sector: 0.00
+    same_regime: 0.00
 
 promotion_policy:
   min_profit_factor: 1.30
   min_expectancy: 0.004
   min_trade_count: 100
   max_mdd: 0.30
+
+sleeve_research:
+  sectors:
+    - "Materials"
+    - "Energy"
+    - "Industrials"
+  top_n_values: [1, 2]
+  horizon_days_values: [5, 10, 15]
+  support:
+    min_trade_count_for_rank: 75
+    target_trade_count_for_score: 100
+    min_trade_count_for_live_section: 75
+    min_trade_count_for_top_sections: 75
+    min_distinct_tickers_for_rank: 3
+    target_distinct_tickers_for_score: 5
+    min_distinct_tickers_for_top_sections: 3
+    target_live_match_count_for_score: 2
+    min_live_match_count_for_top_sections: 1
+  breadth_thresholds:
+    sector_pct_above_50_min: [0.40, 0.50, 0.60]
+    sector_pct_above_200_min: [0.40, 0.50, 0.60]
+    sector_median_roc_63_min: [0.00, 0.05]
+  base_filters:
+    relative_strength_index_vs_spy_min: 75.0
+    roc_63_min: 0.05
+    vol_alpha_min: 1.0
+    rsi_14_min: 40.0
+    rsi_14_max: 65.0
+  rank_weights:
+    relative_strength_index_vs_spy: 0.40
+    roc_63: 0.25
+    rsi_14_pullback: 0.20
+    vol_alpha: 0.15
 
 sweep_modes:
   low_drawdown_technology:
@@ -412,6 +474,98 @@ sweep_modes:
         min: 3.5
         max: 4.0
         step: 0.5
+  high_performance_energy_stability_refined:
+    sector_whitelist:
+      - "Energy"
+    grid_overrides:
+      rsi_14_max:
+        min: 45
+        max: 55
+        step: 5
+      vol_alpha_min:
+        min: 0.8
+        max: 1.2
+        step: 0.2
+      sma_200_dist_min:
+        min: 0.14
+        max: 0.14
+        step: 0.04
+      roc_63_min:
+        min: 0.05
+        max: 0.10
+        step: 0.05
+      relative_strength_index_vs_spy_min:
+        min: 75
+        max: 80
+        step: 5
+      oil_corr_60_min:
+        min: 0.30
+        max: 0.50
+        step: 0.10
+      signal_score_min:
+        min: 32
+        max: 34
+        step: 2
+      trailing_stop_atr_mult:
+        min: 3.0
+        max: 3.5
+        step: 0.5
+      profit_target_atr_mult:
+        min: 3.5
+        max: 4.5
+        step: 0.5
+  high_performance_energy_earnings_refined:
+    sector_whitelist:
+      - "Energy"
+    grid_overrides:
+      rsi_14_max:
+        min: 55
+        max: 60
+        step: 5
+      vol_alpha_min:
+        min: 1.0
+        max: 1.2
+        step: 0.2
+      sma_200_dist_min:
+        min: 0.10
+        max: 0.14
+        step: 0.04
+      roc_63_min:
+        min: 0.05
+        max: 0.15
+        step: 0.05
+      relative_strength_index_vs_spy_min:
+        min: 75
+        max: 80
+        step: 5
+      oil_corr_60_min:
+        min: 0.10
+        max: 0.40
+        step: 0.30
+      days_to_next_earnings_min:
+        min: 0
+        max: 6
+        step: 2
+      days_since_last_earnings_min:
+        min: 0
+        max: 4
+        step: 2
+      signal_score_min:
+        min: 30
+        max: 32
+        step: 2
+      trailing_stop_atr_mult:
+        min: 3.0
+        max: 3.5
+        step: 0.5
+      profit_target_atr_mult:
+        min: 3.5
+        max: 4.0
+        step: 0.5
+      exit_before_earnings_days:
+        min: 0
+        max: 2
+        step: 1
   high_performance_materials:
     sector_whitelist:
       - "Materials"
@@ -484,6 +638,54 @@ sweep_modes:
         min: 4.0
         max: 4.5
         step: 0.5
+  high_performance_materials_earnings_refined:
+    sector_whitelist:
+      - "Materials"
+    grid_overrides:
+      rsi_14_max:
+        min: 55
+        max: 60
+        step: 5
+      vol_alpha_min:
+        min: 1.0
+        max: 1.2
+        step: 0.2
+      sma_200_dist_min:
+        min: 0.14
+        max: 0.22
+        step: 0.04
+      roc_63_min:
+        min: 0.05
+        max: 0.15
+        step: 0.05
+      relative_strength_index_vs_spy_min:
+        min: 75
+        max: 80
+        step: 5
+      days_to_next_earnings_min:
+        min: 0
+        max: 6
+        step: 2
+      days_since_last_earnings_min:
+        min: 0
+        max: 4
+        step: 2
+      signal_score_min:
+        min: 30
+        max: 32
+        step: 2
+      trailing_stop_atr_mult:
+        min: 2.5
+        max: 2.5
+        step: 0.5
+      profit_target_atr_mult:
+        min: 4.0
+        max: 4.5
+        step: 0.5
+      exit_before_earnings_days:
+        min: 0
+        max: 2
+        step: 1
   high_performance_industrials:
     sector_whitelist:
       - "Industrials"
@@ -556,6 +758,54 @@ sweep_modes:
         min: 4.0
         max: 4.5
         step: 0.5
+  high_performance_industrials_earnings_refined:
+    sector_whitelist:
+      - "Industrials"
+    grid_overrides:
+      rsi_14_max:
+        min: 50
+        max: 60
+        step: 5
+      vol_alpha_min:
+        min: 0.8
+        max: 1.2
+        step: 0.2
+      sma_200_dist_min:
+        min: 0.10
+        max: 0.14
+        step: 0.04
+      roc_63_min:
+        min: 0.15
+        max: 0.20
+        step: 0.05
+      relative_strength_index_vs_spy_min:
+        min: 85
+        max: 90
+        step: 5
+      days_to_next_earnings_min:
+        min: 0
+        max: 6
+        step: 2
+      days_since_last_earnings_min:
+        min: 0
+        max: 4
+        step: 2
+      signal_score_min:
+        min: 32
+        max: 34
+        step: 2
+      trailing_stop_atr_mult:
+        min: 3.0
+        max: 3.5
+        step: 0.5
+      profit_target_atr_mult:
+        min: 4.0
+        max: 4.5
+        step: 0.5
+      exit_before_earnings_days:
+        min: 0
+        max: 2
+        step: 1
   high_performance_financials:
     sector_whitelist:
       - "Financials"
@@ -630,6 +880,102 @@ sweep_modes:
       profit_target_atr_mult:
         min: 3.0
         max: 4.5
+        step: 0.5
+  production_sleeves_earnings_refined:
+    sector_whitelist:
+      - "Energy"
+      - "Materials"
+      - "Industrials"
+    grid_overrides:
+      rsi_14_max:
+        min: 55
+        max: 60
+        step: 5
+      vol_alpha_min:
+        min: 1.0
+        max: 1.2
+        step: 0.2
+      sma_200_dist_min:
+        min: 0.10
+        max: 0.18
+        step: 0.04
+      roc_63_min:
+        min: 0.05
+        max: 0.15
+        step: 0.05
+      relative_strength_index_vs_spy_min:
+        min: 75
+        max: 85
+        step: 5
+      days_to_next_earnings_min:
+        min: 0
+        max: 6
+        step: 2
+      days_since_last_earnings_min:
+        min: 0
+        max: 4
+        step: 2
+      signal_score_min:
+        min: 30
+        max: 32
+        step: 2
+      trailing_stop_atr_mult:
+        min: 3.0
+        max: 3.5
+        step: 0.5
+      profit_target_atr_mult:
+        min: 3.5
+        max: 4.0
+        step: 0.5
+      exit_before_earnings_days:
+        min: 0
+        max: 2
+        step: 1
+  production_sleeves_gap_refined:
+    sector_whitelist:
+      - "Energy"
+      - "Materials"
+      - "Industrials"
+    grid_overrides:
+      rsi_14_max:
+        min: 55
+        max: 60
+        step: 5
+      vol_alpha_min:
+        min: 1.0
+        max: 1.2
+        step: 0.2
+      sma_200_dist_min:
+        min: 0.10
+        max: 0.18
+        step: 0.04
+      roc_63_min:
+        min: 0.05
+        max: 0.15
+        step: 0.05
+      relative_strength_index_vs_spy_min:
+        min: 75
+        max: 85
+        step: 5
+      avg_abs_gap_pct_20_max:
+        min: 0.02
+        max: 0.04
+        step: 0.01
+      max_gap_down_pct_60_max:
+        min: 0.04
+        max: 0.08
+        step: 0.02
+      signal_score_min:
+        min: 30
+        max: 32
+        step: 2
+      trailing_stop_atr_mult:
+        min: 3.0
+        max: 3.5
+        step: 0.5
+      profit_target_atr_mult:
+        min: 3.5
+        max: 4.0
         step: 0.5
   breakout_v1_information_technology:
     sector_whitelist:

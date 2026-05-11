@@ -6,7 +6,7 @@ import pandas as pd
 
 from src.utils.feature_engineering import apply_feature_definitions
 from src.utils.regime import regime_etf_for_sector
-from src.utils.signal_engine import filter_signal_candidates
+from src.utils.signal_engine import build_analysis_frame, filter_signal_candidates
 from src.utils.strategy import ExitRules, indicator_score, profit_target_price, stop_risk_per_share, trailing_stop_price
 
 
@@ -153,6 +153,58 @@ class StrategyHelperTests(unittest.TestCase):
 
         self.assertEqual(candidates["ticker"].tolist(), ["AAA"])
         self.assertGreaterEqual(float(candidates.iloc[0]["signal_score"]), 34.0)
+
+    def test_filter_signal_candidates_supports_earnings_timing_filters(self) -> None:
+        frame = pd.DataFrame(
+            [
+                {
+                    "ticker": "AAA",
+                    "rsi_14": 55.0,
+                    "vol_alpha": 1.2,
+                    "sma_200_dist": 0.18,
+                    "roc_63": 0.12,
+                    "relative_strength_index_vs_spy": 80.0,
+                    "days_to_next_earnings": 7.0,
+                    "days_since_last_earnings": 3.0,
+                },
+                {
+                    "ticker": "BBB",
+                    "rsi_14": 55.0,
+                    "vol_alpha": 1.2,
+                    "sma_200_dist": 0.18,
+                    "roc_63": 0.12,
+                    "relative_strength_index_vs_spy": 80.0,
+                    "days_to_next_earnings": 1.0,
+                    "days_since_last_earnings": 3.0,
+                },
+                {
+                    "ticker": "CCC",
+                    "rsi_14": 55.0,
+                    "vol_alpha": 1.2,
+                    "sma_200_dist": 0.18,
+                    "roc_63": 0.12,
+                    "relative_strength_index_vs_spy": 80.0,
+                    "days_to_next_earnings": 7.0,
+                    "days_since_last_earnings": 0.0,
+                },
+            ]
+        )
+
+        candidates = filter_signal_candidates(
+            frame,
+            {
+                "rsi_14_max": 60.0,
+                "vol_alpha_min": 1.0,
+                "sma_200_dist_min": 0.10,
+                "roc_63_min": 0.10,
+                "relative_strength_index_vs_spy_min": 75.0,
+                "days_to_next_earnings_min": 5.0,
+                "days_since_last_earnings_min": 2.0,
+                "signal_score_min": 30.0,
+            },
+        )
+
+        self.assertEqual(candidates["ticker"].tolist(), ["AAA"])
 
     def test_relative_strength_feature_ranks_tickers_vs_spy(self) -> None:
         dates = pd.bdate_range("2026-01-01", periods=70)
@@ -325,6 +377,165 @@ class StrategyHelperTests(unittest.TestCase):
         self.assertGreater(float(latest["distance_above_20d_high"]), 0.0)
         self.assertGreater(float(latest["breakout_volume_ratio_50"]), 1.5)
         self.assertLess(float(pre_breakout["base_volume_dryup_ratio_20"]), 1.0)
+
+    def test_earnings_timing_features_measure_business_day_distance(self) -> None:
+        dates = pd.bdate_range("2026-01-05", periods=6)
+        rows = []
+        for index, day in enumerate(dates):
+            rows.append(
+                {
+                    "ticker": "AAA",
+                    "date": day.date(),
+                    "open": 100.0 + index,
+                    "high": 101.0 + index,
+                    "low": 99.0 + index,
+                    "close": 100.5 + index,
+                    "volume": 1_000_000,
+                    "adj_close": 100.5 + index,
+                }
+            )
+        earnings_calendar = pd.DataFrame(
+            [
+                {"ticker": "AAA", "earnings_date": pd.Timestamp("2026-01-07")},
+                {"ticker": "AAA", "earnings_date": pd.Timestamp("2026-01-14")},
+            ]
+        )
+        frame, _ = apply_feature_definitions(
+            pd.DataFrame(rows),
+            {
+                "features": {
+                    "event_risk": [
+                        {"name": "days_to_next_earnings", "type": "days_to_next_event"},
+                        {"name": "days_since_last_earnings", "type": "days_since_last_event"},
+                    ]
+                }
+            },
+            earnings_calendar=earnings_calendar,
+        )
+        ordered = frame.sort_values("date").reset_index(drop=True)
+
+        self.assertEqual(float(ordered.iloc[0]["days_to_next_earnings"]), 2.0)
+        self.assertTrue(pd.isna(ordered.iloc[0]["days_since_last_earnings"]))
+        self.assertEqual(float(ordered.iloc[2]["days_to_next_earnings"]), 0.0)
+        self.assertEqual(float(ordered.iloc[2]["days_since_last_earnings"]), 0.0)
+        self.assertEqual(float(ordered.iloc[3]["days_to_next_earnings"]), 4.0)
+        self.assertEqual(float(ordered.iloc[3]["days_since_last_earnings"]), 1.0)
+
+    def test_gap_risk_features_measure_average_and_worst_overnight_gaps(self) -> None:
+        dates = pd.bdate_range("2026-01-01", periods=65)
+        rows = []
+        closes = [100.0]
+        for index in range(1, len(dates)):
+            closes.append(closes[-1] + 1.0)
+        for index, day in enumerate(dates):
+            prev_close = closes[index - 1] if index > 0 else closes[index]
+            if index == 40:
+                open_price = prev_close * 0.95
+            elif index == 50:
+                open_price = prev_close * 1.03
+            else:
+                open_price = prev_close * 1.005
+            close_price = closes[index]
+            rows.append(
+                {
+                    "ticker": "AAA",
+                    "date": day.date(),
+                    "open": open_price,
+                    "high": max(open_price, close_price) + 1.0,
+                    "low": min(open_price, close_price) - 1.0,
+                    "close": close_price,
+                    "volume": 1_000_000,
+                    "adj_close": close_price,
+                }
+            )
+        frame, _ = apply_feature_definitions(
+            pd.DataFrame(rows),
+            {
+                "features": {
+                    "gap_risk": [
+                        {"name": "avg_abs_gap_pct_20", "type": "avg_abs_gap_pct", "params": {"window": 20}},
+                        {"name": "max_gap_down_pct_60", "type": "max_gap_down_pct", "params": {"window": 60}},
+                    ]
+                }
+            },
+        )
+        latest = frame.sort_values("date").iloc[-1]
+
+        self.assertGreater(float(latest["avg_abs_gap_pct_20"]), 0.005)
+        self.assertAlmostEqual(float(latest["max_gap_down_pct_60"]), 0.05, places=6)
+
+    def test_build_analysis_frame_adds_sector_breadth_features(self) -> None:
+        dates = pd.bdate_range("2025-01-01", periods=220)
+        rows = []
+        for index, day in enumerate(dates):
+            rows.extend(
+                [
+                    {
+                        "ticker": "AAA",
+                        "date": day.date(),
+                        "open": 100.0 + index,
+                        "high": 101.0 + index,
+                        "low": 99.0 + index,
+                        "close": 100.0 + index,
+                        "volume": 1_000_000,
+                        "adj_close": 100.0 + index,
+                    },
+                    {
+                        "ticker": "BBB",
+                        "date": day.date(),
+                        "open": 140.0 if index < 210 else 60.0,
+                        "high": 141.0 if index < 210 else 61.0,
+                        "low": 139.0 if index < 210 else 59.0,
+                        "close": 140.0 if index < 210 else 60.0,
+                        "volume": 1_000_000,
+                        "adj_close": 140.0 if index < 210 else 60.0,
+                    },
+                    {
+                        "ticker": "SPY",
+                        "date": day.date(),
+                        "open": 300.0 + index,
+                        "high": 301.0 + index,
+                        "low": 299.0 + index,
+                        "close": 300.0 + index,
+                        "volume": 2_000_000,
+                        "adj_close": 300.0 + index,
+                    },
+                    {
+                        "ticker": "QQQ",
+                        "date": day.date(),
+                        "open": 200.0 + index,
+                        "high": 201.0 + index,
+                        "low": 199.0 + index,
+                        "close": 200.0 + index,
+                        "volume": 2_000_000,
+                        "adj_close": 200.0 + index,
+                    },
+                    {
+                        "ticker": "USO",
+                        "date": day.date(),
+                        "open": 70.0 + index * 0.1,
+                        "high": 70.5 + index * 0.1,
+                        "low": 69.5 + index * 0.1,
+                        "close": 70.0 + index * 0.1,
+                        "volume": 1_500_000,
+                        "adj_close": 70.0 + index * 0.1,
+                    },
+                ]
+            )
+        frame, _ = build_analysis_frame(
+            pd.DataFrame(rows),
+            [
+                {"ticker": "AAA", "sector": "Materials", "md_volume_30d": 1_000_000},
+                {"ticker": "BBB", "sector": "Materials", "md_volume_30d": 1_000_000},
+            ],
+        )
+        latest_materials = frame[(frame["sector"] == "Materials")].sort_values("date").groupby("ticker").tail(1)
+
+        self.assertIn("sector_pct_above_50", latest_materials.columns)
+        self.assertIn("sector_pct_above_200", latest_materials.columns)
+        self.assertIn("sector_median_roc_63", latest_materials.columns)
+        self.assertAlmostEqual(float(latest_materials.iloc[0]["sector_pct_above_50"]), 0.5)
+        self.assertAlmostEqual(float(latest_materials.iloc[0]["sector_pct_above_200"]), 0.5)
 
     def test_non_tech_sectors_default_to_spy_regime(self) -> None:
         self.assertEqual(regime_etf_for_sector("Industrials"), "SPY")

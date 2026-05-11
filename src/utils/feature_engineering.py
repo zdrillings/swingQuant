@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 
@@ -191,6 +192,24 @@ def add_distance_above_high_feature(frame: pd.DataFrame, *, feature_name: str, w
     frame[feature_name] = (frame["close"] / prior_high) - 1.0
 
 
+def add_avg_abs_gap_pct_feature(frame: pd.DataFrame, *, feature_name: str, window: int) -> None:
+    prior_close = frame.groupby("ticker", group_keys=False)["close"].shift(1)
+    gap_pct = (frame["open"] / prior_close - 1.0).abs()
+    frame[feature_name] = (
+        gap_pct.groupby(frame["ticker"])
+        .transform(lambda series: series.rolling(window=window, min_periods=window).mean())
+    )
+
+
+def add_max_gap_down_pct_feature(frame: pd.DataFrame, *, feature_name: str, window: int) -> None:
+    prior_close = frame.groupby("ticker", group_keys=False)["close"].shift(1)
+    gap_down_pct = ((prior_close - frame["open"]) / prior_close).clip(lower=0.0)
+    frame[feature_name] = (
+        gap_down_pct.groupby(frame["ticker"])
+        .transform(lambda series: series.rolling(window=window, min_periods=window).max())
+    )
+
+
 def add_correlation_feature(
     frame: pd.DataFrame,
     *,
@@ -241,7 +260,100 @@ def add_relative_strength_percentile_feature(
     frame.drop(columns=["roc_value", "reference_roc", "rs_excess_return"], inplace=True)
 
 
-def apply_feature_definitions(price_history: pd.DataFrame, feature_config: dict) -> tuple[pd.DataFrame, list[str]]:
+def add_days_to_next_event_feature(
+    frame: pd.DataFrame,
+    *,
+    feature_name: str,
+    earnings_calendar: pd.DataFrame | None,
+) -> None:
+    frame[feature_name] = pd.NA
+    if earnings_calendar is None or earnings_calendar.empty:
+        return
+    event_map = {
+        ticker: np.sort(group["earnings_date"].to_numpy(dtype="datetime64[D]"))
+        for ticker, group in earnings_calendar.groupby("ticker", sort=False)
+    }
+    for ticker, group in frame.groupby("ticker", sort=False):
+        event_dates = event_map.get(str(ticker))
+        if event_dates is None or len(event_dates) == 0:
+            continue
+        trading_dates = group["date"].to_numpy(dtype="datetime64[D]")
+        next_indices = np.searchsorted(event_dates, trading_dates, side="left")
+        feature_values = np.full(len(group.index), np.nan)
+        valid_mask = next_indices < len(event_dates)
+        if valid_mask.any():
+            feature_values[valid_mask] = np.busday_count(
+                trading_dates[valid_mask],
+                event_dates[next_indices[valid_mask]],
+            ).astype(float)
+        frame.loc[group.index, feature_name] = feature_values
+
+
+def add_days_since_last_event_feature(
+    frame: pd.DataFrame,
+    *,
+    feature_name: str,
+    earnings_calendar: pd.DataFrame | None,
+) -> None:
+    frame[feature_name] = pd.NA
+    if earnings_calendar is None or earnings_calendar.empty:
+        return
+    event_map = {
+        ticker: np.sort(group["earnings_date"].to_numpy(dtype="datetime64[D]"))
+        for ticker, group in earnings_calendar.groupby("ticker", sort=False)
+    }
+    for ticker, group in frame.groupby("ticker", sort=False):
+        event_dates = event_map.get(str(ticker))
+        if event_dates is None or len(event_dates) == 0:
+            continue
+        trading_dates = group["date"].to_numpy(dtype="datetime64[D]")
+        prior_indices = np.searchsorted(event_dates, trading_dates, side="right") - 1
+        feature_values = np.full(len(group.index), np.nan)
+        valid_mask = prior_indices >= 0
+        if valid_mask.any():
+            feature_values[valid_mask] = np.busday_count(
+                event_dates[prior_indices[valid_mask]],
+                trading_dates[valid_mask],
+            ).astype(float)
+        frame.loc[group.index, feature_name] = feature_values
+
+
+def add_sector_breadth_features(frame: pd.DataFrame) -> None:
+    for column in ["sector_pct_above_50", "sector_pct_above_200", "sector_median_roc_63"]:
+        frame[column] = pd.NA
+    required_columns = {"sector", "date", "sma_50_dist", "sma_200_dist", "roc_63"}
+    if not required_columns.issubset(frame.columns):
+        return
+
+    eligible = frame[frame["sector"].notna()].copy()
+    if eligible.empty:
+        return
+    eligible["above_50"] = (eligible["sma_50_dist"].astype(float) > 0.0).astype(float)
+    eligible["above_200"] = (eligible["sma_200_dist"].astype(float) > 0.0).astype(float)
+    breadth = (
+        eligible.groupby(["sector", "date"], dropna=False)
+        .agg(
+            sector_pct_above_50=("above_50", "mean"),
+            sector_pct_above_200=("above_200", "mean"),
+            sector_median_roc_63=("roc_63", "median"),
+        )
+        .reset_index()
+    )
+    base = frame.drop(columns=["sector_pct_above_50", "sector_pct_above_200", "sector_median_roc_63"])
+    merged = base.merge(
+        breadth,
+        on=["sector", "date"],
+        how="left",
+    )
+    for column in ["sector_pct_above_50", "sector_pct_above_200", "sector_median_roc_63"]:
+        frame[column] = merged[column]
+
+
+def apply_feature_definitions(
+    price_history: pd.DataFrame,
+    feature_config: dict,
+    earnings_calendar: pd.DataFrame | None = None,
+) -> tuple[pd.DataFrame, list[str]]:
     frame = price_history.copy()
     frame["date"] = pd.to_datetime(frame["date"])
     frame = frame.sort_values(["ticker", "date"]).reset_index(drop=True)
@@ -300,6 +412,10 @@ def apply_feature_definitions(price_history: pd.DataFrame, feature_config: dict)
                 add_breakout_above_high_feature(frame, feature_name=feature_name, window=int(params["window"]))
             elif feature_type == "distance_above_high":
                 add_distance_above_high_feature(frame, feature_name=feature_name, window=int(params["window"]))
+            elif feature_type == "avg_abs_gap_pct":
+                add_avg_abs_gap_pct_feature(frame, feature_name=feature_name, window=int(params["window"]))
+            elif feature_type == "max_gap_down_pct":
+                add_max_gap_down_pct_feature(frame, feature_name=feature_name, window=int(params["window"]))
             elif feature_type == "correlation":
                 add_correlation_feature(
                     frame,
@@ -313,6 +429,18 @@ def apply_feature_definitions(price_history: pd.DataFrame, feature_config: dict)
                     feature_name=feature_name,
                     reference_ticker=feature["ticker"],
                     window=int(params["window"]),
+                )
+            elif feature_type == "days_to_next_event":
+                add_days_to_next_event_feature(
+                    frame,
+                    feature_name=feature_name,
+                    earnings_calendar=earnings_calendar,
+                )
+            elif feature_type == "days_since_last_event":
+                add_days_since_last_event_feature(
+                    frame,
+                    feature_name=feature_name,
+                    earnings_calendar=earnings_calendar,
                 )
             else:
                 raise ValueError(f"Unsupported feature type: {feature_type}")

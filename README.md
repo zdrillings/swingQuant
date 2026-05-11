@@ -24,6 +24,7 @@ Implemented commands:
   - `Universe`
   - `Backtest_Results`
   - `Active_Trades`
+  - `Earnings_Calendar`
 - The main code lives in [src](/home/zdrillings/code/SwingQuant/src).
 - Tests live in [tests](/home/zdrillings/code/SwingQuant/tests).
 
@@ -80,12 +81,17 @@ The launcher in [sq](/home/zdrillings/code/SwingQuant/sq) automatically adds `.v
 ./sq sweep --mode promotable_live_technology_v5
 ./sq sweep --mode high_performance_energy
 ./sq sweep --mode high_performance_energy_refined
+./sq sweep --mode high_performance_energy_earnings_refined
 ./sq sweep --mode high_performance_materials
 ./sq sweep --mode high_performance_materials_refined
+./sq sweep --mode high_performance_materials_earnings_refined
 ./sq sweep --mode high_performance_industrials
 ./sq sweep --mode high_performance_industrials_refined
+./sq sweep --mode high_performance_industrials_earnings_refined
 ./sq sweep --mode high_performance_financials
 ./sq sweep --mode high_performance_real_economy
+./sq sweep --mode production_sleeves_earnings_refined
+./sq sweep --mode production_sleeves_gap_refined
 ./sq sweep --mode breakout_v1_information_technology
 ./sq sweep --mode breakout_v1_industrials
 ./sq sweep --mode breakout_v1_financials
@@ -97,7 +103,41 @@ The launcher in [sq](/home/zdrillings/code/SwingQuant/sq) automatically adds `.v
 ```bash
 ./sq evaluate --top 10
 ./sq evaluate --run-id 17 --top 20
+./sq evaluate --run-id 31 --top 20 --walk-forward
+./sq sleeve-research --top 10
+./sq sleeve-research --top 10 --walk-forward
 ```
+
+`--walk-forward` runs a second-pass rolling validation analysis on a shortlist of candidates instead of the entire sweep. It reports:
+- `wf_stability_score`
+- `wf_positive_window_ratio`
+- `wf_positive_alpha_window_ratio`
+- `wf_median_expectancy`
+- `wf_worst_expectancy`
+- `wf_worst_mdd`
+
+Use `--walk-forward-windows` and `--walk-forward-shortlist` to control runtime. The implementation is fixed-parameter rolling validation, not per-window re-optimization.
+
+`sq sleeve-research` runs a separate research path:
+- sector breadth filters
+- within-sector daily ranking
+- fixed holding horizons
+- sleeve-level equal-weight portfolio simulation with max open positions = `top_n`
+- low-sample trade penalties in practical scoring
+- distinct-ticker support and concentration penalties
+- a `Best Live Configurations With Enough Sample` section using the configured trade-support floor
+
+Current sleeve defaults are intentionally stricter than the first prototype:
+- horizons are narrowed to `5d`, `10d`, and `15d`
+- the pre-rank filter now requires stronger RS / ROC / volume quality
+- `rsi_14` must stay in a moderate band instead of accepting any pullback
+- headline sections require live breadth as well as support
+
+When `--walk-forward` is enabled, `sq sleeve-research` also computes a second-pass rolling stability section on a bounded shortlist of sleeve configurations. Use:
+- `--walk-forward-windows`
+- `--walk-forward-shortlist`
+
+It writes [sleeve_research.md](/home/zdrillings/code/SwingQuant/reports/sleeve_research.md).
 
 5. Promote one or more strategies:
 
@@ -131,12 +171,19 @@ The launcher in [sq](/home/zdrillings/code/SwingQuant/sq) automatically adds `.v
 ## Operational Rules
 
 - All train/validation splits are chronological.
+- `sq sync` now refreshes both OHLCV and earnings calendar dates for the research universe.
 - `sq scan` uses:
   - a hard relative-strength filter via `relative_strength_index_vs_spy_min`
   - a confluence score across the promoted score components
   - `signal_score_min` as the pass threshold
   - scored components currently include `rsi_14`, `vol_alpha`, `sma_200_dist`, `roc_63`, and sector-specific signals such as `oil_corr_60`
   - `vol_alpha` is currently downweighted relative to the other score components
+  - earnings-aware strategies can additionally hard-filter on:
+    - `days_to_next_earnings`
+    - `days_since_last_earnings`
+  - gap-aware strategies can additionally score:
+    - `avg_abs_gap_pct_20`
+    - `max_gap_down_pct_60`
   - position sizing uses the promoted stop model, including ATR-based stops when present
   - multiple active strategy slots are evaluated independently, then merged under `scan_policy` caps from `config.yaml`
   - the current scan policy limits total ideas and also caps per-slot and per-sector concentration
@@ -144,6 +191,7 @@ The launcher in [sq](/home/zdrillings/code/SwingQuant/sq) automatically adds `.v
 - `sq monitor` is alert-only.
   - It updates `max_price_seen`.
   - It evaluates all exit rules every run.
+  - Earnings-aware strategies can trigger a `pre_earnings_exit` flag ahead of the next scheduled report.
   - It sends one consolidated digest.
   - It does not close `Active_Trades`; use `sq trade sell` to close trades in the ledger.
   - Legacy imported holdings without `strategy_slot` now fall back to the best available exact-sector or regime-family strategy and are backfilled into the ledger.
@@ -162,10 +210,16 @@ The launcher in [sq](/home/zdrillings/code/SwingQuant/sq) automatically adds `.v
 - `sq sweep --mode promotable_live_technology_v5` keeps the live-capable tech entries and tests tighter ATR stops as the main drawdown-reduction lever.
 - `sq sweep --mode high_performance_energy` is a large Energy-only search that adds `oil_corr_60_min` to favor names moving with the oil complex while still demanding strong relative strength and trend quality.
 - `sq sweep --mode high_performance_energy_refined` is the narrower follow-up Energy search centered on the current promotable/live cluster, so iteration is cheaper and more targeted.
+- `sq sweep --mode high_performance_energy_stability_refined` is the robustness-focused Energy follow-up that narrows around the current and older high-alpha Energy families to improve positive-window ratio and worst-window drawdown rather than just raw expectancy.
+- `sq sweep --mode high_performance_energy_earnings_refined` adds entry blackout and pre-earnings exit testing to that refined Energy sleeve.
 - `sq sweep --mode high_performance_materials_refined` is the narrower Materials follow-up search centered between the current live/promotable row and the stronger alpha rows.
+- `sq sweep --mode high_performance_materials_earnings_refined` adds entry blackout and pre-earnings exit testing to the refined Materials sleeve.
 - `sq sweep --mode high_performance_materials`, `high_performance_industrials`, and `high_performance_financials` run the same broader real-economy template one sector at a time.
 - `sq sweep --mode high_performance_industrials_refined` is the narrower Industrials follow-up search centered between the current live/promotable row and the stronger alpha rows.
+- `sq sweep --mode high_performance_industrials_earnings_refined` adds entry blackout and pre-earnings exit testing to the refined Industrials sleeve.
 - `sq sweep --mode high_performance_real_economy` runs the broader real-economy template across Energy, Materials, Industrials, and Financials in one pass.
+- `sq sweep --mode production_sleeves_earnings_refined` runs one bounded earnings-aware pass across the three current production sleeves: Energy, Materials, and Industrials.
+- `sq sweep --mode production_sleeves_gap_refined` runs one bounded gap-risk pass across the three current production sleeves: Energy, Materials, and Industrials.
 - `sq sweep --mode breakout_v1_information_technology`, `breakout_v1_industrials`, and `breakout_v1_financials` run the new breakout-specific model family.
 - `sq sweep --mode breakout_v1_information_technology_v2` keeps the breakout freshness cap and lowers the breakout score threshold slightly for a tighter A/B test on current tech setup density.
 - `sq sweep --mode breakout_v1_information_technology_v3` keeps the stronger v2 score threshold and slightly widens the breakout freshness band to test whether one extra degree of extension unlocks live setups without reverting to late-chase names.
@@ -195,6 +249,16 @@ The launcher in [sq](/home/zdrillings/code/SwingQuant/sq) automatically adds `.v
 - `sq sweep` can evaluate ATR-based exits.
   - `atr_14` is available in the research and signal frame.
   - active strategies can promote `trailing_stop_atr_mult` and `profit_target_atr_mult`.
+  - active strategies can also promote `exit_before_earnings_days`.
+- `sq sweep` can now evaluate earnings timing controls.
+  - `days_to_next_earnings_min` expresses the pre-earnings entry blackout.
+  - `days_since_last_earnings_min` can keep entries away from immediate post-event noise.
+  - `exit_before_earnings_days` forces simulated exits ahead of upcoming earnings.
+  - `0` disables the earnings filter or event-exit axis inside the targeted sweep modes.
+- `sq sweep` can now evaluate overnight gap-risk controls.
+  - `avg_abs_gap_pct_20_max` limits average absolute overnight gap behavior over the last 20 sessions.
+  - `max_gap_down_pct_60_max` limits the worst downside overnight gap over the last 60 sessions.
+  - these are score components, not hard filters, so the research can decide whether lower gap-risk really improves the sleeve.
 - `sq sweep` applies configurable execution costs from `config.yaml`.
   - Current defaults are `5 bps` slippage per side and `0 bps` commission per side.
   - Sweep metrics are net of those costs.
@@ -216,6 +280,26 @@ The launcher in [sq](/home/zdrillings/code/SwingQuant/sq) automatically adds `.v
 - `sq promote` enforces promotion quality floors from `config.yaml`.
   - Current defaults require minimum profit factor, expectancy, trade count, and maximum drawdown before a row can be promoted.
 
+## Earnings-Aware Next Steps
+
+- Run `./sq sync` before any earnings-aware sweep so `Earnings_Calendar` is fresh.
+- Start with the sleeve-specific modes:
+  - `high_performance_energy_earnings_refined`
+  - `high_performance_materials_earnings_refined`
+  - `high_performance_industrials_earnings_refined`
+- Use `production_sleeves_earnings_refined` after the single-sleeve runs look sane.
+- Use `production_sleeves_gap_refined` when you want to test direct overnight-risk filtering rather than event timing.
+- Current targeted run sizes:
+  - `high_performance_energy_earnings_refined`: `27,648` sector-runs
+  - `high_performance_materials_earnings_refined`: `10,368` sector-runs
+  - `high_performance_industrials_earnings_refined`: `20,736` sector-runs
+  - `production_sleeves_earnings_refined`: `31,104` sector-runs across `3` sectors
+- Try next:
+  - compare alpha and drawdown with `exit_before_earnings_days` on vs off
+  - if live counts collapse too far, loosen `days_to_next_earnings_min` before loosening the core pullback thresholds
+  - if earnings timing helps but does not fix drawdown, run `production_sleeves_gap_refined` next
+  - if gap-risk helps but live counts collapse, widen the gap thresholds before touching the core pullback thresholds
+
 ## Outputs
 
 - Market history: `data/market_data.duckdb`
@@ -233,6 +317,7 @@ Suggested operator sequence while the new breakout family is being tuned:
 ```bash
 ./sq sweep --mode high_performance_energy
 ./sq sweep --mode high_performance_energy_refined
+./sq sweep --mode high_performance_energy_stability_refined
 ./sq evaluate --sector "Energy" --top 10
 ```
 

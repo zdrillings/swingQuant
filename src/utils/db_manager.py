@@ -63,6 +63,31 @@ CREATE TABLE IF NOT EXISTS Active_Trades (
     exit_date TEXT,
     exit_price REAL
 );
+
+CREATE TABLE IF NOT EXISTS Earnings_Calendar (
+    ticker TEXT NOT NULL,
+    earnings_date TEXT NOT NULL,
+    PRIMARY KEY (ticker, earnings_date)
+);
+
+CREATE TABLE IF NOT EXISTS Scan_Candidates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    scan_date TEXT NOT NULL,
+    ticker TEXT NOT NULL,
+    strategy_slot TEXT NOT NULL,
+    strategy_sector TEXT NOT NULL,
+    sector TEXT,
+    signal_score REAL,
+    setup_quality_score REAL,
+    expected_alpha_score REAL,
+    breadth_score REAL,
+    freshness_score REAL,
+    overlap_penalty REAL,
+    opportunity_score REAL,
+    selected INTEGER NOT NULL DEFAULT 0,
+    shares INTEGER,
+    details_json TEXT NOT NULL
+);
 """
 
 
@@ -439,6 +464,19 @@ class DatabaseManager:
                 (row_id,),
             ).fetchone()
 
+    def get_backtest_result_by_strategy_id(self, strategy_id: int) -> sqlite3.Row | None:
+        with self.sqlite_connection() as connection:
+            return connection.execute(
+                """
+                SELECT id, run_id, strategy_id, params_json, norm_score, profit_factor, expectancy, alpha_vs_spy, alpha_vs_sector, mdd, win_rate, trade_count
+                FROM Backtest_Results
+                WHERE strategy_id = ?
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (strategy_id,),
+            ).fetchone()
+
     def open_trade(
         self,
         *,
@@ -531,6 +569,144 @@ class DatabaseManager:
                 """,
                 (exit_date, exit_price, trade_rowid),
             )
+
+    def replace_earnings_dates(self, ticker: str, earnings_dates: Iterable[date]) -> int:
+        normalized_dates = sorted({str(earnings_date) for earnings_date in earnings_dates})
+        with self.sqlite_connection() as connection:
+            connection.execute("DELETE FROM Earnings_Calendar WHERE ticker = ?", (ticker,))
+            if normalized_dates:
+                connection.executemany(
+                    """
+                    INSERT INTO Earnings_Calendar (ticker, earnings_date)
+                    VALUES (?, ?)
+                    """,
+                    [(ticker, earnings_date) for earnings_date in normalized_dates],
+                )
+        return len(normalized_dates)
+
+    def load_earnings_calendar(self, tickers: Iterable[str] | None = None):
+        import pandas as pd
+
+        query = "SELECT ticker, earnings_date FROM Earnings_Calendar"
+        params: list[str] = []
+        if tickers is not None:
+            ticker_list = list(tickers)
+            if not ticker_list:
+                return pd.DataFrame(columns=["ticker", "earnings_date"])
+            placeholders = ", ".join(["?"] * len(ticker_list))
+            query += f" WHERE ticker IN ({placeholders})"
+            params.extend(ticker_list)
+        query += " ORDER BY ticker ASC, earnings_date ASC"
+        with self.sqlite_connection() as connection:
+            rows = connection.execute(query, params).fetchall()
+        if not rows:
+            return pd.DataFrame(columns=["ticker", "earnings_date"])
+        frame = pd.DataFrame(rows, columns=["ticker", "earnings_date"])
+        frame["earnings_date"] = pd.to_datetime(frame["earnings_date"]).dt.normalize()
+        return frame
+
+    def replace_scan_candidates(self, *, scan_date: str, rows: Iterable[dict]) -> int:
+        payload = list(rows)
+        with self.sqlite_connection() as connection:
+            connection.execute("DELETE FROM Scan_Candidates WHERE scan_date = ?", (scan_date,))
+            if not payload:
+                return 0
+            connection.executemany(
+                """
+                INSERT INTO Scan_Candidates (
+                    scan_date,
+                    ticker,
+                    strategy_slot,
+                    strategy_sector,
+                    sector,
+                    signal_score,
+                    setup_quality_score,
+                    expected_alpha_score,
+                    breadth_score,
+                    freshness_score,
+                    overlap_penalty,
+                    opportunity_score,
+                    selected,
+                    shares,
+                    details_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        scan_date,
+                        str(row["ticker"]),
+                        str(row["strategy_slot"]),
+                        str(row["strategy_sector"]),
+                        row.get("sector"),
+                        row.get("signal_score"),
+                        row.get("setup_quality_score"),
+                        row.get("expected_alpha_score"),
+                        row.get("breadth_score"),
+                        row.get("freshness_score"),
+                        row.get("overlap_penalty"),
+                        row.get("opportunity_score"),
+                        int(bool(row.get("selected", False))),
+                        int(row["shares"]) if row.get("shares") is not None else None,
+                        json.dumps(row.get("details", {}), sort_keys=True),
+                    )
+                    for row in payload
+                ],
+            )
+        return len(payload)
+
+    def load_scan_candidates(self, scan_date: str | None = None):
+        import pandas as pd
+
+        query = """
+            SELECT
+                scan_date,
+                ticker,
+                strategy_slot,
+                strategy_sector,
+                sector,
+                signal_score,
+                setup_quality_score,
+                expected_alpha_score,
+                breadth_score,
+                freshness_score,
+                overlap_penalty,
+                opportunity_score,
+                selected,
+                shares,
+                details_json
+            FROM Scan_Candidates
+        """
+        params: tuple = ()
+        if scan_date is not None:
+            query += " WHERE scan_date = ?"
+            params = (scan_date,)
+        query += " ORDER BY scan_date ASC, selected DESC, opportunity_score DESC, ticker ASC"
+        with self.sqlite_connection() as connection:
+            rows = connection.execute(query, params).fetchall()
+        if not rows:
+            return pd.DataFrame(
+                columns=[
+                    "scan_date",
+                    "ticker",
+                    "strategy_slot",
+                    "strategy_sector",
+                    "sector",
+                    "signal_score",
+                    "setup_quality_score",
+                    "expected_alpha_score",
+                    "breadth_score",
+                    "freshness_score",
+                    "overlap_penalty",
+                    "opportunity_score",
+                    "selected",
+                    "shares",
+                    "details_json",
+                ]
+            )
+        frame = pd.DataFrame(rows, columns=rows[0].keys())
+        frame["selected"] = frame["selected"].astype(int)
+        return frame
 
 
 def create_default_manager() -> DatabaseManager:

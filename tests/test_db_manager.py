@@ -61,6 +61,6 @@ class DatabaseManagerInitializationTests(unittest.TestCase):
             finally:
                 connection.close()
 
-            self.assertTrue({"Universe", "Backtest_Results", "Active_Trades"}.issubset(tables))
+            self.assertTrue({"Universe", "Backtest_Results", "Active_Trades", "Scan_Candidates"}.issubset(tables))
             self.assertIn("entry_atr", active_trade_columns)
             self.assertTrue(any("historical_ohlcv" in statement for statement in fake_duckdb.statements))

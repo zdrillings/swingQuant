@@ -8,6 +8,7 @@ import math
 import numpy as np
 import pandas as pd
 
+from src.sweep.service import BenchmarkContext, SweepService
 from src.sync.service import REFERENCE_TICKERS
 from src.utils.db_manager import DatabaseManager
 from src.utils.logging import get_logger
@@ -27,7 +28,17 @@ class EvaluateService:
         self.db_manager = db_manager
         self.logger = get_logger("evaluate")
 
-    def run(self, *, top: int = 10, sector: str | None = None, run_id: int | None = None, min_trades: int = 12) -> EvaluateReport:
+    def run(
+        self,
+        *,
+        top: int = 10,
+        sector: str | None = None,
+        run_id: int | None = None,
+        min_trades: int = 12,
+        walk_forward: bool = False,
+        walk_forward_windows: int = 5,
+        walk_forward_shortlist: int = 25,
+    ) -> EvaluateReport:
         self.db_manager.initialize()
         selected_run_id = run_id if run_id is not None else self.db_manager.latest_run_id()
         if selected_run_id is None:
@@ -94,25 +105,41 @@ class EvaluateService:
         ).reset_index(drop=True)
         ranked["global_rank"] = range(1, len(ranked.index) + 1)
         ranked["sector_rank"] = ranked.groupby("sector")["practical_score"].rank(method="dense", ascending=False).astype(int)
-        top_ranked = ranked.head(top).copy()
+        top_ranked = self._cap_sector_repetition(ranked, max_per_sector=2, limit=top)
         live_ranked = (
-            ranked[ranked["live_match_count"] > 0]
-            .sort_values(
-                ["live_match_count", "practical_score", "norm_score"],
-                ascending=[False, False, False],
+            self._cap_sector_repetition(
+                ranked[ranked["live_match_count"] > 0].sort_values(
+                    ["live_match_count", "practical_score", "norm_score"],
+                    ascending=[False, False, False],
+                ),
+                max_per_sector=2,
+                limit=top,
             )
-            .head(top)
-            .copy()
         )
         practical_live_ranked = (
-            ranked[ranked["live_match_count"] > 0]
-            .sort_values(
-                ["practical_score", "live_match_count", "norm_score"],
-                ascending=[False, False, False],
+            self._cap_sector_repetition(
+                ranked[ranked["live_match_count"] > 0].sort_values(
+                    ["practical_score", "live_match_count", "norm_score"],
+                    ascending=[False, False, False],
+                ),
+                max_per_sector=2,
+                limit=top,
             )
-            .head(top)
-            .copy()
         )
+        walk_forward_available = False
+        if walk_forward:
+            walk_forward_metrics = self._build_walk_forward_stability(
+                ranked=ranked,
+                top=top,
+                shortlist_size=walk_forward_shortlist,
+                windows=walk_forward_windows,
+            )
+            if not walk_forward_metrics.empty:
+                walk_forward_available = True
+                ranked = ranked.merge(walk_forward_metrics, on="id", how="left")
+                top_ranked = top_ranked.merge(walk_forward_metrics, on="id", how="left")
+                live_ranked = live_ranked.merge(walk_forward_metrics, on="id", how="left")
+                practical_live_ranked = practical_live_ranked.merge(walk_forward_metrics, on="id", how="left")
         report_path = self.db_manager.paths.reports_dir / "candidates.md"
         lines = [
             "# Ranked Candidates",
@@ -121,8 +148,15 @@ class EvaluateService:
             f"- min_trades: {min_trades}",
             "- ranking: practical_score desc, then norm_score desc, then expectancy desc",
             "- practical_score includes live-match bonus, trade-count bonus, and alpha bonuses vs SPY/sector",
-            "",
         ]
+        if walk_forward:
+            lines.append(
+                f"- walk_forward: enabled on shortlist={walk_forward_shortlist} with rolling_windows={walk_forward_windows}"
+            )
+            lines.append(
+                "- walk_forward note: fixed-parameter rolling validation windows; not per-window re-optimized training"
+            )
+        lines.append("")
         lines.extend(
             self._render_report_section(
                 "Top Ranked Candidates",
@@ -182,6 +216,26 @@ class EvaluateService:
                 empty_message="No portfolio pairs currently satisfy promotion policy.",
             )
         )
+        if walk_forward_available:
+            stability_ranked = (
+                self._cap_sector_repetition(
+                    ranked[ranked["wf_stability_score"].notna()].sort_values(
+                        ["wf_stability_score", "wf_positive_window_ratio", "wf_median_expectancy"],
+                        ascending=[False, False, False],
+                    ),
+                    max_per_sector=2,
+                    limit=top,
+                )
+            )
+            lines.extend(
+                self._render_report_section(
+                    "Best Walk-Forward Stability Candidates",
+                    stability_ranked,
+                    candidate_links,
+                    gate_diagnostics,
+                    empty_message="No walk-forward shortlist metrics are available.",
+                )
+            )
         report_path.write_text("\n".join(lines), encoding="utf-8")
         return EvaluateReport(output_path=str(report_path), rows_written=len(top_ranked.index))
 
@@ -197,8 +251,13 @@ class EvaluateService:
         history = self.db_manager.load_price_history(tickers)
         if history.empty:
             return {}, {}
-
-        analysis_frame, _ = build_analysis_frame(history, universe_rows)
+        earnings_loader = getattr(self.db_manager, "load_earnings_calendar", None)
+        earnings_calendar = earnings_loader(universe_tickers) if callable(earnings_loader) else pd.DataFrame()
+        analysis_frame, _ = build_analysis_frame(
+            history,
+            universe_rows,
+            earnings_calendar=earnings_calendar,
+        )
         full_snapshot = latest_snapshot(analysis_frame)
         full_snapshot = full_snapshot[full_snapshot["ticker"].isin(universe_tickers)].copy()
         regime_snapshot = full_snapshot[full_snapshot["regime_green"].fillna(False)].copy()
@@ -243,6 +302,177 @@ class EvaluateService:
             links[int(row.id)] = row_links
             diagnostics[int(row.id)] = row_diagnostic
         return links, diagnostics
+
+    def _build_walk_forward_stability(
+        self,
+        *,
+        ranked: pd.DataFrame,
+        top: int,
+        shortlist_size: int,
+        windows: int,
+    ) -> pd.DataFrame:
+        try:
+            import polars as pl
+        except ModuleNotFoundError as exc:
+            raise RuntimeError("polars is required for walk-forward evaluation. Install project dependencies first.") from exc
+
+        shortlist = self._build_walk_forward_shortlist(ranked, top=top, shortlist_size=shortlist_size)
+        if shortlist.empty:
+            return pd.DataFrame(columns=["id"])
+
+        universe_rows = self.db_manager.list_research_universe(limit=250)
+        if not universe_rows:
+            return pd.DataFrame(columns=["id"])
+        universe_tickers = [row["ticker"] for row in universe_rows]
+        tickers = sorted(set(universe_tickers).union(REFERENCE_TICKERS))
+        price_history = self.db_manager.load_price_history(tickers)
+        if price_history.empty:
+            return pd.DataFrame(columns=["id"])
+
+        earnings_loader = getattr(self.db_manager, "load_earnings_calendar", None)
+        earnings_calendar = earnings_loader(universe_tickers) if callable(earnings_loader) else pd.DataFrame()
+        analysis_frame, _ = build_analysis_frame(price_history, universe_rows, earnings_calendar=earnings_calendar)
+        analysis_frame = analysis_frame[analysis_frame["ticker"].isin(universe_tickers)].copy()
+        if analysis_frame.empty:
+            return pd.DataFrame(columns=["id"])
+
+        pl_frame = pl.from_dicts(analysis_frame.to_dict(orient="records"))
+        unique_dates = sorted(pl_frame.select("date").unique().to_series().to_list())
+        if len(unique_dates) < max(windows + 1, 4):
+            return pd.DataFrame(columns=["id"])
+
+        date_chunks = [
+            list(chunk)
+            for chunk in np.array_split(np.array(unique_dates, dtype=object), windows + 1)
+            if len(chunk) > 0
+        ]
+        test_chunks = date_chunks[1:]
+        if len(test_chunks) < windows:
+            return pd.DataFrame(columns=["id"])
+
+        sweep_service = SweepService(self.db_manager)
+        benchmark_price_maps = sweep_service._build_benchmark_price_maps(price_history)
+        stability_rows: list[dict[str, float | int]] = []
+        for row in shortlist.itertuples(index=False):
+            params = json.loads(row.params_json)
+            row_sector = params.get("sector", "ALL")
+            backtest_costs = sweep_service._load_backtest_costs(
+                {"backtest_costs": params.get("backtest_costs", {})}
+            )
+
+            window_metrics: list[dict[str, float]] = []
+            for test_dates in test_chunks:
+                start_date = test_dates[0]
+                end_date = test_dates[-1]
+                scoped_frame = pl_frame.filter((pl.col("date") >= start_date) & (pl.col("date") <= end_date))
+                if row_sector != "ALL":
+                    scoped_frame = scoped_frame.filter(pl.col("sector") == row_sector)
+                metrics = sweep_service._run_backtest(
+                    scoped_frame,
+                    params["indicators"],
+                    params["exit_rules"],
+                    backtest_costs,
+                    benchmark_context=BenchmarkContext(
+                        spy_ticker="SPY",
+                        sector_ticker=None if row_sector == "ALL" else self._benchmark_ticker_for_sector(row_sector),
+                        price_maps=benchmark_price_maps,
+                    ),
+                )
+                window_metrics.append(metrics)
+
+            stability_rows.append({"id": int(row.id), **self._summarize_walk_forward_metrics(window_metrics)})
+        return pd.DataFrame(stability_rows)
+
+    def _build_walk_forward_shortlist(
+        self,
+        ranked: pd.DataFrame,
+        *,
+        top: int,
+        shortlist_size: int,
+    ) -> pd.DataFrame:
+        shortlist_parts = [
+            ranked.head(top),
+            ranked[ranked["live_match_count"] > 0].head(top),
+            self._best_per_sector(ranked).head(top),
+            self._best_per_sector(ranked[ranked["promotion_policy_passed"]].copy()).head(top),
+            ranked.sort_values(
+                ["alpha_vs_sector", "alpha_vs_spy", "practical_score"],
+                ascending=[False, False, False],
+            ).head(top),
+        ]
+        shortlist = pd.concat(shortlist_parts, ignore_index=True).drop_duplicates(subset=["id"], keep="first")
+        return shortlist.head(shortlist_size).reset_index(drop=True)
+
+    def _summarize_walk_forward_metrics(self, window_metrics: list[dict[str, float]]) -> dict[str, float | int]:
+        expectancy_values = [float(metrics["expectancy"]) for metrics in window_metrics]
+        alpha_values = [
+            float(metrics["alpha_vs_spy"])
+            for metrics in window_metrics
+            if metrics.get("alpha_vs_spy") is not None and np.isfinite(float(metrics["alpha_vs_spy"]))
+        ]
+        mdd_values = [float(metrics["mdd"]) for metrics in window_metrics]
+        trade_counts = [int(metrics["trade_count"]) for metrics in window_metrics]
+
+        positive_window_ratio = (
+            sum(1 for value in expectancy_values if value > 0) / len(expectancy_values)
+            if expectancy_values
+            else 0.0
+        )
+        positive_alpha_window_ratio = (
+            sum(1 for value in alpha_values if value > 0) / len(window_metrics)
+            if window_metrics
+            else 0.0
+        )
+        median_expectancy = float(np.median(expectancy_values)) if expectancy_values else 0.0
+        worst_expectancy = float(min(expectancy_values)) if expectancy_values else 0.0
+        median_alpha_vs_spy = float(np.median(alpha_values)) if alpha_values else np.nan
+        worst_mdd = float(max(mdd_values)) if mdd_values else 0.0
+        trade_count_min = min(trade_counts) if trade_counts else 0
+        return {
+            "wf_window_count": len(window_metrics),
+            "wf_median_expectancy": median_expectancy,
+            "wf_worst_expectancy": worst_expectancy,
+            "wf_positive_window_ratio": positive_window_ratio,
+            "wf_positive_alpha_window_ratio": positive_alpha_window_ratio,
+            "wf_median_alpha_vs_spy": median_alpha_vs_spy,
+            "wf_worst_mdd": worst_mdd,
+            "wf_trade_count_min": trade_count_min,
+            "wf_stability_score": self._score_walk_forward_summary(
+                median_expectancy=median_expectancy,
+                worst_expectancy=worst_expectancy,
+                positive_window_ratio=positive_window_ratio,
+                positive_alpha_window_ratio=positive_alpha_window_ratio,
+                worst_mdd=worst_mdd,
+                trade_count_min=trade_count_min,
+            ),
+        }
+
+    def _score_walk_forward_summary(
+        self,
+        *,
+        median_expectancy: float,
+        worst_expectancy: float,
+        positive_window_ratio: float,
+        positive_alpha_window_ratio: float,
+        worst_mdd: float,
+        trade_count_min: int,
+    ) -> float:
+        expectancy_term = max(min(median_expectancy * 40.0, 0.40), -0.40)
+        worst_expectancy_term = max(min(worst_expectancy * 30.0, 0.20), -0.20)
+        trade_support_term = min(max(trade_count_min, 0), 20) / 20.0 * 0.10
+        return (
+            expectancy_term
+            + worst_expectancy_term
+            + positive_window_ratio * 0.30
+            + positive_alpha_window_ratio * 0.15
+            + trade_support_term
+            - worst_mdd * 0.25
+        )
+
+    def _benchmark_ticker_for_sector(self, sector: str) -> str | None:
+        from src.utils.regime import benchmark_etf_for_sector
+
+        return benchmark_etf_for_sector(sector)
 
     def _build_gate_diagnostic(
         self,
@@ -435,6 +665,23 @@ class EvaluateService:
             .reset_index(drop=True)
         )
 
+    def _cap_sector_repetition(self, frame: pd.DataFrame, *, max_per_sector: int, limit: int) -> pd.DataFrame:
+        if frame.empty:
+            return frame.copy()
+        selected_indices: list[int] = []
+        sector_counts: dict[str, int] = {}
+        for row in frame.reset_index(drop=True).itertuples():
+            if len(selected_indices) >= limit:
+                break
+            sector = str(row.sector)
+            if sector_counts.get(sector, 0) >= max_per_sector:
+                continue
+            selected_indices.append(int(row.Index))
+            sector_counts[sector] = sector_counts.get(sector, 0) + 1
+        if not selected_indices:
+            return frame.iloc[0:0].copy()
+        return frame.reset_index(drop=True).loc[selected_indices].copy()
+
     def _build_portfolio_pairs(self, ranked: pd.DataFrame) -> pd.DataFrame:
         sector_best = self._best_per_sector(ranked)
         candidates = sector_best.to_dict(orient="records")
@@ -552,6 +799,22 @@ class EvaluateService:
             lines.append(f"- mdd: {row.mdd:.6f}")
             lines.append(f"- win_rate: {row.win_rate:.6f}")
             lines.append(f"- trade_count: {trade_count if trade_count is not None else 'unknown'}")
+            if hasattr(row, "wf_stability_score") and pd.notna(getattr(row, "wf_stability_score", np.nan)):
+                lines.append(f"- wf_stability_score: {float(row.wf_stability_score):.6f}")
+                lines.append(f"- wf_window_count: {int(row.wf_window_count)}")
+                lines.append(f"- wf_positive_window_ratio: {float(row.wf_positive_window_ratio):.6f}")
+                lines.append(
+                    f"- wf_positive_alpha_window_ratio: {float(row.wf_positive_alpha_window_ratio):.6f}"
+                )
+                lines.append(f"- wf_median_expectancy: {float(row.wf_median_expectancy):.6f}")
+                lines.append(f"- wf_worst_expectancy: {float(row.wf_worst_expectancy):.6f}")
+                lines.append(
+                    f"- wf_median_alpha_vs_spy: {float(row.wf_median_alpha_vs_spy):.6f}"
+                    if np.isfinite(float(row.wf_median_alpha_vs_spy))
+                    else "- wf_median_alpha_vs_spy: unknown"
+                )
+                lines.append(f"- wf_worst_mdd: {float(row.wf_worst_mdd):.6f}")
+                lines.append(f"- wf_trade_count_min: {int(row.wf_trade_count_min)}")
             lines.append(f"- duplicate_group_size: {row.duplicate_group_size}")
             lines.append(f"- collapsed_result_ids: {', '.join(str(value) for value in row.collapsed_result_ids)}")
             lines.append(f"- live_match_count: {candidate_info['count']}")

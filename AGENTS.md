@@ -61,6 +61,7 @@ The authoritative product spec is [Spec.md](/home/zdrillings/code/SwingQuant/Spe
 
 - Bootstraps the universe only when `Universe` is empty.
 - Fetches 5 years of daily OHLCV.
+- Fetches and persists earnings calendar dates for the research universe.
 - Uses retries with exponential backoff.
 - Marks permanently failed tickers inactive.
 - Applies the median 30-day dollar-volume liquidity filter.
@@ -77,6 +78,7 @@ The authoritative product spec is [Spec.md](/home/zdrillings/code/SwingQuant/Spe
 - Uses Polars as the backtest engine in the current implementation.
 - Sweeps dynamic exit rules from config; do not silently fall back to fixed stop/target values when the grid provides them.
 - Supports ATR-based exits; keep sweep and runtime exit semantics aligned.
+- Supports earnings-aware entry filters and pre-earnings exits; keep sweep and runtime event semantics aligned.
 - Applies configurable execution costs from `config.yaml` to every simulated trade.
 - Stores sector scope inside `params_json` so `sq evaluate --sector` can filter without changing the SQLite schema.
 - Supports multiple model families through `sweep_modes`.
@@ -112,6 +114,12 @@ The authoritative product spec is [Spec.md](/home/zdrillings/code/SwingQuant/Spe
 - Applies regime filter before signal evaluation.
 - Uses the promoted strategy’s thresholds, relative-strength hard filter, and confluence score.
 - Current score components include `rsi_14`, `vol_alpha`, `sma_200_dist`, and `roc_63`.
+- Earnings-aware pullback strategies can also use:
+  - `days_to_next_earnings`
+  - `days_since_last_earnings`
+- Gap-aware pullback strategies can also use:
+  - `avg_abs_gap_pct_20`
+  - `max_gap_down_pct_60`
 - Breakout v1 strategies additionally rely on:
   - `sma_50_dist`
   - `ma_alignment_50_200`
@@ -136,6 +144,7 @@ The authoritative product spec is [Spec.md](/home/zdrillings/code/SwingQuant/Spe
   - RSI_2 > 90
   - time limit
   - regime flip
+  - pre-earnings exit when promoted
 - When the active strategy uses ATR exits, evaluate stop and target off stored `entry_atr`.
 - Sends one consolidated digest per run.
 - Recommends `sell` in the digest when exit conditions are met.
