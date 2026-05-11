@@ -58,9 +58,25 @@ class DatabaseManagerInitializationTests(unittest.TestCase):
                     row[1]
                     for row in connection.execute("PRAGMA table_info(Active_Trades)").fetchall()
                 }
+                scan_candidate_columns = {
+                    row[1]
+                    for row in connection.execute("PRAGMA table_info(Scan_Candidates)").fetchall()
+                }
             finally:
                 connection.close()
 
             self.assertTrue({"Universe", "Backtest_Results", "Active_Trades", "Scan_Candidates"}.issubset(tables))
             self.assertIn("entry_atr", active_trade_columns)
+            self.assertTrue(
+                {
+                    "md_volume_30d",
+                    "adj_close",
+                    "regime_etf",
+                    "selected_rank",
+                    "fwd_return_10d",
+                    "alpha_vs_sector_10d",
+                    "mfe_20d",
+                    "mae_20d",
+                }.issubset(scan_candidate_columns)
+            )
             self.assertTrue(any("historical_ohlcv" in statement for statement in fake_duckdb.statements))

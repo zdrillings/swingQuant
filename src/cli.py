@@ -10,6 +10,7 @@ from src.positions.service import PositionsService
 from src.promote.service import PromoteService
 from src.research.service import ResearchService
 from src.scan.analysis_service import ScanAnalysisService
+from src.scan.backfill_service import ScanBackfillService
 from src.scan.service import ScanService
 from src.sleeves.service import SleeveResearchService
 from src.sweep.service import SweepService
@@ -62,6 +63,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("positions", help="Summarize open positions and current sell context.")
     subparsers.add_parser("scan", help="Run the daily signal scan and email the evening brief.")
+    scan_backfill_parser = subparsers.add_parser("scan-backfill", help="Replay daily scans across historical dates without using future prices.")
+    scan_backfill_parser.add_argument("--date-from", required=True, type=str)
+    scan_backfill_parser.add_argument("--date-to", default=None, type=str)
+    scan_backfill_parser.add_argument("--skip-existing", action="store_true")
     scan_analysis_parser = subparsers.add_parser("scan-analysis", help="Analyze scan snapshots and selection attribution.")
     scan_analysis_parser.add_argument("--date", type=str, default=None)
     scan_analysis_parser.add_argument("--refresh", action="store_true")
@@ -169,7 +174,31 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "scan":
             report = ScanService(db_manager).run()
-            print(f"Scan completed: candidates={report.candidate_count} emailed={report.emailed}")
+            ranker_state = "enabled" if report.learned_ranker_enabled else "disabled"
+            ranker_reason = f" reason={report.learned_ranker_reason}" if report.learned_ranker_reason else ""
+            print(
+                "Scan completed:",
+                f"candidates={report.candidate_count}",
+                f"emailed={report.emailed}",
+                f"learned_ranker={ranker_state}",
+                f"train_rows={report.learned_ranker_train_rows}",
+                f"train_dates={report.learned_ranker_train_dates}{ranker_reason}",
+            )
+            return 0
+
+        if args.command == "scan-backfill":
+            report = ScanBackfillService(db_manager).run(
+                date_from=args.date_from,
+                date_to=args.date_to,
+                skip_existing=args.skip_existing,
+            )
+            print(
+                "Scan backfill completed:",
+                f"processed={report.scan_dates_processed}",
+                f"skipped={report.scan_dates_skipped}",
+                f"candidates={report.total_candidates}",
+                f"selected={report.total_selected}",
+            )
             return 0
 
         if args.command == "scan-analysis":

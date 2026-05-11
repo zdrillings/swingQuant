@@ -12,7 +12,12 @@ from src.sweep.service import BenchmarkContext, SweepService
 from src.sync.service import REFERENCE_TICKERS
 from src.utils.db_manager import DatabaseManager
 from src.utils.logging import get_logger
-from src.utils.promotion_policy import promotion_policy_violations
+from src.utils.promotion_policy import (
+    load_promotion_policy,
+    promotion_policy_violations,
+    walk_forward_policy_enabled,
+    walk_forward_policy_violations,
+)
 from src.utils.signal_engine import build_analysis_frame, filter_signal_candidates, latest_snapshot
 from src.utils.strategy import SIGNAL_SCORE_MIN_KEY, evaluate_signal_gate, split_signal_indicators
 
@@ -140,6 +145,10 @@ class EvaluateService:
                 top_ranked = top_ranked.merge(walk_forward_metrics, on="id", how="left")
                 live_ranked = live_ranked.merge(walk_forward_metrics, on="id", how="left")
                 practical_live_ranked = practical_live_ranked.merge(walk_forward_metrics, on="id", how="left")
+                ranked = self._apply_promotion_policy_metadata(ranked)
+                top_ranked = self._apply_promotion_policy_metadata(top_ranked)
+                live_ranked = self._apply_promotion_policy_metadata(live_ranked)
+                practical_live_ranked = self._apply_promotion_policy_metadata(practical_live_ranked)
         report_path = self.db_manager.paths.reports_dir / "candidates.md"
         lines = [
             "# Ranked Candidates",
@@ -741,16 +750,57 @@ class EvaluateService:
         ).reset_index(drop=True)
 
     def _apply_promotion_policy_metadata(self, frame: pd.DataFrame) -> pd.DataFrame:
+        policy = load_promotion_policy()
         enriched = frame.copy()
+        if enriched.empty:
+            enriched["promotion_policy_violations"] = pd.Series(dtype=object)
+            enriched["promotion_policy_passed"] = pd.Series(dtype=bool)
+            return enriched
         enriched["promotion_policy_violations"] = enriched.apply(
             lambda row: promotion_policy_violations(
                 profit_factor=float(row["profit_factor"]),
                 expectancy=float(row["expectancy"]),
                 mdd=float(row["mdd"]),
                 trade_count=int(row["trade_count"]) if pd.notna(row["trade_count"]) else None,
+                policy=policy,
             ),
             axis=1,
         )
+        walk_forward_columns_present = any(
+            column in enriched.columns
+            for column in [
+                "wf_window_count",
+                "wf_positive_window_ratio",
+                "wf_positive_alpha_window_ratio",
+                "wf_median_expectancy",
+                "wf_worst_mdd",
+                "wf_trade_count_min",
+            ]
+        )
+        if walk_forward_policy_enabled(policy) and walk_forward_columns_present:
+            enriched["walk_forward_policy_violations"] = enriched.apply(
+                lambda row: walk_forward_policy_violations(
+                    window_count=int(row["wf_window_count"]) if "wf_window_count" in row.index and pd.notna(row["wf_window_count"]) else None,
+                    positive_window_ratio=float(row["wf_positive_window_ratio"]) if "wf_positive_window_ratio" in row.index and pd.notna(row["wf_positive_window_ratio"]) else None,
+                    positive_alpha_window_ratio=(
+                        float(row["wf_positive_alpha_window_ratio"])
+                        if "wf_positive_alpha_window_ratio" in row.index and pd.notna(row["wf_positive_alpha_window_ratio"])
+                        else None
+                    ),
+                    median_expectancy=float(row["wf_median_expectancy"]) if "wf_median_expectancy" in row.index and pd.notna(row["wf_median_expectancy"]) else None,
+                    worst_mdd=float(row["wf_worst_mdd"]) if "wf_worst_mdd" in row.index and pd.notna(row["wf_worst_mdd"]) else None,
+                    trade_count_min=int(row["wf_trade_count_min"]) if "wf_trade_count_min" in row.index and pd.notna(row["wf_trade_count_min"]) else None,
+                    policy=policy,
+                ),
+                axis=1,
+            )
+            enriched["promotion_policy_violations"] = enriched.apply(
+                lambda row: [
+                    *row["promotion_policy_violations"],
+                    *row["walk_forward_policy_violations"],
+                ],
+                axis=1,
+            )
         enriched["promotion_policy_passed"] = enriched["promotion_policy_violations"].map(lambda violations: len(violations) == 0)
         return enriched
 

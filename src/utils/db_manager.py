@@ -77,6 +77,9 @@ CREATE TABLE IF NOT EXISTS Scan_Candidates (
     strategy_slot TEXT NOT NULL,
     strategy_sector TEXT NOT NULL,
     sector TEXT,
+    md_volume_30d REAL,
+    adj_close REAL,
+    regime_etf TEXT,
     signal_score REAL,
     setup_quality_score REAL,
     expected_alpha_score REAL,
@@ -85,7 +88,25 @@ CREATE TABLE IF NOT EXISTS Scan_Candidates (
     overlap_penalty REAL,
     opportunity_score REAL,
     selected INTEGER NOT NULL DEFAULT 0,
+    selected_rank INTEGER,
     shares INTEGER,
+    fwd_return_1d REAL,
+    fwd_return_3d REAL,
+    fwd_return_5d REAL,
+    fwd_return_10d REAL,
+    fwd_return_20d REAL,
+    alpha_vs_spy_1d REAL,
+    alpha_vs_spy_3d REAL,
+    alpha_vs_spy_5d REAL,
+    alpha_vs_spy_10d REAL,
+    alpha_vs_spy_20d REAL,
+    alpha_vs_sector_1d REAL,
+    alpha_vs_sector_3d REAL,
+    alpha_vs_sector_5d REAL,
+    alpha_vs_sector_10d REAL,
+    alpha_vs_sector_20d REAL,
+    mfe_20d REAL,
+    mae_20d REAL,
     details_json TEXT NOT NULL
 );
 """
@@ -173,6 +194,35 @@ class DatabaseManager:
             connection.execute("ALTER TABLE Active_Trades ADD COLUMN strategy_id INTEGER")
         if "strategy_slot" not in active_trade_columns:
             connection.execute("ALTER TABLE Active_Trades ADD COLUMN strategy_slot TEXT")
+        scan_candidate_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(Scan_Candidates)").fetchall()
+        }
+        for name, column_type in [
+            ("md_volume_30d", "REAL"),
+            ("adj_close", "REAL"),
+            ("regime_etf", "TEXT"),
+            ("selected_rank", "INTEGER"),
+            ("fwd_return_1d", "REAL"),
+            ("fwd_return_3d", "REAL"),
+            ("fwd_return_5d", "REAL"),
+            ("fwd_return_10d", "REAL"),
+            ("fwd_return_20d", "REAL"),
+            ("alpha_vs_spy_1d", "REAL"),
+            ("alpha_vs_spy_3d", "REAL"),
+            ("alpha_vs_spy_5d", "REAL"),
+            ("alpha_vs_spy_10d", "REAL"),
+            ("alpha_vs_spy_20d", "REAL"),
+            ("alpha_vs_sector_1d", "REAL"),
+            ("alpha_vs_sector_3d", "REAL"),
+            ("alpha_vs_sector_5d", "REAL"),
+            ("alpha_vs_sector_10d", "REAL"),
+            ("alpha_vs_sector_20d", "REAL"),
+            ("mfe_20d", "REAL"),
+            ("mae_20d", "REAL"),
+        ]:
+            if name not in scan_candidate_columns:
+                connection.execute(f"ALTER TABLE Scan_Candidates ADD COLUMN {name} {column_type}")
 
     def duckdb_connection(self):
         import duckdb
@@ -619,6 +669,9 @@ class DatabaseManager:
                     strategy_slot,
                     strategy_sector,
                     sector,
+                    md_volume_30d,
+                    adj_close,
+                    regime_etf,
                     signal_score,
                     setup_quality_score,
                     expected_alpha_score,
@@ -627,10 +680,28 @@ class DatabaseManager:
                     overlap_penalty,
                     opportunity_score,
                     selected,
+                    selected_rank,
                     shares,
+                    fwd_return_1d,
+                    fwd_return_3d,
+                    fwd_return_5d,
+                    fwd_return_10d,
+                    fwd_return_20d,
+                    alpha_vs_spy_1d,
+                    alpha_vs_spy_3d,
+                    alpha_vs_spy_5d,
+                    alpha_vs_spy_10d,
+                    alpha_vs_spy_20d,
+                    alpha_vs_sector_1d,
+                    alpha_vs_sector_3d,
+                    alpha_vs_sector_5d,
+                    alpha_vs_sector_10d,
+                    alpha_vs_sector_20d,
+                    mfe_20d,
+                    mae_20d,
                     details_json
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -639,6 +710,9 @@ class DatabaseManager:
                         str(row["strategy_slot"]),
                         str(row["strategy_sector"]),
                         row.get("sector"),
+                        row.get("md_volume_30d"),
+                        row.get("adj_close"),
+                        row.get("regime_etf"),
                         row.get("signal_score"),
                         row.get("setup_quality_score"),
                         row.get("expected_alpha_score"),
@@ -647,8 +721,82 @@ class DatabaseManager:
                         row.get("overlap_penalty"),
                         row.get("opportunity_score"),
                         int(bool(row.get("selected", False))),
+                        int(row["selected_rank"]) if row.get("selected_rank") is not None else None,
                         int(row["shares"]) if row.get("shares") is not None else None,
+                        row.get("fwd_return_1d"),
+                        row.get("fwd_return_3d"),
+                        row.get("fwd_return_5d"),
+                        row.get("fwd_return_10d"),
+                        row.get("fwd_return_20d"),
+                        row.get("alpha_vs_spy_1d"),
+                        row.get("alpha_vs_spy_3d"),
+                        row.get("alpha_vs_spy_5d"),
+                        row.get("alpha_vs_spy_10d"),
+                        row.get("alpha_vs_spy_20d"),
+                        row.get("alpha_vs_sector_1d"),
+                        row.get("alpha_vs_sector_3d"),
+                        row.get("alpha_vs_sector_5d"),
+                        row.get("alpha_vs_sector_10d"),
+                        row.get("alpha_vs_sector_20d"),
+                        row.get("mfe_20d"),
+                        row.get("mae_20d"),
                         json.dumps(row.get("details", {}), sort_keys=True),
+                    )
+                    for row in payload
+                ],
+            )
+        return len(payload)
+
+    def update_scan_candidate_outcomes(self, *, scan_date: str, rows: Iterable[dict]) -> int:
+        payload = list(rows)
+        if not payload:
+            return 0
+        with self.sqlite_connection() as connection:
+            connection.executemany(
+                """
+                UPDATE Scan_Candidates
+                SET
+                    fwd_return_1d = ?,
+                    fwd_return_3d = ?,
+                    fwd_return_5d = ?,
+                    fwd_return_10d = ?,
+                    fwd_return_20d = ?,
+                    alpha_vs_spy_1d = ?,
+                    alpha_vs_spy_3d = ?,
+                    alpha_vs_spy_5d = ?,
+                    alpha_vs_spy_10d = ?,
+                    alpha_vs_spy_20d = ?,
+                    alpha_vs_sector_1d = ?,
+                    alpha_vs_sector_3d = ?,
+                    alpha_vs_sector_5d = ?,
+                    alpha_vs_sector_10d = ?,
+                    alpha_vs_sector_20d = ?,
+                    mfe_20d = ?,
+                    mae_20d = ?
+                WHERE scan_date = ? AND ticker = ? AND strategy_slot = ?
+                """,
+                [
+                    (
+                        row.get("fwd_return_1d"),
+                        row.get("fwd_return_3d"),
+                        row.get("fwd_return_5d"),
+                        row.get("fwd_return_10d"),
+                        row.get("fwd_return_20d"),
+                        row.get("alpha_vs_spy_1d"),
+                        row.get("alpha_vs_spy_3d"),
+                        row.get("alpha_vs_spy_5d"),
+                        row.get("alpha_vs_spy_10d"),
+                        row.get("alpha_vs_spy_20d"),
+                        row.get("alpha_vs_sector_1d"),
+                        row.get("alpha_vs_sector_3d"),
+                        row.get("alpha_vs_sector_5d"),
+                        row.get("alpha_vs_sector_10d"),
+                        row.get("alpha_vs_sector_20d"),
+                        row.get("mfe_20d"),
+                        row.get("mae_20d"),
+                        scan_date,
+                        str(row["ticker"]),
+                        str(row["strategy_slot"]),
                     )
                     for row in payload
                 ],
@@ -665,6 +813,9 @@ class DatabaseManager:
                 strategy_slot,
                 strategy_sector,
                 sector,
+                md_volume_30d,
+                adj_close,
+                regime_etf,
                 signal_score,
                 setup_quality_score,
                 expected_alpha_score,
@@ -673,7 +824,25 @@ class DatabaseManager:
                 overlap_penalty,
                 opportunity_score,
                 selected,
+                selected_rank,
                 shares,
+                fwd_return_1d,
+                fwd_return_3d,
+                fwd_return_5d,
+                fwd_return_10d,
+                fwd_return_20d,
+                alpha_vs_spy_1d,
+                alpha_vs_spy_3d,
+                alpha_vs_spy_5d,
+                alpha_vs_spy_10d,
+                alpha_vs_spy_20d,
+                alpha_vs_sector_1d,
+                alpha_vs_sector_3d,
+                alpha_vs_sector_5d,
+                alpha_vs_sector_10d,
+                alpha_vs_sector_20d,
+                mfe_20d,
+                mae_20d,
                 details_json
             FROM Scan_Candidates
         """
@@ -692,6 +861,9 @@ class DatabaseManager:
                     "strategy_slot",
                     "strategy_sector",
                     "sector",
+                    "md_volume_30d",
+                    "adj_close",
+                    "regime_etf",
                     "signal_score",
                     "setup_quality_score",
                     "expected_alpha_score",
@@ -700,7 +872,25 @@ class DatabaseManager:
                     "overlap_penalty",
                     "opportunity_score",
                     "selected",
+                    "selected_rank",
                     "shares",
+                    "fwd_return_1d",
+                    "fwd_return_3d",
+                    "fwd_return_5d",
+                    "fwd_return_10d",
+                    "fwd_return_20d",
+                    "alpha_vs_spy_1d",
+                    "alpha_vs_spy_3d",
+                    "alpha_vs_spy_5d",
+                    "alpha_vs_spy_10d",
+                    "alpha_vs_spy_20d",
+                    "alpha_vs_sector_1d",
+                    "alpha_vs_sector_3d",
+                    "alpha_vs_sector_5d",
+                    "alpha_vs_sector_10d",
+                    "alpha_vs_sector_20d",
+                    "mfe_20d",
+                    "mae_20d",
                     "details_json",
                 ]
             )

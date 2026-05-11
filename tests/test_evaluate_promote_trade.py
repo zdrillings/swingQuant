@@ -602,6 +602,83 @@ class EvaluateServiceTests(unittest.TestCase):
             self.assertIn("wf_positive_window_ratio: 0.800000", report_text)
             self.assertIn("wf_positive_alpha_window_ratio: 0.600000", report_text)
 
+    def test_evaluate_walk_forward_metrics_can_fail_promotion_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            paths = AppPaths(
+                root_dir=root,
+                data_dir=root / "data",
+                duckdb_path=root / "data" / "market_data.duckdb",
+                sqlite_path=root / "data" / "ledger.sqlite",
+                reports_dir=root / "reports",
+                logs_dir=root / "logs",
+                config_path=root / "config.yaml",
+                env_path=root / ".env",
+                production_strategy_path=root / "production_strategy.json",
+            )
+            db = DatabaseManager(paths)
+            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                db.initialize()
+            db.insert_backtest_results(
+                [
+                    BacktestResultRow(
+                        run_id=10,
+                        strategy_id=302,
+                        params_json=json.dumps({"indicators": {}, "exit_rules": {}, "sector": "Materials"}),
+                        norm_score=None,
+                        profit_factor=1.8,
+                        expectancy=0.08,
+                        mdd=0.10,
+                        win_rate=0.6,
+                        trade_count=120,
+                        alpha_vs_spy=0.01,
+                        alpha_vs_sector=0.01,
+                    )
+                ]
+            )
+            service = EvaluateService(db)
+            service._build_live_candidate_metadata = lambda frame: ({}, {})
+            service._build_walk_forward_stability = lambda **kwargs: pd.DataFrame(
+                [
+                    {
+                        "id": 1,
+                        "wf_window_count": 5,
+                        "wf_median_expectancy": -0.001,
+                        "wf_worst_expectancy": -0.02,
+                        "wf_positive_window_ratio": 0.4,
+                        "wf_positive_alpha_window_ratio": 0.2,
+                        "wf_median_alpha_vs_spy": -0.01,
+                        "wf_worst_mdd": 0.35,
+                        "wf_trade_count_min": 4,
+                        "wf_stability_score": -0.10,
+                    }
+                ]
+            )
+
+            with patch("src.utils.promotion_policy.load_feature_config", return_value={
+                "promotion_policy": {
+                    "min_profit_factor": 1.30,
+                    "min_expectancy": 0.004,
+                    "min_trade_count": 100,
+                    "max_mdd": 0.30,
+                    "walk_forward": {
+                        "windows": 5,
+                        "min_window_count": 5,
+                        "min_positive_window_ratio": 0.60,
+                        "min_positive_alpha_window_ratio": 0.55,
+                        "min_median_expectancy": 0.0,
+                        "max_worst_mdd": 0.30,
+                        "min_trade_count_min": 8,
+                    },
+                }
+            }), patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                service.run(top=5, run_id=10, min_trades=12, walk_forward=True)
+
+            report_text = (paths.reports_dir / "candidates.md").read_text(encoding="utf-8")
+            self.assertIn("promotion_policy_passed: no", report_text)
+            self.assertIn("wf_positive_window_ratio 0.4 < 0.600000", report_text)
+            self.assertIn("wf_worst_mdd 0.35 > 0.300000", report_text)
+
     def test_walk_forward_summary_rewards_consistency(self) -> None:
         service = EvaluateService(DatabaseManager(AppPaths(
             root_dir=Path("."),
@@ -681,7 +758,16 @@ class PromoteAndTradeTests(unittest.TestCase):
                 ]
             )
 
-            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()), \
+                 patch.object(PromoteService, "_compute_walk_forward_metrics", return_value={
+                     "wf_window_count": 5,
+                     "wf_median_expectancy": 0.01,
+                     "wf_worst_expectancy": 0.0,
+                     "wf_positive_window_ratio": 0.8,
+                     "wf_positive_alpha_window_ratio": 0.6,
+                     "wf_worst_mdd": 0.15,
+                     "wf_trade_count_min": 12,
+                 }):
                 message = PromoteService(db).run(row_id=1)
 
             payload = json.loads(paths.production_strategy_path.read_text(encoding="utf-8"))
@@ -731,6 +817,70 @@ class PromoteAndTradeTests(unittest.TestCase):
 
             with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
                 with self.assertRaisesRegex(ValueError, "does not satisfy promotion policy"):
+                    PromoteService(db).run(row_id=1)
+
+    def test_promote_rejects_result_that_fails_walk_forward_policy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            paths = AppPaths(
+                root_dir=root,
+                data_dir=root / "data",
+                duckdb_path=root / "data" / "market_data.duckdb",
+                sqlite_path=root / "data" / "ledger.sqlite",
+                reports_dir=root / "reports",
+                logs_dir=root / "logs",
+                config_path=root / "config.yaml",
+                env_path=root / ".env",
+                production_strategy_path=root / "production_strategy.json",
+            )
+            db = DatabaseManager(paths)
+            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                db.initialize()
+            db.insert_backtest_results(
+                [
+                    BacktestResultRow(
+                        run_id=1,
+                        strategy_id=502,
+                        params_json=json.dumps({"indicators": {"rsi_14_max": 35}, "exit_rules": {"time_limit_days": 20}, "sector": "ALL"}),
+                        norm_score=0.7,
+                        profit_factor=1.8,
+                        expectancy=0.02,
+                        mdd=0.12,
+                        win_rate=0.55,
+                        trade_count=140,
+                        alpha_vs_spy=0.01,
+                        alpha_vs_sector=0.01,
+                    )
+                ]
+            )
+
+            with patch("src.utils.promotion_policy.load_feature_config", return_value={
+                "promotion_policy": {
+                    "min_profit_factor": 1.30,
+                    "min_expectancy": 0.004,
+                    "min_trade_count": 100,
+                    "max_mdd": 0.30,
+                    "walk_forward": {
+                        "windows": 5,
+                        "min_window_count": 5,
+                        "min_positive_window_ratio": 0.60,
+                        "min_positive_alpha_window_ratio": 0.55,
+                        "min_median_expectancy": 0.0,
+                        "max_worst_mdd": 0.30,
+                        "min_trade_count_min": 8,
+                    },
+                }
+            }), patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()), \
+                 patch.object(PromoteService, "_compute_walk_forward_metrics", return_value={
+                     "wf_window_count": 5,
+                     "wf_median_expectancy": -0.001,
+                     "wf_worst_expectancy": -0.02,
+                     "wf_positive_window_ratio": 0.4,
+                     "wf_positive_alpha_window_ratio": 0.2,
+                     "wf_worst_mdd": 0.35,
+                     "wf_trade_count_min": 4,
+                 }):
+                with self.assertRaisesRegex(ValueError, "wf_positive_window_ratio"):
                     PromoteService(db).run(row_id=1)
 
     def test_trade_sell_updates_status_exit_fields_and_reports_pnl(self) -> None:

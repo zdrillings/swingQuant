@@ -137,12 +137,27 @@ scan_policy:
     same_slot: 0.08
     same_sector: 0.00
     same_regime: 0.00
+  learned_ranker:
+    weight: 1.00
+    min_train_rows: 40
+    min_train_dates: 8
+    slot_weights:
+      energy: 2.00
+      materials: 0.25
 
 promotion_policy:
   min_profit_factor: 1.30
   min_expectancy: 0.004
   min_trade_count: 100
   max_mdd: 0.30
+  walk_forward:
+    windows: 5
+    min_window_count: 5
+    min_positive_window_ratio: 0.60
+    min_positive_alpha_window_ratio: 0.55
+    min_median_expectancy: 0.000
+    max_worst_mdd: 0.30
+    min_trade_count_min: 8
 
 sleeve_research:
   sectors:
