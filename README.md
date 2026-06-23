@@ -221,10 +221,10 @@ Use `--ticker` to always include specific names outside the default source:
 
 - All train/validation splits are chronological.
 - `sq sync` now refreshes both OHLCV and earnings calendar dates for the research universe.
-- `sq analyst-snapshot` captures current analyst target and recommendation context into DuckDB for future point-in-time studies.
+- `sq analyst-snapshot` captures current analyst target, recommendation, estimate, and revision context into DuckDB for future point-in-time studies.
   - Default scope is the top 250 active names by `md_volume_30d`.
   - The current provider is yfinance.
-  - The command stores target mean, median, low, high, analyst count, recommendation summary, capture timestamp, and details JSON.
+  - The command stores target mean, median, low, high, analyst count, recommendation summary, estimate/revision tables, capture timestamp, and details JSON.
 - `sq scan` uses:
   - a hard relative-strength filter via `relative_strength_index_vs_spy_min`
   - a confluence score across the promoted score components

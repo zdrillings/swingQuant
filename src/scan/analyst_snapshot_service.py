@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from src.scan.analyst_data import AnalystContext, AnalystDataClient
+from src.scan.analyst_data import AnalystContext, AnalystDataClient, AnalystRevisionContext
 from src.utils.db_manager import DatabaseManager
 from src.utils.logging import get_logger
 
@@ -16,8 +16,11 @@ class AnalystSnapshotReport:
     source: str
     requested_tickers: int
     persisted_rows: int
+    persisted_revision_rows: int
     rows_with_targets: int
     rows_with_recommendations: int
+    rows_with_estimates: int
+    rows_with_revisions: int
     output_path: Path
 
 
@@ -52,6 +55,7 @@ class AnalystSnapshotService:
             len(requested_tickers),
         )
         contexts = self.analyst_data_client.load_contexts(requested_tickers)
+        revision_contexts = self.analyst_data_client.load_revision_contexts(requested_tickers)
         captured_at = datetime.now(timezone.utc).isoformat()
         rows = [
             self._row_from_context(
@@ -62,10 +66,24 @@ class AnalystSnapshotService:
             )
             for ticker in requested_tickers
         ]
+        revision_rows = [
+            self._revision_row_from_context(
+                ticker=ticker,
+                context=revision_contexts.get(ticker),
+                captured_at=captured_at,
+                source=source,
+            )
+            for ticker in requested_tickers
+        ]
         persisted_rows = self.db_manager.replace_analyst_snapshots(
             snapshot_date=snapshot_date,
             provider=provider,
             rows=rows,
+        )
+        persisted_revision_rows = self.db_manager.replace_analyst_revision_snapshots(
+            snapshot_date=snapshot_date,
+            provider=provider,
+            rows=revision_rows,
         )
         rows_with_targets = sum(
             1
@@ -76,15 +94,32 @@ class AnalystSnapshotService:
             or row.get("target_high") is not None
         )
         rows_with_recommendations = sum(1 for row in rows if row.get("recommendation"))
+        rows_with_estimates = sum(
+            1
+            for row in revision_rows
+            if row.get("earnings_estimate")
+            or row.get("revenue_estimate")
+            or row.get("eps_trend")
+            or row.get("growth_estimates")
+        )
+        rows_with_revisions = sum(
+            1
+            for row in revision_rows
+            if row.get("eps_revisions") or row.get("upgrades_downgrades")
+        )
         output_path = self._write_report(
             snapshot_date=snapshot_date,
             provider=provider,
             source=source,
             requested_tickers=len(requested_tickers),
             persisted_rows=persisted_rows,
+            persisted_revision_rows=persisted_revision_rows,
             rows_with_targets=rows_with_targets,
             rows_with_recommendations=rows_with_recommendations,
+            rows_with_estimates=rows_with_estimates,
+            rows_with_revisions=rows_with_revisions,
             rows=rows,
+            revision_rows=revision_rows,
         )
         return AnalystSnapshotReport(
             snapshot_date=snapshot_date,
@@ -92,8 +127,11 @@ class AnalystSnapshotService:
             source=source,
             requested_tickers=len(requested_tickers),
             persisted_rows=persisted_rows,
+            persisted_revision_rows=persisted_revision_rows,
             rows_with_targets=rows_with_targets,
             rows_with_recommendations=rows_with_recommendations,
+            rows_with_estimates=rows_with_estimates,
+            rows_with_revisions=rows_with_revisions,
             output_path=output_path,
         )
 
@@ -149,6 +187,38 @@ class AnalystSnapshotService:
             "details": {"source": source, "has_context": True},
         }
 
+    def _revision_row_from_context(
+        self,
+        *,
+        ticker: str,
+        context: AnalystRevisionContext | None,
+        captured_at: str,
+        source: str,
+    ) -> dict:
+        if context is None:
+            return {
+                "ticker": ticker,
+                "captured_at": captured_at,
+                "earnings_estimate": [],
+                "revenue_estimate": [],
+                "eps_trend": [],
+                "eps_revisions": [],
+                "growth_estimates": [],
+                "upgrades_downgrades": [],
+                "details": {"source": source, "has_context": False},
+            }
+        return {
+            "ticker": ticker,
+            "captured_at": captured_at,
+            "earnings_estimate": context.earnings_estimate,
+            "revenue_estimate": context.revenue_estimate,
+            "eps_trend": context.eps_trend,
+            "eps_revisions": context.eps_revisions,
+            "growth_estimates": context.growth_estimates,
+            "upgrades_downgrades": context.upgrades_downgrades,
+            "details": {"source": source, "has_context": True},
+        }
+
     def _write_report(
         self,
         *,
@@ -157,9 +227,13 @@ class AnalystSnapshotService:
         source: str,
         requested_tickers: int,
         persisted_rows: int,
+        persisted_revision_rows: int,
         rows_with_targets: int,
         rows_with_recommendations: int,
+        rows_with_estimates: int,
+        rows_with_revisions: int,
         rows: list[dict],
+        revision_rows: list[dict],
     ) -> Path:
         output_path = self.db_manager.paths.reports_dir / "analyst_snapshots.md"
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -171,10 +245,13 @@ class AnalystSnapshotService:
             f"- source: {source}",
             f"- requested_tickers: {requested_tickers}",
             f"- persisted_rows: {persisted_rows}",
+            f"- persisted_revision_rows: {persisted_revision_rows}",
             f"- rows_with_targets: {rows_with_targets}",
             f"- rows_with_recommendations: {rows_with_recommendations}",
+            f"- rows_with_estimates: {rows_with_estimates}",
+            f"- rows_with_revisions: {rows_with_revisions}",
             "",
-            "## Sample Rows",
+            "## Target Sample Rows",
             "",
             "| ticker | mean | median | low | high | analysts | recommendation |",
             "|---|---:|---:|---:|---:|---:|---|",
@@ -189,6 +266,26 @@ class AnalystSnapshotService:
                     high=self._format_number(row.get("target_high")),
                     analysts=row.get("analyst_count") if row.get("analyst_count") is not None else "",
                     recommendation=str(row.get("recommendation") or "").replace("|", "/"),
+                )
+            )
+        lines.extend(
+            [
+                "",
+                "## Estimate/Revision Sample Rows",
+                "",
+                "| ticker | earnings estimate rows | revenue estimate rows | eps trend rows | eps revision rows | upgrade/downgrade rows |",
+                "|---|---:|---:|---:|---:|---:|",
+            ]
+        )
+        for row in revision_rows[:25]:
+            lines.append(
+                "| {ticker} | {earnings} | {revenue} | {trend} | {revisions} | {upgrades} |".format(
+                    ticker=row["ticker"],
+                    earnings=len(row.get("earnings_estimate") or []),
+                    revenue=len(row.get("revenue_estimate") or []),
+                    trend=len(row.get("eps_trend") or []),
+                    revisions=len(row.get("eps_revisions") or []),
+                    upgrades=len(row.get("upgrades_downgrades") or []),
                 )
             )
         output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")

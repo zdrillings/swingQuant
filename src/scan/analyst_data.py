@@ -18,6 +18,17 @@ class AnalystContext:
     recommendation: str | None = None
 
 
+@dataclass(frozen=True)
+class AnalystRevisionContext:
+    ticker: str
+    earnings_estimate: list[dict]
+    revenue_estimate: list[dict]
+    eps_trend: list[dict]
+    eps_revisions: list[dict]
+    growth_estimates: list[dict]
+    upgrades_downgrades: list[dict]
+
+
 class AnalystDataClient:
     def load_contexts(self, tickers: list[str]) -> dict[str, AnalystContext]:
         contexts: dict[str, AnalystContext] = {}
@@ -52,6 +63,67 @@ class AnalystDataClient:
             recommendation=recommendation,
         )
 
+    def load_revision_contexts(self, tickers: list[str]) -> dict[str, AnalystRevisionContext]:
+        contexts: dict[str, AnalystRevisionContext] = {}
+        for ticker in sorted({str(value).strip().upper() for value in tickers if str(value).strip()}):
+            context = self.load_revision_context(ticker)
+            if context is not None:
+                contexts[ticker] = context
+        return contexts
+
+    def load_revision_context(self, ticker: str) -> AnalystRevisionContext | None:
+        try:
+            import yfinance as yf
+
+            instrument = yf.Ticker(ticker)
+            context = AnalystRevisionContext(
+                ticker=ticker,
+                earnings_estimate=self._fetch_table_records(
+                    instrument,
+                    getter_name="get_earnings_estimate",
+                    attribute_name="earnings_estimate",
+                ),
+                revenue_estimate=self._fetch_table_records(
+                    instrument,
+                    getter_name="get_revenue_estimate",
+                    attribute_name="revenue_estimate",
+                ),
+                eps_trend=self._fetch_table_records(
+                    instrument,
+                    getter_name="get_eps_trend",
+                    attribute_name="eps_trend",
+                ),
+                eps_revisions=self._fetch_table_records(
+                    instrument,
+                    getter_name="get_eps_revisions",
+                    attribute_name="eps_revisions",
+                ),
+                growth_estimates=self._fetch_table_records(
+                    instrument,
+                    getter_name="get_growth_estimates",
+                    attribute_name="growth_estimates",
+                ),
+                upgrades_downgrades=self._fetch_table_records(
+                    instrument,
+                    getter_name="get_upgrades_downgrades",
+                    attribute_name="upgrades_downgrades",
+                ),
+            )
+        except Exception:
+            return None
+        if not any(
+            [
+                context.earnings_estimate,
+                context.revenue_estimate,
+                context.eps_trend,
+                context.eps_revisions,
+                context.growth_estimates,
+                context.upgrades_downgrades,
+            ]
+        ):
+            return None
+        return context
+
     def _fetch_price_targets(self, instrument) -> dict[str, Any]:
         raw = None
         getter = getattr(instrument, "get_analyst_price_targets", None)
@@ -71,6 +143,39 @@ class AnalystDataClient:
             if len(raw.columns) == 1:
                 return {self._normalize_key(key): value for key, value in raw.iloc[:, 0].to_dict().items()}
         return {}
+
+    def _fetch_table_records(
+        self,
+        instrument,
+        *,
+        getter_name: str,
+        attribute_name: str,
+    ) -> list[dict]:
+        raw = None
+        getter = getattr(instrument, getter_name, None)
+        if callable(getter):
+            raw = getter()
+        if raw is None:
+            raw = getattr(instrument, attribute_name, None)
+        return self._records_from_table(raw)
+
+    def _records_from_table(self, raw) -> list[dict]:
+        if raw is None:
+            return []
+        if isinstance(raw, dict):
+            return [self._json_safe_dict({key: value for key, value in raw.items()})]
+        if isinstance(raw, pd.Series):
+            return [self._json_safe_dict(raw.to_dict())]
+        if isinstance(raw, pd.DataFrame):
+            if raw.empty:
+                return []
+            frame = raw.copy()
+            if frame.index.name is None:
+                frame = frame.reset_index().rename(columns={"index": "period"})
+            else:
+                frame = frame.reset_index()
+            return [self._json_safe_dict(row) for row in frame.to_dict(orient="records")]
+        return []
 
     def _fetch_recommendation_summary(self, instrument) -> str | None:
         getter = getattr(instrument, "get_recommendations_summary", None)
@@ -110,6 +215,35 @@ class AnalystDataClient:
             "median": "median",
         }
         return mapping.get(normalized, normalized)
+
+    def _json_safe_dict(self, values: dict) -> dict:
+        safe: dict[str, object] = {}
+        for key, value in values.items():
+            safe[str(key)] = self._json_safe_value(value)
+        return safe
+
+    def _json_safe_value(self, value: object) -> object:
+        if value is None:
+            return None
+        try:
+            if pd.isna(value):
+                return None
+        except (TypeError, ValueError):
+            pass
+        if isinstance(value, pd.Timestamp):
+            return value.isoformat()
+        if hasattr(value, "isoformat"):
+            try:
+                return value.isoformat()
+            except TypeError:
+                pass
+        if isinstance(value, (int, float, str, bool)):
+            return value
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return str(value)
+        return numeric if math.isfinite(numeric) else None
 
     @staticmethod
     def _finite_or_none(value: object) -> float | None:

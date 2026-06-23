@@ -143,6 +143,13 @@ analyst_snapshots — point-in-time analyst target and recommendation captures:
     target_mean, target_median, target_low, target_high
     analyst_count, recommendation, details_json
 
+analyst_revision_snapshots — point-in-time analyst estimate and revision captures:
+
+    snapshot_date, ticker, provider, captured_at
+    earnings_estimate_json, revenue_estimate_json, eps_trend_json
+    eps_revisions_json, growth_estimates_json, upgrades_downgrades_json
+    details_json
+
 SQLite Ledger:
 Table 	Columns
 Universe 	ticker, sector, is_active, md_volume_30d
@@ -205,9 +212,9 @@ sq scan (Cron: 5:00 PM EST)
 sq analyst-snapshot (Cron: nightly after scan)
 
     Scope: Defaults to the top 250 active research names by md_volume_30d. Additional tickers can be forced in with --ticker.
-    Provider: Current implementation uses yfinance analyst target and recommendation endpoints.
-    Storage: Replace rows for the same snapshot_date/provider in DuckDB analyst_snapshots. Persist a row for every requested ticker, even when the provider has no target data.
-    Purpose: Build a prospective point-in-time analyst target dataset for future shortlist model features and diagnostic studies. This command does not create historical analyst data for prior dates.
+    Provider: Current implementation uses yfinance analyst target, recommendation, estimate, and revision endpoints.
+    Storage: Replace rows for the same snapshot_date/provider in DuckDB analyst_snapshots and analyst_revision_snapshots. Persist a row for every requested ticker, even when the provider has no target or revision data.
+    Purpose: Build prospective point-in-time analyst target and estimate/revision datasets for future shortlist model features and diagnostic studies. This command does not create historical analyst data for prior dates.
 
 sq monitor (Cron: Hourly, 10:30 AM–3:30 PM EST)
 

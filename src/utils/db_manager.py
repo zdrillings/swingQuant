@@ -111,6 +111,25 @@ CREATE INDEX IF NOT EXISTS idx_analyst_snapshots_date
 ON analyst_snapshots (snapshot_date);
 """
 
+ANALYST_REVISION_SNAPSHOTS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS analyst_revision_snapshots (
+    snapshot_date DATE NOT NULL,
+    ticker VARCHAR NOT NULL,
+    provider VARCHAR NOT NULL,
+    captured_at VARCHAR,
+    earnings_estimate_json VARCHAR,
+    revenue_estimate_json VARCHAR,
+    eps_trend_json VARCHAR,
+    eps_revisions_json VARCHAR,
+    growth_estimates_json VARCHAR,
+    upgrades_downgrades_json VARCHAR,
+    details_json VARCHAR,
+    PRIMARY KEY (snapshot_date, ticker, provider)
+);
+CREATE INDEX IF NOT EXISTS idx_analyst_revision_snapshots_date
+ON analyst_revision_snapshots (snapshot_date);
+"""
+
 SQLITE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS Universe (
     ticker TEXT PRIMARY KEY,
@@ -313,6 +332,7 @@ class DatabaseManager:
             duckdb_conn.execute(HISTORICAL_TABLE_SCHEMA)
             duckdb_conn.execute(UNIVERSE_SNAPSHOTS_SCHEMA)
             duckdb_conn.execute(ANALYST_SNAPSHOTS_SCHEMA)
+            duckdb_conn.execute(ANALYST_REVISION_SNAPSHOTS_SCHEMA)
             self._migrate_duckdb_schema(duckdb_conn)
 
     def sqlite_connection(self) -> sqlite3.Connection:
@@ -453,6 +473,16 @@ class DatabaseManager:
             "ALTER TABLE analyst_snapshots ADD COLUMN IF NOT EXISTS analyst_count INTEGER",
             "ALTER TABLE analyst_snapshots ADD COLUMN IF NOT EXISTS recommendation VARCHAR",
             "ALTER TABLE analyst_snapshots ADD COLUMN IF NOT EXISTS details_json VARCHAR",
+            "CREATE TABLE IF NOT EXISTS analyst_revision_snapshots (snapshot_date DATE NOT NULL, ticker VARCHAR NOT NULL, provider VARCHAR NOT NULL, captured_at VARCHAR, earnings_estimate_json VARCHAR, revenue_estimate_json VARCHAR, eps_trend_json VARCHAR, eps_revisions_json VARCHAR, growth_estimates_json VARCHAR, upgrades_downgrades_json VARCHAR, details_json VARCHAR, PRIMARY KEY (snapshot_date, ticker, provider))",
+            "CREATE INDEX IF NOT EXISTS idx_analyst_revision_snapshots_date ON analyst_revision_snapshots (snapshot_date)",
+            "ALTER TABLE analyst_revision_snapshots ADD COLUMN IF NOT EXISTS captured_at VARCHAR",
+            "ALTER TABLE analyst_revision_snapshots ADD COLUMN IF NOT EXISTS earnings_estimate_json VARCHAR",
+            "ALTER TABLE analyst_revision_snapshots ADD COLUMN IF NOT EXISTS revenue_estimate_json VARCHAR",
+            "ALTER TABLE analyst_revision_snapshots ADD COLUMN IF NOT EXISTS eps_trend_json VARCHAR",
+            "ALTER TABLE analyst_revision_snapshots ADD COLUMN IF NOT EXISTS eps_revisions_json VARCHAR",
+            "ALTER TABLE analyst_revision_snapshots ADD COLUMN IF NOT EXISTS growth_estimates_json VARCHAR",
+            "ALTER TABLE analyst_revision_snapshots ADD COLUMN IF NOT EXISTS upgrades_downgrades_json VARCHAR",
+            "ALTER TABLE analyst_revision_snapshots ADD COLUMN IF NOT EXISTS details_json VARCHAR",
         ]:
             connection.execute(statement)
 
@@ -1933,6 +1963,100 @@ class DatabaseManager:
             "details_json",
         ]
         query = f"SELECT {', '.join(columns)} FROM analyst_snapshots"
+        clauses: list[str] = []
+        params: list[object] = []
+        if snapshot_date is not None:
+            clauses.append("snapshot_date = ?")
+            params.append(snapshot_date)
+        if provider is not None:
+            clauses.append("provider = ?")
+            params.append(provider)
+        if clauses:
+            query += " WHERE " + " AND ".join(clauses)
+        query += " ORDER BY snapshot_date ASC, ticker ASC, provider ASC"
+        with self.duckdb_connection() as connection:
+            cursor = connection.execute(query, tuple(params))
+            rows = cursor.fetchall()
+            result_columns = [description[0] for description in cursor.description] if rows else columns
+        if not rows:
+            return pd.DataFrame(columns=columns)
+        return pd.DataFrame(rows, columns=result_columns)
+
+    def replace_analyst_revision_snapshots(
+        self,
+        *,
+        snapshot_date: str,
+        provider: str,
+        rows: Iterable[dict],
+    ) -> int:
+        payload = list(rows)
+        columns = [
+            "snapshot_date",
+            "ticker",
+            "provider",
+            "captured_at",
+            "earnings_estimate_json",
+            "revenue_estimate_json",
+            "eps_trend_json",
+            "eps_revisions_json",
+            "growth_estimates_json",
+            "upgrades_downgrades_json",
+            "details_json",
+        ]
+        placeholders = ", ".join(["?"] * len(columns))
+        with self.duckdb_connection() as connection:
+            connection.execute(
+                "DELETE FROM analyst_revision_snapshots WHERE snapshot_date = ? AND provider = ?",
+                (snapshot_date, provider),
+            )
+            if not payload:
+                return 0
+            connection.executemany(
+                f"""
+                INSERT INTO analyst_revision_snapshots ({", ".join(columns)})
+                VALUES ({placeholders})
+                """,
+                [
+                    (
+                        snapshot_date,
+                        str(row["ticker"]).strip().upper(),
+                        provider,
+                        row.get("captured_at"),
+                        json.dumps(row.get("earnings_estimate", []), sort_keys=True),
+                        json.dumps(row.get("revenue_estimate", []), sort_keys=True),
+                        json.dumps(row.get("eps_trend", []), sort_keys=True),
+                        json.dumps(row.get("eps_revisions", []), sort_keys=True),
+                        json.dumps(row.get("growth_estimates", []), sort_keys=True),
+                        json.dumps(row.get("upgrades_downgrades", []), sort_keys=True),
+                        json.dumps(row.get("details", {}), sort_keys=True),
+                    )
+                    for row in payload
+                ],
+            )
+        return len(payload)
+
+    def load_analyst_revision_snapshots(
+        self,
+        *,
+        snapshot_date: str | None = None,
+        provider: str | None = None,
+    ):
+        import pandas as pd
+
+        columns = [
+            "snapshot_date",
+            "ticker",
+            "provider",
+            "captured_at",
+            "earnings_estimate_json",
+            "revenue_estimate_json",
+            "eps_trend_json",
+            "eps_revisions_json",
+            "growth_estimates_json",
+            "upgrades_downgrades_json",
+            "details_json",
+        ]
+        query = f"SELECT {', '.join(columns)} FROM analyst_revision_snapshots"
         clauses: list[str] = []
         params: list[object] = []
         if snapshot_date is not None:

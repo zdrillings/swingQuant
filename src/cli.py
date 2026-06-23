@@ -361,7 +361,8 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"Analyst snapshot written to {report.output_path} "
                 f"(date={report.snapshot_date}, provider={report.provider}, source={report.source}, "
-                f"rows={report.persisted_rows}, with_targets={report.rows_with_targets})"
+                f"rows={report.persisted_rows}, revision_rows={report.persisted_revision_rows}, "
+                f"with_targets={report.rows_with_targets}, with_estimates={report.rows_with_estimates})"
             )
             return 0
 

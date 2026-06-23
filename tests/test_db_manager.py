@@ -274,3 +274,44 @@ class DatabaseManagerInitializationTests(unittest.TestCase):
             statement, rows = fake_duckdb.executemany_calls[-1]
             placeholder_count = statement.count("?")
             self.assertEqual(placeholder_count, len(rows[0]))
+
+    def test_replace_analyst_revision_snapshots_builds_matching_insert_placeholders(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            paths = AppPaths(
+                root_dir=root,
+                data_dir=root / "data",
+                duckdb_path=root / "data" / "market_data.duckdb",
+                sqlite_path=root / "data" / "ledger.sqlite",
+                reports_dir=root / "reports",
+                logs_dir=root / "logs",
+                config_path=root / "config.yaml",
+                env_path=root / ".env",
+                production_strategy_path=root / "production_strategy.json",
+            )
+            manager = DatabaseManager(paths)
+            fake_duckdb = FakeDuckDBConnection()
+
+            with patch.object(manager, "duckdb_connection", return_value=fake_duckdb):
+                inserted = manager.replace_analyst_revision_snapshots(
+                    snapshot_date="2026-06-23",
+                    provider="yfinance",
+                    rows=[
+                        {
+                            "ticker": "AAA",
+                            "captured_at": "2026-06-23T21:00:00+00:00",
+                            "earnings_estimate": [{"period": "0q", "avg": 1.23}],
+                            "revenue_estimate": [{"period": "0q", "avg": 100.0}],
+                            "eps_trend": [{"period": "0q", "current": 1.23}],
+                            "eps_revisions": [{"period": "0q", "upLast7days": 2}],
+                            "growth_estimates": [{"period": "0q", "growth": 0.1}],
+                            "upgrades_downgrades": [{"date": "2026-06-23", "action": "up"}],
+                            "details": {"source": "research", "has_context": True},
+                        }
+                    ],
+                )
+
+            self.assertEqual(inserted, 1)
+            statement, rows = fake_duckdb.executemany_calls[-1]
+            placeholder_count = statement.count("?")
+            self.assertEqual(placeholder_count, len(rows[0]))

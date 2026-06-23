@@ -5,10 +5,13 @@
 - source: research
 - requested_tickers: 250
 - persisted_rows: 250
+- persisted_revision_rows: 250
 - rows_with_targets: 250
 - rows_with_recommendations: 250
+- rows_with_estimates: 250
+- rows_with_revisions: 250
 
-## Sample Rows
+## Target Sample Rows
 
 | ticker | mean | median | low | high | analysts | recommendation |
 |---|---:|---:|---:|---:|---:|---|
@@ -37,3 +40,33 @@
 | CSCO | 127.05 | 130.00 | 84.98 | 150.00 |  | 4 strong buy, 13 buy, 8 hold, 1 strong sell |
 | NFLX | 114.15 | 115.00 | 80.00 | 151.40 |  | 8 strong buy, 29 buy, 13 hold |
 | STX | 898.09 | 951.50 | 545.00 | 1150.00 |  | 4 strong buy, 16 buy, 3 hold, 1 sell |
+
+## Estimate/Revision Sample Rows
+
+| ticker | earnings estimate rows | revenue estimate rows | eps trend rows | eps revision rows | upgrade/downgrade rows |
+|---|---:|---:|---:|---:|---:|
+| MU | 4 | 4 | 4 | 4 | 857 |
+| NVDA | 4 | 4 | 4 | 4 | 982 |
+| TSLA | 4 | 4 | 4 | 4 | 982 |
+| SNDK | 4 | 4 | 4 | 4 | 87 |
+| AMD | 4 | 4 | 4 | 4 | 726 |
+| INTC | 4 | 4 | 4 | 4 | 725 |
+| AAPL | 4 | 4 | 4 | 4 | 970 |
+| MSFT | 4 | 4 | 4 | 4 | 899 |
+| GOOGL | 4 | 4 | 4 | 4 | 993 |
+| AMZN | 4 | 4 | 4 | 4 | 989 |
+| AVGO | 4 | 4 | 4 | 4 | 614 |
+| META | 4 | 4 | 4 | 4 | 413 |
+| GOOG | 4 | 4 | 4 | 4 | 699 |
+| LITE | 4 | 4 | 4 | 4 | 335 |
+| QCOM | 4 | 4 | 4 | 4 | 533 |
+| PLTR | 4 | 4 | 4 | 4 | 214 |
+| ORCL | 4 | 4 | 4 | 4 | 646 |
+| AMAT | 4 | 4 | 4 | 4 | 631 |
+| WDC | 4 | 4 | 4 | 4 | 565 |
+| LLY | 4 | 4 | 4 | 4 | 437 |
+| DELL | 4 | 4 | 4 | 4 | 334 |
+| NOW | 4 | 4 | 4 | 4 | 718 |
+| CSCO | 4 | 4 | 4 | 4 | 499 |
+| NFLX | 4 | 4 | 4 | 4 | 952 |
+| STX | 4 | 4 | 4 | 4 | 292 |
