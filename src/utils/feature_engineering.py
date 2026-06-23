@@ -210,6 +210,89 @@ def add_max_gap_down_pct_feature(frame: pd.DataFrame, *, feature_name: str, wind
     )
 
 
+def add_rolling_percentile_feature(
+    frame: pd.DataFrame,
+    *,
+    source_column: str,
+    feature_name: str,
+    window: int,
+) -> None:
+    def _last_percentile(series: pd.Series) -> float:
+        values = pd.to_numeric(series, errors="coerce")
+        latest = values.iloc[-1]
+        if pd.isna(latest):
+            return np.nan
+        return float(values.rank(method="average", pct=True).iloc[-1])
+
+    frame[feature_name] = (
+        frame.groupby("ticker", group_keys=False)[source_column]
+        .transform(lambda series: series.rolling(window=window, min_periods=window).apply(_last_percentile, raw=False))
+    )
+
+
+def add_realized_volatility_percentile_feature(
+    frame: pd.DataFrame,
+    *,
+    feature_name: str,
+    return_window: int,
+    percentile_window: int,
+) -> None:
+    frame["_daily_return"] = frame.groupby("ticker", group_keys=False)["close"].transform(lambda series: series.pct_change())
+    frame["_realized_vol"] = (
+        frame.groupby("ticker", group_keys=False)["_daily_return"]
+        .transform(lambda series: series.rolling(window=return_window, min_periods=return_window).std())
+    )
+    add_rolling_percentile_feature(
+        frame,
+        source_column="_realized_vol",
+        feature_name=feature_name,
+        window=percentile_window,
+    )
+    frame.drop(columns=["_daily_return", "_realized_vol"], inplace=True)
+
+
+def add_dollar_volume_ratio_feature(
+    frame: pd.DataFrame,
+    *,
+    feature_name: str,
+    short_window: int,
+    long_window: int,
+) -> None:
+    dollar_volume = frame["close"] * frame["volume"]
+    short_avg = (
+        dollar_volume.groupby(frame["ticker"])
+        .transform(lambda series: series.rolling(window=short_window, min_periods=short_window).mean())
+    )
+    long_avg = (
+        dollar_volume.groupby(frame["ticker"])
+        .transform(lambda series: series.rolling(window=long_window, min_periods=long_window).mean())
+    )
+    frame[feature_name] = short_avg / long_avg
+
+
+def add_distance_from_high_feature(frame: pd.DataFrame, *, feature_name: str, window: int) -> None:
+    rolling_high = (
+        frame.groupby("ticker", group_keys=False)["high"]
+        .transform(lambda series: series.rolling(window=window, min_periods=window).max())
+    )
+    frame[feature_name] = (frame["close"] / rolling_high) - 1.0
+
+
+def add_days_since_high_feature(frame: pd.DataFrame, *, feature_name: str, window: int) -> None:
+    def _days_since_window_high(series: pd.Series) -> pd.Series:
+        values = pd.to_numeric(series, errors="coerce").to_numpy(dtype=float)
+        result = np.full(len(values), np.nan)
+        for index in range(window - 1, len(values)):
+            window_values = values[index - window + 1 : index + 1]
+            if not np.isfinite(window_values).any():
+                continue
+            high_position = int(np.nanargmax(window_values))
+            result[index] = float(window - 1 - high_position)
+        return pd.Series(result, index=series.index)
+
+    frame[feature_name] = frame.groupby("ticker", group_keys=False)["high"].transform(_days_since_window_high)
+
+
 def add_correlation_feature(
     frame: pd.DataFrame,
     *,
@@ -618,6 +701,31 @@ def apply_feature_definitions(
                 add_avg_abs_gap_pct_feature(frame, feature_name=feature_name, window=int(params["window"]))
             elif feature_type == "max_gap_down_pct":
                 add_max_gap_down_pct_feature(frame, feature_name=feature_name, window=int(params["window"]))
+            elif feature_type == "rolling_percentile":
+                add_rolling_percentile_feature(
+                    frame,
+                    source_column=str(params["source_column"]),
+                    feature_name=feature_name,
+                    window=int(params["window"]),
+                )
+            elif feature_type == "realized_volatility_percentile":
+                add_realized_volatility_percentile_feature(
+                    frame,
+                    feature_name=feature_name,
+                    return_window=int(params["return_window"]),
+                    percentile_window=int(params["percentile_window"]),
+                )
+            elif feature_type == "dollar_volume_ratio":
+                add_dollar_volume_ratio_feature(
+                    frame,
+                    feature_name=feature_name,
+                    short_window=int(params["short_window"]),
+                    long_window=int(params["long_window"]),
+                )
+            elif feature_type == "distance_from_high":
+                add_distance_from_high_feature(frame, feature_name=feature_name, window=int(params["window"]))
+            elif feature_type == "days_since_high":
+                add_days_since_high_feature(frame, feature_name=feature_name, window=int(params["window"]))
             elif feature_type == "correlation":
                 add_correlation_feature(
                     frame,

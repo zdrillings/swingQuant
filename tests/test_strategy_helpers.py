@@ -623,6 +623,82 @@ class StrategyHelperTests(unittest.TestCase):
         self.assertGreater(float(latest["breakout_volume_ratio_50"]), 1.5)
         self.assertLess(float(pre_breakout["base_volume_dryup_ratio_20"]), 1.0)
 
+    def test_liquidity_volatility_regime_features_are_point_in_time(self) -> None:
+        dates = pd.bdate_range("2025-01-01", periods=320)
+        rows = []
+        for index, day in enumerate(dates):
+            base_close = 100.0 + index * 0.15
+            shock = 0.0 if index < 300 else ((index - 299) % 4) * 1.5
+            close = base_close + shock
+            volume = 1_000_000 if index < 260 else 2_500_000
+            high = close + (1.0 if index < 300 else 3.0)
+            low = close - (1.0 if index < 300 else 3.0)
+            rows.append(
+                {
+                    "ticker": "AAA",
+                    "date": day.date(),
+                    "open": close - 0.25,
+                    "high": high,
+                    "low": low,
+                    "close": close,
+                    "volume": volume,
+                    "adj_close": close,
+                }
+            )
+        frame, _ = apply_feature_definitions(
+            pd.DataFrame(rows),
+            {
+                "features": {
+                    "trend": [
+                        {"name": "atr_pct_14", "type": "atr_pct", "params": {"window": 14}},
+                        {
+                            "name": "atr_pct_14_percentile_252",
+                            "type": "rolling_percentile",
+                            "params": {"source_column": "atr_pct_14", "window": 252},
+                        },
+                        {
+                            "name": "realized_vol_20_percentile_252",
+                            "type": "realized_volatility_percentile",
+                            "params": {"return_window": 20, "percentile_window": 252},
+                        },
+                    ],
+                    "volume": [
+                        {
+                            "name": "dollar_volume_ratio_20_60",
+                            "type": "dollar_volume_ratio",
+                            "params": {"short_window": 20, "long_window": 60},
+                        },
+                        {
+                            "name": "volume_percentile_60",
+                            "type": "rolling_percentile",
+                            "params": {"source_column": "volume", "window": 60},
+                        },
+                    ],
+                    "price_structure": [
+                        {
+                            "name": "distance_from_52w_high",
+                            "type": "distance_from_high",
+                            "params": {"window": 252},
+                        },
+                        {
+                            "name": "days_since_52w_high",
+                            "type": "days_since_high",
+                            "params": {"window": 252},
+                        },
+                    ],
+                }
+            },
+        )
+        ordered = frame.sort_values("date").reset_index(drop=True)
+        latest = ordered.iloc[-1]
+
+        self.assertGreater(float(latest["atr_pct_14_percentile_252"]), 0.8)
+        self.assertGreater(float(latest["realized_vol_20_percentile_252"]), 0.8)
+        self.assertGreater(float(latest["dollar_volume_ratio_20_60"]), 1.0)
+        self.assertGreater(float(latest["volume_percentile_60"]), 0.5)
+        self.assertLessEqual(float(latest["distance_from_52w_high"]), 0.0)
+        self.assertGreaterEqual(float(latest["days_since_52w_high"]), 0.0)
+
     def test_earnings_timing_features_measure_business_day_distance(self) -> None:
         dates = pd.bdate_range("2026-01-05", periods=6)
         rows = []

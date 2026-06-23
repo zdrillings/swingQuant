@@ -31,6 +31,16 @@ features:
     type: atr_pct
     params:
       window: 14
+  - name: atr_pct_14_percentile_252
+    type: rolling_percentile
+    params:
+      source_column: atr_pct_14
+      window: 252
+  - name: realized_vol_20_percentile_252
+    type: realized_volatility_percentile
+    params:
+      return_window: 20
+      percentile_window: 252
   momentum:
   - name: rsi_14
     type: rsi
@@ -82,6 +92,16 @@ features:
     params:
       recent_window: 10
       prior_window: 10
+  - name: dollar_volume_ratio_20_60
+    type: dollar_volume_ratio
+    params:
+      short_window: 20
+      long_window: 60
+  - name: volume_percentile_60
+    type: rolling_percentile
+    params:
+      source_column: volume
+      window: 60
   price_structure:
   - name: base_range_pct_20
     type: base_range_pct
@@ -101,6 +121,14 @@ features:
     type: distance_above_high
     params:
       window: 20
+  - name: distance_from_52w_high
+    type: distance_from_high
+    params:
+      window: 252
+  - name: days_since_52w_high
+    type: days_since_high
+    params:
+      window: 252
   gap_risk:
   - name: avg_abs_gap_pct_20
     type: avg_abs_gap_pct

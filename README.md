@@ -237,6 +237,13 @@ Use `--ticker` to always include specific names outside the default source:
   - gap-aware strategies can additionally score:
     - `avg_abs_gap_pct_20`
     - `max_gap_down_pct_60`
+  - liquidity/volatility regime features are available for research and model ranking:
+    - `atr_pct_14_percentile_252`
+    - `realized_vol_20_percentile_252`
+    - `dollar_volume_ratio_20_60`
+    - `volume_percentile_60`
+    - `distance_from_52w_high`
+    - `days_since_52w_high`
   - position sizing uses the promoted stop model, including ATR-based stops when present
   - multiple active strategy slots are evaluated independently, then merged under `scan_policy` caps from `config.yaml`
   - the current scan policy limits total ideas and also caps per-slot and per-sector concentration

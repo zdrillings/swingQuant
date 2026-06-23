@@ -136,6 +136,7 @@ DuckDB:
 historical_ohlcv — (ticker, date, open, high, low, close, volume, adj_close)
 
 universe_daily_snapshots — broad daily research snapshots with same-day features and forward outcome labels when mature.
+Includes liquidity/volatility regime features such as ATR percentile, realized volatility percentile, dollar-volume acceleration, volume percentile, distance from 52-week high, and days since 52-week high.
 
 analyst_snapshots — point-in-time analyst target and recommendation captures:
 
@@ -251,6 +252,7 @@ Example: ($50,000 × 0.02) / ($100 × 0.05) = 200 shares
     [ ] Does the sq scan signal model enforce relative_strength_index_vs_spy_min as a hard filter and use signal_score_min as the confluence pass rule?
     [ ] Does sq scan use today's adjusted close (not yesterday's) for pricing?
     [ ] Are analyst target inputs sourced only from captured analyst_snapshots for historical analysis?
+    [ ] Are rolling liquidity/volatility features computed only from data available through the current row's date?
     [ ] Does sq monitor send a single consolidated digest per run (not per ticker)?
     [ ] Does sq monitor evaluate all four exit conditions on every open trade each run?
     [ ] Does sq sweep use Polars or Backtesting.py — no VectorBT?
