@@ -105,7 +105,9 @@ class ScanPerformanceService:
             "",
         ]
         lines.extend(self._render_horizon_summary(enriched, horizons=horizons, benchmark=benchmark))
+        lines.extend(self._render_20d_timeframe_summary(enriched, benchmark=benchmark))
         lines.extend(self._render_20d_score_bands(enriched, benchmark=benchmark))
+        lines.extend(self._render_portfolio_performance())
         lines.extend(self._render_best_and_worst_picks(enriched, horizons=horizons, benchmark=benchmark))
         lines.extend(self._render_repeated_winners_and_losers(enriched, horizons=horizons, benchmark=benchmark))
         lines.extend(self._render_recent_scan_dates(enriched, horizons=horizons, benchmark=benchmark))
@@ -355,6 +357,63 @@ class ScanPerformanceService:
             lines.append("")
         return lines
 
+    def _render_20d_timeframe_summary(
+        self,
+        frame: pd.DataFrame,
+        *,
+        benchmark: str,
+    ) -> list[str]:
+        lines = ["## 20d Timeframe Summary", ""]
+        return_column = "fwd_return_20d"
+        alpha_column = f"alpha_vs_{benchmark}_20d"
+        required_columns = ["scan_date", return_column, alpha_column]
+        if any(column not in frame.columns for column in required_columns):
+            lines.append("- observations: 0")
+            lines.append("- note: 20d return or alpha is unavailable.")
+            lines.append("")
+            return lines
+        scoped = frame.dropna(subset=required_columns).copy()
+        if scoped.empty:
+            lines.append("- observations: 0")
+            lines.append("")
+            return lines
+        scoped["scan_date"] = pd.to_datetime(scoped["scan_date"]).dt.normalize()
+        scoped[return_column] = pd.to_numeric(scoped[return_column], errors="coerce")
+        scoped[alpha_column] = pd.to_numeric(scoped[alpha_column], errors="coerce")
+        scoped = scoped.dropna(subset=[return_column, alpha_column]).copy()
+        if scoped.empty:
+            lines.append("- observations: 0")
+            lines.append("")
+            return lines
+        anchor = scoped["scan_date"].max()
+        windows = [
+            ("1y", anchor - pd.DateOffset(years=1)),
+            ("ytd", pd.Timestamp(year=int(anchor.year), month=1, day=1)),
+            ("3m", anchor - pd.DateOffset(months=3)),
+            ("20d", anchor - pd.DateOffset(days=20)),
+        ]
+        for label, start_date in windows:
+            window = scoped[scoped["scan_date"] >= pd.Timestamp(start_date).normalize()].copy()
+            lines.append(f"### {label}")
+            lines.append(f"- start_date: {pd.Timestamp(start_date).date()}")
+            lines.append(f"- end_date: {anchor.date()}")
+            if window.empty:
+                lines.append("- matured_picks: 0")
+                lines.append("")
+                continue
+            returns = window[return_column].astype(float)
+            alphas = window[alpha_column].astype(float)
+            lines.append(f"- matured_picks: {len(window.index)}")
+            lines.append(f"- matured_scan_dates: {int(window['scan_date'].nunique())}")
+            lines.append(f"- mean_return: {self._fmt_pct(returns.mean())}")
+            lines.append(f"- median_return: {self._fmt_pct(returns.median())}")
+            lines.append(f"- hit_rate: {self._fmt_pct((returns > 0.0).mean())}")
+            lines.append(f"- mean_alpha_vs_{benchmark}: {self._fmt_pct(alphas.mean())}")
+            lines.append(f"- median_alpha_vs_{benchmark}: {self._fmt_pct(alphas.median())}")
+            lines.append(f"- positive_alpha_rate: {self._fmt_pct((alphas > 0.0).mean())}")
+            lines.append("")
+        return lines
+
     def _render_20d_score_bands(
         self,
         frame: pd.DataFrame,
@@ -407,6 +466,174 @@ class ScanPerformanceService:
                 f"mean_alpha={self._fmt_pct(alpha.mean())}, "
                 f"median_alpha={self._fmt_pct(alpha.median())}, "
                 f"positive_alpha_rate={self._fmt_pct((alpha > 0.0).mean())}"
+            )
+        lines.append("")
+        return lines
+
+    def _render_portfolio_performance(self) -> list[str]:
+        lines = ["## Portfolio Performance", ""]
+        if not hasattr(self.db_manager, "list_closed_trades") or not hasattr(self.db_manager, "list_open_trades"):
+            lines.append("- note: ledger helpers are unavailable.")
+            lines.append("")
+            return lines
+        closed_trades = [dict(row) for row in self.db_manager.list_closed_trades()]
+        open_trades = [dict(row) for row in self.db_manager.list_open_trades()]
+        if not closed_trades and not open_trades:
+            lines.append("- trades: 0")
+            lines.append("")
+            return lines
+
+        realized_rows = []
+        for trade in closed_trades:
+            entry_price = self._coerce_float(trade.get("entry_price"))
+            exit_price = self._coerce_float(trade.get("exit_price"))
+            shares = self._coerce_int(trade.get("shares"))
+            if not (math.isfinite(entry_price) and entry_price > 0 and math.isfinite(exit_price) and shares > 0):
+                continue
+            cost = entry_price * shares
+            pnl = (exit_price - entry_price) * shares
+            realized_rows.append(
+                {
+                    "ticker": str(trade.get("ticker") or ""),
+                    "entry_date": str(trade.get("entry_date") or ""),
+                    "exit_date": str(trade.get("exit_date") or ""),
+                    "shares": shares,
+                    "entry_price": entry_price,
+                    "exit_price": exit_price,
+                    "cost": cost,
+                    "pnl": pnl,
+                    "return_pct": (exit_price / entry_price) - 1.0,
+                }
+            )
+
+        latest_prices = self._latest_prices_for_open_trades(open_trades)
+        unrealized_rows = []
+        for trade in open_trades:
+            ticker = str(trade.get("ticker") or "")
+            entry_price = self._coerce_float(trade.get("entry_price"))
+            shares = self._coerce_int(trade.get("shares"))
+            price_context = latest_prices.get(ticker)
+            current_price = self._coerce_float(price_context.get("price") if price_context else None)
+            if not (math.isfinite(entry_price) and entry_price > 0 and math.isfinite(current_price) and shares > 0):
+                unrealized_rows.append(
+                    {
+                        "ticker": ticker,
+                        "entry_date": str(trade.get("entry_date") or ""),
+                        "shares": shares,
+                        "entry_price": entry_price,
+                        "current_price": current_price,
+                        "price_date": price_context.get("date") if price_context else "n/a",
+                        "cost": float("nan"),
+                        "pnl": float("nan"),
+                        "return_pct": float("nan"),
+                    }
+                )
+                continue
+            cost = entry_price * shares
+            pnl = (current_price - entry_price) * shares
+            unrealized_rows.append(
+                {
+                    "ticker": ticker,
+                    "entry_date": str(trade.get("entry_date") or ""),
+                    "shares": shares,
+                    "entry_price": entry_price,
+                    "current_price": current_price,
+                    "price_date": price_context.get("date") if price_context else "n/a",
+                    "cost": cost,
+                    "pnl": pnl,
+                    "return_pct": (current_price / entry_price) - 1.0,
+                }
+            )
+
+        realized_pnl = sum(row["pnl"] for row in realized_rows if math.isfinite(float(row["pnl"])))
+        realized_cost = sum(row["cost"] for row in realized_rows if math.isfinite(float(row["cost"])))
+        unrealized_pnl = sum(row["pnl"] for row in unrealized_rows if math.isfinite(float(row["pnl"])))
+        unrealized_cost = sum(row["cost"] for row in unrealized_rows if math.isfinite(float(row["cost"])))
+        total_cost = realized_cost + unrealized_cost
+        total_pnl = realized_pnl + unrealized_pnl
+
+        lines.append(f"- closed_trades: {len(realized_rows)}")
+        lines.append(f"- open_trades: {len(open_trades)}")
+        lines.append(f"- realized_pnl: {self._fmt_dollars(realized_pnl)}")
+        lines.append(f"- realized_return_on_cost: {self._fmt_pct(realized_pnl / realized_cost) if realized_cost > 0 else 'n/a'}")
+        lines.append(f"- unrealized_pnl: {self._fmt_dollars(unrealized_pnl)}")
+        lines.append(f"- unrealized_return_on_cost: {self._fmt_pct(unrealized_pnl / unrealized_cost) if unrealized_cost > 0 else 'n/a'}")
+        lines.append(f"- total_pnl: {self._fmt_dollars(total_pnl)}")
+        lines.append(f"- total_return_on_cost: {self._fmt_pct(total_pnl / total_cost) if total_cost > 0 else 'n/a'}")
+        lines.append("")
+
+        lines.extend(self._render_portfolio_realized_rows(realized_rows))
+        lines.extend(self._render_portfolio_unrealized_rows(unrealized_rows))
+        return lines
+
+    def _latest_prices_for_open_trades(self, open_trades: list[dict]) -> dict[str, dict[str, object]]:
+        tickers = sorted({str(trade.get("ticker") or "") for trade in open_trades if trade.get("ticker")})
+        if not tickers or not hasattr(self.db_manager, "load_price_history"):
+            return {}
+        history = self.db_manager.load_price_history(tickers)
+        if history.empty:
+            return {}
+        working = history.copy()
+        working["date"] = pd.to_datetime(working["date"]).dt.normalize()
+        result: dict[str, dict[str, object]] = {}
+        for ticker, group in working.groupby("ticker", sort=False):
+            ordered = group.sort_values("date")
+            latest = ordered.iloc[-1]
+            result[str(ticker)] = {
+                "date": pd.Timestamp(latest["date"]).date(),
+                "price": self._coerce_float(latest.get("adj_close")),
+            }
+        return result
+
+    def _render_portfolio_realized_rows(self, rows: list[dict]) -> list[str]:
+        lines = ["### Realized By Stock"]
+        if not rows:
+            lines.append("No closed trades.")
+            lines.append("")
+            return lines
+        frame = pd.DataFrame(rows)
+        grouped = (
+            frame.groupby("ticker", as_index=False)
+            .agg(
+                trades=("ticker", "count"),
+                realized_pnl=("pnl", "sum"),
+                cost=("cost", "sum"),
+                mean_return=("return_pct", "mean"),
+                min_return=("return_pct", "min"),
+                max_return=("return_pct", "max"),
+                first_entry=("entry_date", "min"),
+                last_exit=("exit_date", "max"),
+            )
+            .sort_values(["realized_pnl", "ticker"], ascending=[False, True])
+        )
+        for row in grouped.itertuples(index=False):
+            return_on_cost = float(row.realized_pnl) / float(row.cost) if float(row.cost) > 0 else float("nan")
+            lines.append(
+                f"- {row.ticker}: trades={int(row.trades)}, "
+                f"realized_pnl={self._fmt_dollars(row.realized_pnl)}, "
+                f"return_on_cost={self._fmt_pct(return_on_cost)}, "
+                f"mean_trade_return={self._fmt_pct(row.mean_return)}, "
+                f"range={self._fmt_pct(row.min_return)} to {self._fmt_pct(row.max_return)}, "
+                f"first_entry={row.first_entry}, last_exit={row.last_exit}"
+            )
+        lines.append("")
+        return lines
+
+    def _render_portfolio_unrealized_rows(self, rows: list[dict]) -> list[str]:
+        lines = ["### Unrealized Open Positions"]
+        if not rows:
+            lines.append("No open trades.")
+            lines.append("")
+            return lines
+        ordered = sorted(rows, key=lambda row: (float(row["pnl"]) if math.isfinite(float(row["pnl"])) else float("-inf")), reverse=True)
+        for row in ordered:
+            lines.append(
+                f"- {row['ticker']}: shares={row['shares']}, "
+                f"entry_date={row['entry_date']}, "
+                f"entry={self._fmt_price(row['entry_price'])}, "
+                f"latest={self._fmt_price(row['current_price'])} ({row['price_date']}), "
+                f"unrealized_pnl={self._fmt_dollars(row['pnl'])}, "
+                f"return={self._fmt_pct(row['return_pct'])}"
             )
         lines.append("")
         return lines
@@ -599,6 +826,28 @@ class ScanPerformanceService:
         if value is None or not math.isfinite(float(value)):
             return "n/a"
         return f"{float(value) * 100.0:.2f}%"
+
+    def _fmt_dollars(self, value: float) -> str:
+        if value is None or not math.isfinite(float(value)):
+            return "n/a"
+        return f"${float(value):,.2f}"
+
+    def _fmt_price(self, value: float) -> str:
+        if value is None or not math.isfinite(float(value)):
+            return "n/a"
+        return f"{float(value):.2f}"
+
+    def _coerce_float(self, value) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return float("nan")
+
+    def _coerce_int(self, value) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
 
     def _render_email_html(self, report_text: str) -> str:
         escaped = escape(report_text)

@@ -113,9 +113,11 @@ class ScanPerformanceServiceTests(unittest.TestCase):
             self.assertIn("- scan_dates: 1", report_text)
             self.assertIn("### 2d", report_text)
             self.assertIn("### 60d", report_text)
+            self.assertIn("## 20d Timeframe Summary", report_text)
             self.assertIn("return_p05_p95", report_text)
             self.assertIn("return_range", report_text)
             self.assertIn("mean_alpha_vs_sector", report_text)
+            self.assertIn("## Portfolio Performance", report_text)
             self.assertIn("## Best And Worst Picks", report_text)
             self.assertIn("## Repeated Winners And Losers", report_text)
             self.assertIn("## Recent Picks", report_text)
@@ -251,6 +253,84 @@ class ScanPerformanceServiceTests(unittest.TestCase):
         self.assertIn("score >= 0.50: n=1, pick_share=33.33%", report_text)
         self.assertIn("mean_return=5.00%", report_text)
         self.assertIn("median_alpha=3.00%", report_text)
+
+    def test_scan_performance_renders_20d_timeframe_summary(self) -> None:
+        service = ScanPerformanceService(db_manager=None)
+        frame = pd.DataFrame(
+            [
+                {"scan_date": "2025-08-01", "fwd_return_20d": 0.02, "alpha_vs_sector_20d": 0.01},
+                {"scan_date": "2026-04-15", "fwd_return_20d": -0.03, "alpha_vs_sector_20d": -0.04},
+                {"scan_date": "2026-06-01", "fwd_return_20d": 0.08, "alpha_vs_sector_20d": 0.06},
+                {"scan_date": "2026-06-20", "fwd_return_20d": 0.10, "alpha_vs_sector_20d": 0.07},
+            ]
+        )
+
+        lines = service._render_20d_timeframe_summary(frame, benchmark="sector")
+        report_text = "\n".join(lines)
+
+        self.assertIn("## 20d Timeframe Summary", report_text)
+        self.assertIn("### 1y", report_text)
+        self.assertIn("### ytd", report_text)
+        self.assertIn("### 3m", report_text)
+        self.assertIn("### 20d", report_text)
+        self.assertIn("- end_date: 2026-06-20", report_text)
+        self.assertIn("- matured_picks: 4", report_text)
+        self.assertIn("- matured_picks: 3", report_text)
+        self.assertIn("- matured_picks: 2", report_text)
+        self.assertIn("- hit_rate: 75.00%", report_text)
+
+    def test_scan_performance_renders_portfolio_performance(self) -> None:
+        class FakeDB:
+            def list_closed_trades(self):
+                return [
+                    {
+                        "ticker": "AAA",
+                        "entry_date": "2026-01-02",
+                        "entry_price": 10.0,
+                        "shares": 10,
+                        "exit_date": "2026-01-20",
+                        "exit_price": 12.0,
+                    },
+                    {
+                        "ticker": "BBB",
+                        "entry_date": "2026-02-02",
+                        "entry_price": 20.0,
+                        "shares": 5,
+                        "exit_date": "2026-02-18",
+                        "exit_price": 18.0,
+                    },
+                ]
+
+            def list_open_trades(self):
+                return [
+                    {
+                        "ticker": "CCC",
+                        "entry_date": "2026-06-01",
+                        "entry_price": 30.0,
+                        "shares": 4,
+                    }
+                ]
+
+            def load_price_history(self, tickers):
+                return pd.DataFrame(
+                    [
+                        {"ticker": "CCC", "date": "2026-06-21", "adj_close": 33.0},
+                        {"ticker": "CCC", "date": "2026-06-22", "adj_close": 36.0},
+                    ]
+                )
+
+        lines = ScanPerformanceService(FakeDB())._render_portfolio_performance()
+        report_text = "\n".join(lines)
+
+        self.assertIn("## Portfolio Performance", report_text)
+        self.assertIn("- closed_trades: 2", report_text)
+        self.assertIn("- open_trades: 1", report_text)
+        self.assertIn("- realized_pnl: $10.00", report_text)
+        self.assertIn("- unrealized_pnl: $24.00", report_text)
+        self.assertIn("- total_pnl: $34.00", report_text)
+        self.assertIn("- AAA: trades=1, realized_pnl=$20.00", report_text)
+        self.assertIn("- CCC: shares=4", report_text)
+        self.assertIn("latest=36.00 (2026-06-22)", report_text)
 
     def test_scan_performance_optionally_emails_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
