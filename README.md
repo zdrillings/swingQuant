@@ -8,23 +8,47 @@ Implemented commands:
 
 - `sq init-db`
 - `sq sync`
+- `sq refresh-universe`
 - `sq research`
+- `sq alpha-research`
 - `sq sweep`
 - `sq evaluate`
+- `sq sleeve-research`
 - `sq promote --id <ID> [--slot <name>]`
 - `sq trade buy <ticker> <price> [shares]`
 - `sq trade sell <ticker> <price>`
+- `sq positions`
+- `sq quote <ticker>`
 - `sq scan`
+- `sq analyst-snapshot`
+- `sq scan-backfill`
+- `sq scan-performance`
+- `sq scan-analysis`
+- `sq portfolio-rotation`
+- `sq universe-backfill`
+- `sq universe-analysis`
+- `sq factor-tearsheet`
+- `sq shortlist-*`
+- `sq exit-analysis`
+- `sq rsi-exit-bakeoff`
+- `sq subindustry-attribution`
+- `sq slot-attribution`
 - `sq monitor`
 
 ## Architecture
 
 - DuckDB stores historical OHLCV in `historical_ohlcv`.
+- DuckDB also stores analytical point-in-time history:
+  - `universe_daily_snapshots`
+  - `analyst_snapshots`
 - SQLite stores:
   - `Universe`
   - `Backtest_Results`
   - `Active_Trades`
   - `Earnings_Calendar`
+  - `Scan_Candidates`
+  - `Shortlist_Model_Runs`
+  - `Shortlist_Model_Predictions`
 - The main code lives in [src](/home/zdrillings/code/SwingQuant/src).
 - Tests live in [tests](/home/zdrillings/code/SwingQuant/tests).
 
@@ -36,7 +60,12 @@ Key modules:
 - [src/sweep/service.py](/home/zdrillings/code/SwingQuant/src/sweep/service.py): parameter grid backtests with Polars
 - [src/evaluate/service.py](/home/zdrillings/code/SwingQuant/src/evaluate/service.py): result normalization and report generation
 - [src/scan/service.py](/home/zdrillings/code/SwingQuant/src/scan/service.py): daily post-close signal scan
+- [src/scan/analyst_snapshot_service.py](/home/zdrillings/code/SwingQuant/src/scan/analyst_snapshot_service.py): nightly analyst target snapshot capture
+- [src/scan/performance_service.py](/home/zdrillings/code/SwingQuant/src/scan/performance_service.py): realized scan performance summaries
+- [src/scan/portfolio_rotation_service.py](/home/zdrillings/code/SwingQuant/src/scan/portfolio_rotation_service.py): fixed-slot portfolio rotation backtests
 - [src/monitor/service.py](/home/zdrillings/code/SwingQuant/src/monitor/service.py): intraday breakout and exit monitoring
+- [src/quote/service.py](/home/zdrillings/code/SwingQuant/src/quote/service.py): latest quote and holding context
+- [src/research/shortlist_model_service.py](/home/zdrillings/code/SwingQuant/src/research/shortlist_model_service.py): walk-forward shortlist model training
 
 ## Setup
 
@@ -153,13 +182,33 @@ It writes [sleeve_research.md](/home/zdrillings/code/SwingQuant/reports/sleeve_r
 ./sq scan
 ```
 
-7. Run intraday monitoring:
+7. Capture analyst target snapshots for future point-in-time research:
+
+```bash
+./sq analyst-snapshot --source research --top 250
+```
+
+This persists one row per ticker/provider/date in DuckDB `analyst_snapshots`. Rows are written even when the provider has no analyst target for a ticker, so later analysis can distinguish "captured but unavailable" from "not captured." The command is idempotent for a given `snapshot_date` and provider; rerunning the same date replaces that date's rows.
+
+Use `--ticker` to always include specific names outside the default source:
+
+```bash
+./sq analyst-snapshot --ticker SLAB --ticker LITE
+```
+
+8. Run intraday monitoring:
 
 ```bash
 ./sq monitor
 ```
 
-8. Record fills manually in the ledger:
+9. Check a current quote and holding context:
+
+```bash
+./sq quote VSH
+```
+
+10. Record fills manually in the ledger:
 
 ```bash
 ./sq trade buy DOW 53.25 --slot materials
@@ -172,6 +221,10 @@ It writes [sleeve_research.md](/home/zdrillings/code/SwingQuant/reports/sleeve_r
 
 - All train/validation splits are chronological.
 - `sq sync` now refreshes both OHLCV and earnings calendar dates for the research universe.
+- `sq analyst-snapshot` captures current analyst target and recommendation context into DuckDB for future point-in-time studies.
+  - Default scope is the top 250 active names by `md_volume_30d`.
+  - The current provider is yfinance.
+  - The command stores target mean, median, low, high, analyst count, recommendation summary, capture timestamp, and details JSON.
 - `sq scan` uses:
   - a hard relative-strength filter via `relative_strength_index_vs_spy_min`
   - a confluence score across the promoted score components
@@ -187,11 +240,16 @@ It writes [sleeve_research.md](/home/zdrillings/code/SwingQuant/reports/sleeve_r
   - position sizing uses the promoted stop model, including ATR-based stops when present
   - multiple active strategy slots are evaluated independently, then merged under `scan_policy` caps from `config.yaml`
   - the current scan policy limits total ideas and also caps per-slot and per-sector concentration
+  - the final shortlist is model-ranked when a promoted shortlist model is available
+  - very low opportunity candidates can be filtered out before selection
+  - the evening brief emphasizes current best bets, existing holdings, top unheld targets, and analyst target context when available
 - Non-tech sectors default to the SPY regime; Information Technology and Communication Services use QQQ.
 - `sq monitor` is alert-only.
   - It updates `max_price_seen`.
   - It evaluates all exit rules every run.
+  - It uses the latest available quote for pricing-sensitive checks.
   - Earnings-aware strategies can trigger a `pre_earnings_exit` flag ahead of the next scheduled report.
+  - RSI_2 exits can require a minimum unrealized gain before triggering.
   - It sends one consolidated digest.
   - It does not close `Active_Trades`; use `sq trade sell` to close trades in the ledger.
   - Legacy imported holdings without `strategy_slot` now fall back to the best available exact-sector or regime-family strategy and are backfilled into the ledger.

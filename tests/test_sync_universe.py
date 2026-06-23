@@ -11,11 +11,11 @@ HTML_TEMPLATE = """
   <body>
     <table>
       <thead>
-        <tr><th>Symbol</th><th>GICS Sector</th></tr>
+        <tr><th>Symbol</th><th>GICS Sector</th><th>GICS Sub-Industry</th></tr>
       </thead>
       <tbody>
-        <tr><td>AAA</td><td>Industrials</td></tr>
-        <tr><td>BRK.B</td><td>Financials</td></tr>
+        <tr><td>AAA</td><td>Industrials</td><td>Construction Machinery & Heavy Transportation Equipment</td></tr>
+        <tr><td>BRK.B</td><td>Financials</td><td>Multi-Sector Holdings</td></tr>
       </tbody>
     </table>
   </body>
@@ -55,5 +55,7 @@ class SyncUniverseTests(unittest.TestCase):
 
         tickers = [member.ticker for member in members]
         sectors = {member.ticker: member.sector for member in members}
+        sub_industries = {member.ticker: member.sub_industry for member in members}
         self.assertEqual(tickers, ["AAA", "BRK-B"])
         self.assertEqual(sectors["BRK-B"], "Financials")
+        self.assertEqual(sub_industries["AAA"], "Construction Machinery & Heavy Transportation Equipment")

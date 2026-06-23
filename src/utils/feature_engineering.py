@@ -260,6 +260,57 @@ def add_relative_strength_percentile_feature(
     frame.drop(columns=["roc_value", "reference_roc", "rs_excess_return"], inplace=True)
 
 
+def add_contextual_relative_strength_percentile_feature(
+    frame: pd.DataFrame,
+    *,
+    feature_name: str,
+    benchmark_column: str,
+    window: int,
+) -> None:
+    if benchmark_column not in frame.columns:
+        frame[feature_name] = pd.NA
+        return
+    frame["roc_value"] = frame.groupby("ticker", group_keys=False)["close"].transform(
+        lambda series: series.pct_change(periods=window)
+    )
+    frame["reference_roc"] = pd.NA
+    benchmark_tickers = sorted(
+        {
+            str(value)
+            for value in frame[benchmark_column].dropna().astype(str).tolist()
+            if str(value).strip()
+        }
+    )
+    for benchmark_ticker in benchmark_tickers:
+        reference = (
+            frame.loc[frame["ticker"] == benchmark_ticker, ["date", "roc_value"]]
+            .sort_values("date")
+            .rename(columns={"roc_value": "reference_roc"})
+        )
+        if reference.empty:
+            continue
+        benchmark_mask = frame[benchmark_column].astype(str) == benchmark_ticker
+        frame.loc[benchmark_mask, "reference_roc"] = frame.loc[benchmark_mask, "date"].map(
+            reference.set_index("date")["reference_roc"]
+        )
+    frame["rs_excess_return"] = pd.to_numeric(frame["roc_value"], errors="coerce") - pd.to_numeric(
+        frame["reference_roc"], errors="coerce"
+    )
+    eligible_mask = (
+        frame[benchmark_column].notna()
+        & (frame[benchmark_column].astype(str).str.strip() != "")
+        & (frame["ticker"].astype(str) != frame[benchmark_column].astype(str))
+    )
+    frame.loc[eligible_mask, feature_name] = (
+        frame.loc[eligible_mask]
+        .groupby("date")["rs_excess_return"]
+        .rank(method="average", pct=True)
+        * 100.0
+    )
+    frame.loc[~eligible_mask, feature_name] = pd.NA
+    frame.drop(columns=["roc_value", "reference_roc", "rs_excess_return"], inplace=True)
+
+
 def add_days_to_next_event_feature(
     frame: pd.DataFrame,
     *,
@@ -316,6 +367,157 @@ def add_days_since_last_event_feature(
                 trading_dates[valid_mask],
             ).astype(float)
         frame.loc[group.index, feature_name] = feature_values
+
+
+def _earnings_event_map(earnings_calendar: pd.DataFrame | None) -> dict[str, np.ndarray]:
+    if earnings_calendar is None or earnings_calendar.empty:
+        return {}
+    return {
+        str(ticker): np.sort(group["earnings_date"].to_numpy(dtype="datetime64[D]"))
+        for ticker, group in earnings_calendar.groupby("ticker", sort=False)
+    }
+
+
+def _latest_earnings_anchor_positions(
+    trading_dates: np.ndarray,
+    event_dates: np.ndarray | None,
+) -> np.ndarray | None:
+    if event_dates is None or len(event_dates) == 0 or len(trading_dates) == 0:
+        return None
+    anchor_positions = np.searchsorted(trading_dates, event_dates, side="left")
+    valid_anchor_mask = anchor_positions < len(trading_dates)
+    if not valid_anchor_mask.any():
+        return None
+    anchor_positions = np.unique(anchor_positions[valid_anchor_mask].astype(int))
+    latest_anchor_indices = np.searchsorted(anchor_positions, np.arange(len(trading_dates)), side="right") - 1
+    valid_row_mask = latest_anchor_indices >= 0
+    if not valid_row_mask.any():
+        return None
+    row_anchor_positions = np.full(len(trading_dates), -1, dtype=int)
+    row_anchor_positions[valid_row_mask] = anchor_positions[latest_anchor_indices[valid_row_mask]]
+    return row_anchor_positions
+
+
+def add_last_earnings_gap_pct_feature(
+    frame: pd.DataFrame,
+    *,
+    feature_name: str,
+    earnings_calendar: pd.DataFrame | None,
+) -> None:
+    frame[feature_name] = pd.NA
+    event_map = _earnings_event_map(earnings_calendar)
+    if not event_map:
+        return
+    for ticker, group in frame.groupby("ticker", sort=False):
+        row_anchor_positions = _latest_earnings_anchor_positions(
+            group["date"].to_numpy(dtype="datetime64[D]"),
+            event_map.get(str(ticker)),
+        )
+        if row_anchor_positions is None:
+            continue
+        prior_close = group["close"].shift(1).to_numpy(dtype=float)
+        open_values = group["open"].to_numpy(dtype=float)
+        result = np.full(len(group.index), np.nan)
+        valid_mask = (
+            (row_anchor_positions >= 0)
+            & np.isfinite(prior_close[row_anchor_positions])
+            & (prior_close[row_anchor_positions] != 0.0)
+        )
+        result[valid_mask] = (
+            open_values[row_anchor_positions[valid_mask]] / prior_close[row_anchor_positions[valid_mask]]
+        ) - 1.0
+        frame.loc[group.index, feature_name] = result
+
+
+def add_last_earnings_volume_ratio_feature(
+    frame: pd.DataFrame,
+    *,
+    feature_name: str,
+    earnings_calendar: pd.DataFrame | None,
+    window: int,
+) -> None:
+    frame[feature_name] = pd.NA
+    event_map = _earnings_event_map(earnings_calendar)
+    if not event_map:
+        return
+    for ticker, group in frame.groupby("ticker", sort=False):
+        row_anchor_positions = _latest_earnings_anchor_positions(
+            group["date"].to_numpy(dtype="datetime64[D]"),
+            event_map.get(str(ticker)),
+        )
+        if row_anchor_positions is None:
+            continue
+        volume_values = group["volume"].to_numpy(dtype=float)
+        prior_volume_avg = group["volume"].shift(1).rolling(window=window, min_periods=window).mean().to_numpy(dtype=float)
+        result = np.full(len(group.index), np.nan)
+        valid_mask = (
+            (row_anchor_positions >= 0)
+            & np.isfinite(prior_volume_avg[row_anchor_positions])
+            & (prior_volume_avg[row_anchor_positions] != 0.0)
+        )
+        result[valid_mask] = (
+            volume_values[row_anchor_positions[valid_mask]] / prior_volume_avg[row_anchor_positions[valid_mask]]
+        )
+        frame.loc[group.index, feature_name] = result
+
+
+def add_last_earnings_open_vs_high_feature(
+    frame: pd.DataFrame,
+    *,
+    feature_name: str,
+    earnings_calendar: pd.DataFrame | None,
+    window: int,
+) -> None:
+    frame[feature_name] = pd.NA
+    event_map = _earnings_event_map(earnings_calendar)
+    if not event_map:
+        return
+    for ticker, group in frame.groupby("ticker", sort=False):
+        row_anchor_positions = _latest_earnings_anchor_positions(
+            group["date"].to_numpy(dtype="datetime64[D]"),
+            event_map.get(str(ticker)),
+        )
+        if row_anchor_positions is None:
+            continue
+        prior_high = group["high"].shift(1).rolling(window=window, min_periods=window).max().to_numpy(dtype=float)
+        open_values = group["open"].to_numpy(dtype=float)
+        result = np.full(len(group.index), np.nan)
+        valid_mask = (
+            (row_anchor_positions >= 0)
+            & np.isfinite(prior_high[row_anchor_positions])
+            & (prior_high[row_anchor_positions] != 0.0)
+        )
+        result[valid_mask] = (
+            open_values[row_anchor_positions[valid_mask]] / prior_high[row_anchor_positions[valid_mask]]
+        ) - 1.0
+        frame.loc[group.index, feature_name] = result
+
+
+def add_close_vs_last_earnings_close_feature(
+    frame: pd.DataFrame,
+    *,
+    feature_name: str,
+    earnings_calendar: pd.DataFrame | None,
+) -> None:
+    frame[feature_name] = pd.NA
+    event_map = _earnings_event_map(earnings_calendar)
+    if not event_map:
+        return
+    for ticker, group in frame.groupby("ticker", sort=False):
+        row_anchor_positions = _latest_earnings_anchor_positions(
+            group["date"].to_numpy(dtype="datetime64[D]"),
+            event_map.get(str(ticker)),
+        )
+        if row_anchor_positions is None:
+            continue
+        close_values = group["close"].to_numpy(dtype=float)
+        anchor_close = np.full(len(group.index), np.nan)
+        valid_anchor_mask = row_anchor_positions >= 0
+        anchor_close[valid_anchor_mask] = close_values[row_anchor_positions[valid_anchor_mask]]
+        result = np.full(len(group.index), np.nan)
+        valid_mask = valid_anchor_mask & np.isfinite(anchor_close) & (anchor_close != 0.0)
+        result[valid_mask] = (close_values[valid_mask] / anchor_close[valid_mask]) - 1.0
+        frame.loc[group.index, feature_name] = result
 
 
 def add_sector_breadth_features(frame: pd.DataFrame) -> None:
@@ -430,6 +632,13 @@ def apply_feature_definitions(
                     reference_ticker=feature["ticker"],
                     window=int(params["window"]),
                 )
+            elif feature_type == "relative_strength_percentile_contextual":
+                add_contextual_relative_strength_percentile_feature(
+                    frame,
+                    feature_name=feature_name,
+                    benchmark_column=str(params["benchmark_column"]),
+                    window=int(params["window"]),
+                )
             elif feature_type == "days_to_next_event":
                 add_days_to_next_event_feature(
                     frame,
@@ -438,6 +647,32 @@ def apply_feature_definitions(
                 )
             elif feature_type == "days_since_last_event":
                 add_days_since_last_event_feature(
+                    frame,
+                    feature_name=feature_name,
+                    earnings_calendar=earnings_calendar,
+                )
+            elif feature_type == "last_earnings_gap_pct":
+                add_last_earnings_gap_pct_feature(
+                    frame,
+                    feature_name=feature_name,
+                    earnings_calendar=earnings_calendar,
+                )
+            elif feature_type == "last_earnings_volume_ratio":
+                add_last_earnings_volume_ratio_feature(
+                    frame,
+                    feature_name=feature_name,
+                    earnings_calendar=earnings_calendar,
+                    window=int(params["window"]),
+                )
+            elif feature_type == "last_earnings_open_vs_high":
+                add_last_earnings_open_vs_high_feature(
+                    frame,
+                    feature_name=feature_name,
+                    earnings_calendar=earnings_calendar,
+                    window=int(params["window"]),
+                )
+            elif feature_type == "close_vs_last_earnings_close":
+                add_close_vs_last_earnings_close_feature(
                     frame,
                     feature_name=feature_name,
                     earnings_calendar=earnings_calendar,

@@ -477,6 +477,103 @@ class EvaluateServiceTests(unittest.TestCase):
             self.assertIn("## Best Practical Live Candidates", report_text)
             self.assertIn("live_match_tickers: AAA", report_text)
 
+    def test_evaluate_live_metadata_honors_subindustry_whitelist(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            paths = AppPaths(
+                root_dir=root,
+                data_dir=root / "data",
+                duckdb_path=root / "data" / "market_data.duckdb",
+                sqlite_path=root / "data" / "ledger.sqlite",
+                reports_dir=root / "reports",
+                logs_dir=root / "logs",
+                config_path=root / "config.yaml",
+                env_path=root / ".env",
+                production_strategy_path=root / "production_strategy.json",
+            )
+
+            class FakeDB:
+                def __init__(self, paths):
+                    self.paths = paths
+
+                def list_research_universe(self, limit=250):
+                    return [
+                        {"ticker": "AMD", "sector": "Information Technology", "sub_industry": "Semiconductors", "md_volume_30d": 10_000_000},
+                        {"ticker": "MSFT", "sector": "Information Technology", "sub_industry": "Systems Software", "md_volume_30d": 9_000_000},
+                    ]
+
+                def load_price_history(self, tickers):
+                    return pd.DataFrame(
+                        [
+                            {"ticker": "AMD", "date": "2026-05-01", "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0, "adj_close": 1.0},
+                            {"ticker": "MSFT", "date": "2026-05-01", "open": 1.0, "high": 1.0, "low": 1.0, "close": 1.0, "volume": 1.0, "adj_close": 1.0},
+                        ]
+                    )
+
+                def load_earnings_calendar(self, tickers):
+                    return pd.DataFrame(columns=["ticker", "earnings_date"])
+
+            service = EvaluateService(FakeDB(paths))
+            ranked_frame = pd.DataFrame(
+                [
+                    {
+                        "id": 1,
+                        "sector": "Information Technology",
+                        "params_json": json.dumps(
+                            {
+                                "indicators": {"relative_strength_index_vs_spy_min": 75.0},
+                                "exit_rules": {},
+                                "sector": "Information Technology",
+                                "sub_industry_whitelist": ["Semiconductors"],
+                            },
+                            sort_keys=True,
+                        ),
+                    }
+                ]
+            )
+            snapshot = pd.DataFrame(
+                [
+                    {
+                        "ticker": "AMD",
+                        "sector": "Information Technology",
+                        "sub_industry": "Semiconductors",
+                        "regime_green": True,
+                        "md_volume_30d": 10_000_000,
+                        "relative_strength_index_vs_spy": 80.0,
+                        "date": "2026-05-01",
+                    },
+                    {
+                        "ticker": "MSFT",
+                        "sector": "Information Technology",
+                        "sub_industry": "Systems Software",
+                        "regime_green": True,
+                        "md_volume_30d": 9_000_000,
+                        "relative_strength_index_vs_spy": 82.0,
+                        "date": "2026-05-01",
+                    },
+                ]
+            )
+            candidates = pd.DataFrame(
+                [
+                    {"ticker": "AMD", "sector": "Information Technology", "sub_industry": "Semiconductors", "signal_score": 31.0, "md_volume_30d": 10_000_000},
+                    {"ticker": "MSFT", "sector": "Information Technology", "sub_industry": "Systems Software", "signal_score": 32.0, "md_volume_30d": 9_000_000},
+                ]
+            )
+
+            with patch("src.evaluate.service.build_analysis_frame", return_value=(snapshot, [])), patch(
+                "src.evaluate.service.latest_snapshot",
+                return_value=snapshot,
+            ), patch(
+                "src.evaluate.service.filter_signal_candidates",
+                return_value=candidates,
+            ):
+                links, diagnostics = service._build_live_candidate_metadata(ranked_frame)
+
+            self.assertEqual(links[1]["count"], 1)
+            self.assertEqual(links[1]["tickers"], ["AMD"])
+            self.assertEqual(diagnostics[1]["counts"][2], ("sector_scope", 2))
+            self.assertEqual(diagnostics[1]["counts"][3], ("subindustry_scope", 1))
+
     def test_alpha_bonus_can_lift_higher_alpha_row_in_practical_ranking(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

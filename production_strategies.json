@@ -60,6 +60,34 @@
         "trailing_stop_atr_mult": 3.0,
         "profit_target_atr_mult": 4.5
       }
+    },
+    "technology": {
+      "strategy_id": 1140440,
+      "sector": "Information Technology",
+      "promoted_at": "2026-06-02T22:30:00",
+      "indicators": {
+        "close_vs_last_earnings_close_min": 0.02,
+        "days_since_last_earnings_max": 5.0,
+        "days_to_next_earnings_min": 5.0,
+        "last_earnings_gap_pct_min": 0.03,
+        "last_earnings_open_vs_20d_high_min": 0.0,
+        "last_earnings_volume_ratio_20_min": 1.5,
+        "relative_strength_index_vs_qqq_min": 80.0,
+        "relative_strength_index_vs_spy_min": 80.0,
+        "relative_strength_index_vs_xlk_min": 80.0,
+        "roc_126_min": 0.1,
+        "roc_63_min": 0.05,
+        "signal_score_min": 32.0,
+        "vol_alpha_min": 1.0
+      },
+      "exit_rules": {
+        "trailing_stop_pct": null,
+        "profit_target_pct": null,
+        "time_limit_days": 10,
+        "trailing_stop_atr_mult": 2.0,
+        "profit_target_atr_mult": 2.5,
+        "exit_before_earnings_days": null
+      }
     }
   }
 }

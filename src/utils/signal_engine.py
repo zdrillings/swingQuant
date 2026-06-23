@@ -12,6 +12,7 @@ from src.utils.feature_engineering import (
     compute_rsi,
 )
 from src.utils.regime import regime_etf_for_sector
+from src.utils.subindustry import benchmark_etf_for_sub_industry
 from src.utils.strategy import evaluate_signal_gate
 
 
@@ -44,27 +45,45 @@ def build_analysis_frame(
     universe_rows: list[dict] | list[pd.Series] | list,
     earnings_calendar: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, list[str]]:
+    def _row_value(row, key: str):
+        if isinstance(row, dict):
+            return row.get(key)
+        if hasattr(row, "keys") and key in row.keys():
+            return row[key]
+        return None
+
     feature_config = load_feature_config()
+    working_history = price_history.copy()
+
+    sector_map = {
+        _row_value(row, "ticker"): _row_value(row, "sector")
+        for row in universe_rows
+        if _row_value(row, "ticker") is not None
+    }
+    sub_industry_map = {
+        _row_value(row, "ticker"): _row_value(row, "sub_industry")
+        for row in universe_rows
+        if _row_value(row, "ticker") is not None
+    }
+    liquidity_map = {
+        _row_value(row, "ticker"): _row_value(row, "md_volume_30d")
+        for row in universe_rows
+        if _row_value(row, "ticker") is not None
+    }
+    working_history["sector"] = working_history["ticker"].map(sector_map)
+    working_history["sub_industry"] = working_history["ticker"].map(sub_industry_map)
+    working_history["md_volume_30d"] = working_history["ticker"].map(liquidity_map)
+    working_history["subindustry_benchmark"] = working_history.apply(
+        lambda row: benchmark_etf_for_sub_industry(row.get("sector"), row.get("sub_industry"))
+        if pd.notna(row.get("sector"))
+        else None,
+        axis=1,
+    )
     frame, feature_columns = apply_feature_definitions(
-        price_history,
+        working_history,
         feature_config,
         earnings_calendar=earnings_calendar,
     )
-
-    sector_map = {
-        row["ticker"] if isinstance(row, dict) else row["ticker"]: (
-            row["sector"] if isinstance(row, dict) else row["sector"]
-        )
-        for row in universe_rows
-    }
-    liquidity_map = {
-        row["ticker"] if isinstance(row, dict) else row["ticker"]: (
-            row["md_volume_30d"] if isinstance(row, dict) else row["md_volume_30d"]
-        )
-        for row in universe_rows
-    }
-    frame["sector"] = frame["ticker"].map(sector_map)
-    frame["md_volume_30d"] = frame["ticker"].map(liquidity_map)
 
     spy_regime = _compute_regime_frame(frame, "SPY").set_index("date")
     qqq_regime = _compute_regime_frame(frame, "QQQ").set_index("date")

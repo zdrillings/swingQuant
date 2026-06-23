@@ -37,6 +37,13 @@ def _find_sector_column(frame: pd.DataFrame) -> str:
     raise ValueError(f"Could not find sector column in table columns: {list(frame.columns)}")
 
 
+def _find_sub_industry_column(frame: pd.DataFrame) -> str | None:
+    for candidate in ("GICS Sub-Industry", "Sub-Industry", "Sub Industry"):
+        if candidate in frame.columns:
+            return candidate
+    return None
+
+
 def _fetch_html(url: str) -> str:
     request = Request(
         url,
@@ -66,11 +73,22 @@ def scrape_sp_universe() -> list[UniverseRow]:
 
         symbol_column = _find_symbol_column(matching_table)
         sector_column = _find_sector_column(matching_table)
+        sub_industry_column = _find_sub_industry_column(matching_table)
 
         for _, row in matching_table.iterrows():
             ticker = normalize_ticker(str(row[symbol_column]))
             sector = str(row[sector_column]).strip()
+            sub_industry = None
+            if sub_industry_column is not None:
+                raw_sub_industry = row[sub_industry_column]
+                if pd.notna(raw_sub_industry):
+                    sub_industry = str(raw_sub_industry).strip()
             if ticker and ticker not in seen:
-                seen[ticker] = UniverseRow(ticker=ticker, sector=sector, is_active=True)
+                seen[ticker] = UniverseRow(
+                    ticker=ticker,
+                    sector=sector,
+                    sub_industry=sub_industry,
+                    is_active=True,
+                )
 
     return sorted(seen.values(), key=lambda member: member.ticker)

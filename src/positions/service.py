@@ -15,6 +15,8 @@ from src.utils.strategy import (
     load_active_strategies,
     profit_target_price,
     resolve_trade_strategy,
+    rsi_2_exit_triggered,
+    summarize_buy_setup,
     trailing_stop_price,
     uses_atr_trailing_stop,
 )
@@ -39,6 +41,8 @@ class PositionSnapshot:
     days_to_next_earnings: int | None
     regime_etf: str
     regime_green: bool | None
+    buyable_now: str
+    buyable_note: str
     action: str
     notes: tuple[str, ...]
 
@@ -68,13 +72,16 @@ class PositionsReport:
             "Resolved",
             "Source",
             "Sector",
-            "Price",
+            "Current",
+            "Basis",
             "PnL%",
             "Stop",
             "Target",
             "Days",
             "Earnings",
             "Regime",
+            "Buyable",
+            "Buy Note",
             "Action",
             "Notes",
         ]
@@ -88,12 +95,15 @@ class PositionsReport:
                     snapshot.strategy_source,
                     snapshot.sector or "-",
                     self._fmt_price(snapshot.current_price),
+                    self._fmt_price(snapshot.entry_price),
                     self._fmt_pct(snapshot.unrealized_pct),
                     self._fmt_price(snapshot.stop_price),
                     self._fmt_price(snapshot.target_price),
                     str(snapshot.days_in_trade),
                     str(snapshot.days_to_next_earnings) if snapshot.days_to_next_earnings is not None else "-",
                     self._fmt_regime(snapshot.regime_etf, snapshot.regime_green),
+                    snapshot.buyable_now,
+                    snapshot.buyable_note,
                     snapshot.action,
                     ", ".join(snapshot.notes) if snapshot.notes else "-",
                 ]
@@ -212,9 +222,12 @@ class PositionsService:
     ) -> PositionSnapshot:
         ticker = str(trade["ticker"])
         latest_ticker_row = latest_rows_by_ticker.get(ticker, {})
-        current_price = intraday_prices.get(ticker)
-        if current_price is None and pd.notna(latest_ticker_row.get("adj_close")):
-            current_price = float(latest_ticker_row["adj_close"])
+        current_price, price_note = self._resolve_current_price(
+            ticker=ticker,
+            intraday_prices=intraday_prices,
+            latest_ticker_row=latest_ticker_row,
+            trade=trade,
+        )
 
         strategy = resolution.strategy
         ticker_sector = sector_map.get(ticker) or (strategy.sector if strategy is not None else "")
@@ -239,7 +252,11 @@ class PositionsService:
         )
         time_in_trade = len(pd.bdate_range(trade["entry_date"], date.today().isoformat())) - 1
         action = "hold"
+        buyable_now = "unknown"
+        buyable_note = "latest analysis snapshot unavailable"
         notes: list[str] = []
+        if price_note:
+            notes.append(price_note)
 
         if strategy is None:
             notes.append("strategy unresolved")
@@ -273,6 +290,12 @@ class PositionsService:
             ):
                 notes.append("pre earnings exit")
 
+            buyable_status, buyable_note = summarize_buy_setup(
+                strategy_indicators=strategy.indicators,
+                latest_row=latest_ticker_row,
+            )
+            buyable_now = buyable_status
+
             if current_price is not None:
                 rsi_2 = latest_rsi_2_with_intraday(
                     price_history=price_history,
@@ -284,7 +307,12 @@ class PositionsService:
                     [
                         stop_price is not None and current_price < stop_price,
                         target_price is not None and current_price >= target_price,
-                        rsi_2 > 90,
+                        rsi_2_exit_triggered(
+                            rsi_2=rsi_2,
+                            unrealized_pct=((current_price / entry_price) - 1.0),
+                            days_in_trade=time_in_trade,
+                            strategy_slot=strategy.slot if strategy is not None else None,
+                        ),
                         time_in_trade > strategy.exit_rules.time_limit_days,
                         regime_green is False,
                         "pre earnings exit" in notes,
@@ -317,9 +345,45 @@ class PositionsService:
             days_to_next_earnings=days_to_next_earnings,
             regime_etf=regime_etf,
             regime_green=regime_green,
+            buyable_now=buyable_now,
+            buyable_note=buyable_note,
             action=action,
             notes=tuple(notes),
         )
+
+    def _resolve_current_price(
+        self,
+        *,
+        ticker: str,
+        intraday_prices: dict[str, float],
+        latest_ticker_row: dict,
+        trade,
+    ) -> tuple[float | None, str | None]:
+        intraday_price = intraday_prices.get(ticker)
+        if intraday_price is not None:
+            return float(intraday_price), None
+
+        price_date = self._coerce_date(latest_ticker_row.get("date"))
+        if price_date is None or pd.isna(latest_ticker_row.get("adj_close")):
+            return None, "current price unavailable"
+
+        entry_date = self._coerce_date(trade["entry_date"])
+        if entry_date is not None and price_date < entry_date:
+            return (
+                None,
+                f"current price unavailable; freshest close {price_date.isoformat()} predates entry {entry_date.isoformat()}",
+            )
+        if (date.today() - price_date).days > 7:
+            return None, f"current price unavailable; freshest close is stale ({price_date.isoformat()})"
+        return float(latest_ticker_row["adj_close"]), None
+
+    def _coerce_date(self, value) -> date | None:
+        if value in (None, "") or pd.isna(value):
+            return None
+        timestamp = pd.to_datetime(value, errors="coerce")
+        if pd.isna(timestamp):
+            return None
+        return timestamp.date()
 
     def _resolve_regime_state(
         self,

@@ -81,6 +81,8 @@ class PositionsServiceTests(unittest.TestCase):
         snapshot = report.snapshots[0]
         self.assertEqual(snapshot.strategy_source, "historical_strategy_id")
         self.assertEqual(snapshot.resolved_slot, "legacy_technology")
+        self.assertEqual(snapshot.buyable_now, "no")
+        self.assertIn("not enough confluence", snapshot.buyable_note)
         self.assertEqual(snapshot.action, "sell")
         self.assertIn("inactive stored slot", snapshot.notes)
         self.assertIn("missing stored entry_atr", snapshot.notes)
@@ -88,4 +90,55 @@ class PositionsServiceTests(unittest.TestCase):
         self.assertIn("Open positions: 1", rendered)
         self.assertIn("legacy_technology", rendered)
         self.assertIn("historical_strategy_id", rendered)
+        self.assertIn("Buyable", rendered)
+        self.assertIn("Basis", rendered)
+        self.assertIn("100.00", rendered)
+        self.assertIn("not enough confluence", rendered)
         self.assertIn("sell", rendered)
+
+    def test_positions_refuses_stale_close_before_entry(self) -> None:
+        class FakeDB:
+            def initialize(self): return None
+            def list_open_trades(self):
+                return [
+                    {
+                        "ticker": "VSH",
+                        "entry_date": "2026-06-11",
+                        "entry_price": 57.34,
+                        "entry_atr": 6.5,
+                        "strategy_id": 1140440,
+                        "strategy_slot": "technology",
+                        "shares": 100,
+                        "max_price_seen": 58.80,
+                        "status": "open",
+                    }
+                ]
+            def load_price_history(self, tickers):
+                return pd.DataFrame()
+            def list_universe_rows(self, active_only=False):
+                return [{"ticker": "VSH", "sector": "Information Technology", "md_volume_30d": 30_000_000}]
+            def load_earnings_calendar(self, tickers):
+                return pd.DataFrame()
+            def get_backtest_result_by_strategy_id(self, strategy_id):
+                return None
+
+        service = PositionsService(FakeDB())
+        analysis_frame = pd.DataFrame(
+            [
+                {"ticker": "SPY", "date": pd.Timestamp("2026-06-02"), "adj_close": 62.84, "spy_sma_200": 50.0, "qqq_sma_200": None},
+                {"ticker": "QQQ", "date": pd.Timestamp("2026-06-02"), "adj_close": 62.84, "spy_sma_200": None, "qqq_sma_200": 50.0},
+                {"ticker": "VSH", "date": pd.Timestamp("2026-06-02"), "adj_close": 62.84, "atr_14": 6.5},
+            ]
+        )
+
+        with patch.object(service, "_load_intraday_last_prices", return_value={}), \
+             patch.object(service, "_download_recent_daily_history", return_value=pd.DataFrame()), \
+             patch("src.positions.service.load_active_strategies", return_value={"technology": ProductionStrategy(strategy_id=1140440, promoted_at="2026-06-01T17:00:00", indicators={}, exit_rules=ExitRules(trailing_stop_pct=None, profit_target_pct=None, time_limit_days=20, trailing_stop_atr_mult=2.5, profit_target_atr_mult=4.5), slot="technology", sector="Information Technology")}), \
+             patch("src.positions.service.build_analysis_frame", return_value=(analysis_frame, [])):
+            report = service.run()
+
+        snapshot = report.snapshots[0]
+        self.assertIsNone(snapshot.current_price)
+        self.assertIsNone(snapshot.unrealized_pct)
+        self.assertEqual(snapshot.action, "hold")
+        self.assertIn("predates entry", snapshot.notes[0])

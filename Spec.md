@@ -6,6 +6,7 @@ Technical Specification: Project SwingQuant (v1.3)
 
     Chronological Integrity: All data splits must be time-series based. 70% oldest data for Training; 30% most recent for Validation. No random shuffling, ever.
     Survivorship Bias Note: The universe is point-in-time biased toward current S&P 1500 survivors. Backtest results should be interpreted conservatively — live performance will likely trail backtest figures.
+    Point-in-Time External Data: Analyst target and recommendation inputs must be captured prospectively. Do not backfill historical analyst targets from today's provider response and treat them as historical truth.
     Signal Gate: A ticker passes the signal gate only when:
         - all hard filters defined in the active production_strategy.json are satisfied on the most recent completed trading day
         - the total confluence score across the promoted score components is greater than or equal to signal_score_min
@@ -130,7 +131,17 @@ sweep_grid:
 
 3. Database Architecture
 
-DuckDB: historical_ohlcv — (ticker, date, open, high, low, close, volume, adj_close)
+DuckDB:
+
+historical_ohlcv — (ticker, date, open, high, low, close, volume, adj_close)
+
+universe_daily_snapshots — broad daily research snapshots with same-day features and forward outcome labels when mature.
+
+analyst_snapshots — point-in-time analyst target and recommendation captures:
+
+    snapshot_date, ticker, provider, captured_at
+    target_mean, target_median, target_low, target_high
+    analyst_count, recommendation, details_json
 
 SQLite Ledger:
 Table 	Columns
@@ -191,6 +202,13 @@ sq scan (Cron: 5:00 PM EST)
         - keep the ticker only when signal_score >= signal_score_min
     Output: Send "Evening Brief" HTML email containing Top 5 signal tickers, sector, regime status, and share count per the sizing formula.
 
+sq analyst-snapshot (Cron: nightly after scan)
+
+    Scope: Defaults to the top 250 active research names by md_volume_30d. Additional tickers can be forced in with --ticker.
+    Provider: Current implementation uses yfinance analyst target and recommendation endpoints.
+    Storage: Replace rows for the same snapshot_date/provider in DuckDB analyst_snapshots. Persist a row for every requested ticker, even when the provider has no target data.
+    Purpose: Build a prospective point-in-time analyst target dataset for future shortlist model features and diagnostic studies. This command does not create historical analyst data for prior dates.
+
 sq monitor (Cron: Hourly, 10:30 AM–3:30 PM EST)
 
     Price Source: Fetch intraday last-trade price via yfinance using download(period='1d', interval='1m').iloc[-1].close.
@@ -225,6 +243,7 @@ Example: ($50,000 × 0.02) / ($100 × 0.05) = 200 shares
     [ ] Does sq evaluate apply Min-Max normalization before computing norm_score?
     [ ] Does the sq scan signal model enforce relative_strength_index_vs_spy_min as a hard filter and use signal_score_min as the confluence pass rule?
     [ ] Does sq scan use today's adjusted close (not yesterday's) for pricing?
+    [ ] Are analyst target inputs sourced only from captured analyst_snapshots for historical analysis?
     [ ] Does sq monitor send a single consolidated digest per run (not per ticker)?
     [ ] Does sq monitor evaluate all four exit conditions on every open trade each run?
     [ ] Does sq sweep use Polars or Backtesting.py — no VectorBT?

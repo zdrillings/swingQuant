@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 import pandas as pd
 
@@ -9,6 +10,7 @@ from src.settings import get_settings, load_feature_config
 from src.sync.service import REFERENCE_TICKERS
 from src.utils.db_manager import DatabaseManager
 from src.utils.logging import get_logger
+from src.utils.shortlist_runtime import _annotate_live_prediction_comparisons, _parse_prediction_details
 from src.utils.signal_engine import build_analysis_frame, filter_signal_candidates
 from src.utils.sizing import compute_position_size
 from src.utils.strategy import load_active_strategies
@@ -74,6 +76,12 @@ class ScanBackfillService:
             strategies=strategies,
             sector_map=sector_map,
         )
+        shortlist_model_context = scan_service._load_shortlist_model_context(scan_policy)
+        historical_model_predictions = self._load_historical_shortlist_predictions(
+            scan_service=scan_service,
+            scan_policy=scan_policy,
+            shortlist_model_context=shortlist_model_context,
+        )
 
         processed = 0
         skipped = 0
@@ -102,6 +110,7 @@ class ScanBackfillService:
                 scan_policy=scan_policy,
                 settings=settings,
                 overlap_context=overlap_context,
+                historical_model_predictions=historical_model_predictions,
             )
             processed += 1
             total_candidates += persisted_rows
@@ -149,7 +158,39 @@ class ScanBackfillService:
         scan_policy: ScanPolicy,
         settings,
         overlap_context: dict[str, set[str]],
+        historical_model_predictions: pd.DataFrame | None,
     ) -> tuple[int, int]:
+        historical_model_context = self._historical_shortlist_context_for_date(
+            historical_model_predictions=historical_model_predictions,
+            scan_date=scan_date,
+        )
+        if historical_model_context is not None:
+            candidates = scan_service._build_shortlist_model_candidates(
+                snapshot=snapshot,
+                strategies=strategies,
+                shortlist_model_context=historical_model_context,
+                scan_policy=scan_policy,
+                overlap_context=overlap_context,
+                settings=settings,
+            )
+            if not candidates.empty:
+                persisted_candidates = candidates.copy()
+                candidates = scan_service._apply_shortlist_model_selection(candidates, historical_model_context)
+                if "selection_source" not in candidates.columns:
+                    candidates["selection_source"] = "shortlist_model"
+                persisted_candidates = scan_service._attach_selection_metadata_to_persisted_candidates(
+                    persisted_candidates,
+                    candidates,
+                )
+                selected_candidates = candidates[
+                    pd.to_numeric(candidates["opportunity_score"], errors="coerce")
+                    >= float(scan_policy.shortlist_model.min_opportunity_score)
+                ].copy()
+                selected = scan_service._apply_portfolio_caps(selected_candidates, scan_policy)
+                persisted_rows = scan_service._build_persisted_scan_rows(persisted_candidates, selected)
+                self.db_manager.replace_scan_candidates(scan_date=scan_date, rows=persisted_rows)
+                return len(persisted_rows), len(selected.index)
+
         candidate_frames: list[pd.DataFrame] = []
         persisted_candidate_frames: list[pd.DataFrame] = []
         for slot, strategy in strategies.items():
@@ -200,54 +241,78 @@ class ScanBackfillService:
         persisted_candidates = pd.concat(persisted_candidate_frames, ignore_index=True).reset_index(drop=True)
         selected = scan_service._apply_portfolio_caps(candidates, scan_policy)
         selected = selected[selected["opportunity_score"] >= scan_policy.min_opportunity_score].copy()
-        selection_keys = {
-            (str(row.ticker), str(row.strategy_slot))
-            for row in selected.itertuples(index=False)
-        }
-        selection_ranks = {
-            (str(row.ticker), str(row.strategy_slot)): index + 1
-            for index, row in enumerate(selected.itertuples(index=False))
-        }
-        persisted_rows = []
-        for row in persisted_candidates.to_dict(orient="records"):
-            persisted_rows.append(
-                {
-                    "ticker": row["ticker"],
-                    "strategy_slot": row["strategy_slot"],
-                    "strategy_sector": row["strategy_sector"],
-                    "sector": row.get("sector"),
-                    "md_volume_30d": float(row.get("md_volume_30d", 0.0)) if pd.notna(row.get("md_volume_30d")) else None,
-                    "adj_close": float(row.get("adj_close", 0.0)) if pd.notna(row.get("adj_close")) else None,
-                    "regime_etf": row.get("regime_etf"),
-                    "signal_score": float(row.get("signal_score", 0.0)),
-                    "setup_quality_score": float(row.get("setup_quality_score", 0.0)),
-                    "expected_alpha_score": float(row.get("expected_alpha_score", 0.0)),
-                    "breadth_score": float(row.get("breadth_score", 0.0)),
-                    "freshness_score": float(row.get("freshness_score", 0.0)),
-                    "overlap_penalty": float(row.get("overlap_penalty", 0.0)),
-                    "opportunity_score": float(row.get("opportunity_score", 0.0)),
-                    "selected": (str(row["ticker"]), str(row["strategy_slot"])) in selection_keys,
-                    "selected_rank": selection_ranks.get((str(row["ticker"]), str(row["strategy_slot"]))),
-                    "shares": int(row["shares"]),
-                    "details": {
-                        "why": scan_service._summarize_candidate_why(row.get("indicator_details", {}) or {}),
-                        "already_owned": bool(row.get("already_owned", False)),
-                        "pre_penalty_opportunity_score": float(
-                            row.get("opportunity_score", 0.0) + row.get("overlap_penalty", 0.0)
-                        ),
-                        "overlap_components": row.get("overlap_components", {}),
-                        "feature_snapshot": scan_service._candidate_feature_snapshot(row),
-                        "ranking_components": {
-                            "signal_score": float(row.get("signal_score", 0.0)),
-                            "setup_quality_score": float(row.get("setup_quality_score", 0.0)),
-                            "expected_alpha_score": float(row.get("expected_alpha_score", 0.0)),
-                            "breadth_score": float(row.get("breadth_score", 0.0)),
-                            "freshness_score": float(row.get("freshness_score", 0.0)),
-                            "overlap_penalty": float(row.get("overlap_penalty", 0.0)),
-                            "opportunity_score": float(row.get("opportunity_score", 0.0)),
-                        },
-                    },
-                }
-            )
+        persisted_rows = scan_service._build_persisted_scan_rows(persisted_candidates, selected)
         self.db_manager.replace_scan_candidates(scan_date=scan_date, rows=persisted_rows)
         return len(persisted_rows), len(selected.index)
+
+    def _load_historical_shortlist_predictions(
+        self,
+        *,
+        scan_service: ScanService,
+        scan_policy: ScanPolicy,
+        shortlist_model_context,
+    ) -> pd.DataFrame | None:
+        if shortlist_model_context is None:
+            return None
+        if not hasattr(self.db_manager, "load_shortlist_model_predictions"):
+            return None
+        prediction_frames: list[pd.DataFrame] = []
+        base_kwargs = {
+            "generated_at": shortlist_model_context.generated_at,
+            "horizon_days": int(scan_policy.shortlist_model.horizon_days),
+            "eligible_universe_mode": scan_policy.shortlist_model.production_eligible_universe_mode,
+            "model_scope": scan_policy.shortlist_model.production_model_scope,
+            "model_name": scan_policy.shortlist_model.production_model_name or shortlist_model_context.champion_model,
+        }
+        for dataset_split in ("oos", "live"):
+            frame = self.db_manager.load_shortlist_model_predictions(
+                dataset_split=dataset_split,
+                **base_kwargs,
+            )
+            if frame.empty:
+                continue
+            frame = frame.copy()
+            frame["snapshot_date"] = pd.to_datetime(frame["snapshot_date"]).dt.normalize()
+            frame["predicted_alpha"] = pd.to_numeric(frame["predicted_alpha"], errors="coerce")
+            prediction_frames.append(frame)
+        if not prediction_frames:
+            self.logger.info("Historical scan backfill falling back to heuristic gate because no shortlist-model predictions were available.")
+            return None
+        combined = pd.concat(prediction_frames, ignore_index=True)
+        combined = combined.sort_values(
+            ["snapshot_date", "predicted_alpha", "md_volume_30d", "ticker"],
+            ascending=[True, False, False, True],
+        ).reset_index(drop=True)
+        if "details_json" in combined.columns:
+            details = combined["details_json"].map(_parse_prediction_details)
+            combined["model_top_reasons"] = details.apply(lambda payload: payload.get("model_top_reasons", []))
+            combined["model_reason_summary"] = details.apply(lambda payload: payload.get("model_reason_summary"))
+        grouped_frames: list[pd.DataFrame] = []
+        for _, day_frame in combined.groupby("snapshot_date", sort=True):
+            ranked = day_frame.copy().reset_index(drop=True)
+            ranked["model_rank"] = range(1, len(ranked.index) + 1)
+            ranked = _annotate_live_prediction_comparisons(ranked, top_n=int(scan_policy.shortlist_model.top_n))
+            grouped_frames.append(ranked)
+        return pd.concat(grouped_frames, ignore_index=True) if grouped_frames else None
+
+    def _historical_shortlist_context_for_date(
+        self,
+        *,
+        historical_model_predictions: pd.DataFrame | None,
+        scan_date: str,
+    ):
+        if historical_model_predictions is None or historical_model_predictions.empty:
+            return None
+        prediction_date = pd.Timestamp(scan_date).normalize()
+        date_predictions = historical_model_predictions[
+            historical_model_predictions["snapshot_date"] == prediction_date
+        ].copy()
+        if date_predictions.empty:
+            return None
+        model_name = str(date_predictions["model_name"].iloc[0]) if "model_name" in date_predictions.columns else "xgboost_model"
+        generated_at = str(date_predictions["generated_at"].iloc[0]) if "generated_at" in date_predictions.columns else scan_date
+        return SimpleNamespace(
+            generated_at=generated_at,
+            champion_model=model_name,
+            live_predictions=date_predictions,
+        )

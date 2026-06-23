@@ -1,16 +1,78 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 import pandas as pd
 
 from src.utils.feature_engineering import apply_feature_definitions
 from src.utils.regime import regime_etf_for_sector
 from src.utils.signal_engine import build_analysis_frame, filter_signal_candidates
-from src.utils.strategy import ExitRules, indicator_score, profit_target_price, stop_risk_per_share, trailing_stop_price
+from src.utils.strategy import (
+    ExitRules,
+    clear_strategy_caches,
+    indicator_score,
+    profit_target_price,
+    rsi_2_exit_triggered,
+    stop_risk_per_share,
+    trailing_stop_price,
+)
 
 
 class StrategyHelperTests(unittest.TestCase):
+    def test_rsi_2_exit_triggered_supports_slot_specific_profit_gates(self) -> None:
+        clear_strategy_caches()
+        with patch(
+            "src.utils.strategy.load_feature_config",
+            return_value={
+                "monitor_policy": {
+                    "rsi_2_exit": {
+                        "threshold": 90,
+                        "min_unrealized_pct": 0.05,
+                        "min_days_in_trade": 0,
+                        "slot_overrides": {
+                            "energy": {"min_unrealized_pct": 0.05},
+                            "industrials": {"min_unrealized_pct": 0.05},
+                        },
+                    }
+                }
+            },
+        ):
+            clear_strategy_caches()
+            self.assertFalse(
+                rsi_2_exit_triggered(
+                    rsi_2=95.0,
+                    unrealized_pct=0.02,
+                    days_in_trade=2,
+                    strategy_slot="energy",
+                )
+            )
+            self.assertTrue(
+                rsi_2_exit_triggered(
+                    rsi_2=95.0,
+                    unrealized_pct=0.06,
+                    days_in_trade=2,
+                    strategy_slot="energy",
+                )
+            )
+            self.assertFalse(
+                rsi_2_exit_triggered(
+                    rsi_2=95.0,
+                    unrealized_pct=0.02,
+                    days_in_trade=2,
+                    strategy_slot="materials",
+                )
+            )
+            self.assertTrue(
+                rsi_2_exit_triggered(
+                    rsi_2=95.0,
+                    unrealized_pct=0.06,
+                    days_in_trade=2,
+                    strategy_slot="materials",
+                )
+            )
+        clear_strategy_caches()
+
     def test_filter_signal_candidates_uses_confluence_scoring_and_rs_hard_filter(self) -> None:
         frame = pd.DataFrame(
             [
@@ -267,6 +329,189 @@ class StrategyHelperTests(unittest.TestCase):
         )
         self.assertTrue(pd.isna(latest.loc["SPY", "relative_strength_index_vs_spy"]))
 
+    def test_relative_strength_feature_supports_qqq_and_xlk_references(self) -> None:
+        dates = pd.bdate_range("2026-01-01", periods=70)
+        rows = []
+        for index, day in enumerate(dates):
+            rows.extend(
+                [
+                    {
+                        "ticker": "QQQ",
+                        "date": day.date(),
+                        "open": 100 + index,
+                        "high": 100 + index,
+                        "low": 100 + index,
+                        "close": 100 + index,
+                        "volume": 1_000_000,
+                        "adj_close": 100 + index,
+                    },
+                    {
+                        "ticker": "XLK",
+                        "date": day.date(),
+                        "open": 100 + index * 0.9,
+                        "high": 100 + index * 0.9,
+                        "low": 100 + index * 0.9,
+                        "close": 100 + index * 0.9,
+                        "volume": 1_000_000,
+                        "adj_close": 100 + index * 0.9,
+                    },
+                    {
+                        "ticker": "AAA",
+                        "date": day.date(),
+                        "open": 100 + index * 2,
+                        "high": 100 + index * 2,
+                        "low": 100 + index * 2,
+                        "close": 100 + index * 2,
+                        "volume": 1_000_000,
+                        "adj_close": 100 + index * 2,
+                    },
+                    {
+                        "ticker": "BBB",
+                        "date": day.date(),
+                        "open": 100 + index * 0.4,
+                        "high": 100 + index * 0.4,
+                        "low": 100 + index * 0.4,
+                        "close": 100 + index * 0.4,
+                        "volume": 1_000_000,
+                        "adj_close": 100 + index * 0.4,
+                    },
+                ]
+            )
+        frame, _ = apply_feature_definitions(
+            pd.DataFrame(rows),
+            {
+                "features": {
+                    "momentum": [
+                        {
+                            "name": "relative_strength_index_vs_qqq",
+                            "ticker": "QQQ",
+                            "type": "relative_strength_percentile",
+                            "params": {"window": 63},
+                        },
+                        {
+                            "name": "relative_strength_index_vs_xlk",
+                            "ticker": "XLK",
+                            "type": "relative_strength_percentile",
+                            "params": {"window": 63},
+                        },
+                    ]
+                }
+            },
+        )
+        latest = frame.sort_values("date").groupby("ticker").tail(1).set_index("ticker")
+
+        self.assertGreater(
+            float(latest.loc["AAA", "relative_strength_index_vs_qqq"]),
+            float(latest.loc["BBB", "relative_strength_index_vs_qqq"]),
+        )
+        self.assertGreater(
+            float(latest.loc["AAA", "relative_strength_index_vs_xlk"]),
+            float(latest.loc["BBB", "relative_strength_index_vs_xlk"]),
+        )
+        self.assertTrue(pd.isna(latest.loc["QQQ", "relative_strength_index_vs_qqq"]))
+        self.assertTrue(pd.isna(latest.loc["XLK", "relative_strength_index_vs_xlk"]))
+
+    def test_contextual_relative_strength_feature_supports_subindustry_benchmarks(self) -> None:
+        dates = pd.bdate_range("2026-01-01", periods=70)
+        rows = []
+        for index, day in enumerate(dates):
+            rows.extend(
+                [
+                    {
+                        "ticker": "SMH",
+                        "date": day.date(),
+                        "open": 100 + index,
+                        "high": 100 + index,
+                        "low": 100 + index,
+                        "close": 100 + index,
+                        "volume": 1_000_000,
+                        "adj_close": 100 + index,
+                        "subindustry_benchmark": None,
+                    },
+                    {
+                        "ticker": "IGV",
+                        "date": day.date(),
+                        "open": 100 + index * 0.8,
+                        "high": 100 + index * 0.8,
+                        "low": 100 + index * 0.8,
+                        "close": 100 + index * 0.8,
+                        "volume": 1_000_000,
+                        "adj_close": 100 + index * 0.8,
+                        "subindustry_benchmark": None,
+                    },
+                    {
+                        "ticker": "NVDA",
+                        "date": day.date(),
+                        "open": 100 + index * 2.2,
+                        "high": 100 + index * 2.2,
+                        "low": 100 + index * 2.2,
+                        "close": 100 + index * 2.2,
+                        "volume": 1_000_000,
+                        "adj_close": 100 + index * 2.2,
+                        "subindustry_benchmark": "SMH",
+                    },
+                    {
+                        "ticker": "AMD",
+                        "date": day.date(),
+                        "open": 100 + index * 1.1,
+                        "high": 100 + index * 1.1,
+                        "low": 100 + index * 1.1,
+                        "close": 100 + index * 1.1,
+                        "volume": 1_000_000,
+                        "adj_close": 100 + index * 1.1,
+                        "subindustry_benchmark": "SMH",
+                    },
+                    {
+                        "ticker": "NOW",
+                        "date": day.date(),
+                        "open": 100 + index * 1.9,
+                        "high": 100 + index * 1.9,
+                        "low": 100 + index * 1.9,
+                        "close": 100 + index * 1.9,
+                        "volume": 1_000_000,
+                        "adj_close": 100 + index * 1.9,
+                        "subindustry_benchmark": "IGV",
+                    },
+                    {
+                        "ticker": "TEAM",
+                        "date": day.date(),
+                        "open": 100 + index * 0.9,
+                        "high": 100 + index * 0.9,
+                        "low": 100 + index * 0.9,
+                        "close": 100 + index * 0.9,
+                        "volume": 1_000_000,
+                        "adj_close": 100 + index * 0.9,
+                        "subindustry_benchmark": "IGV",
+                    },
+                ]
+            )
+        frame, _ = apply_feature_definitions(
+            pd.DataFrame(rows),
+            {
+                "features": {
+                    "momentum": [
+                        {
+                            "name": "relative_strength_index_vs_subindustry",
+                            "type": "relative_strength_percentile_contextual",
+                            "params": {"window": 63, "benchmark_column": "subindustry_benchmark"},
+                        }
+                    ]
+                }
+            },
+        )
+        latest = frame.sort_values("date").groupby("ticker").tail(1).set_index("ticker")
+
+        self.assertGreater(
+            float(latest.loc["NVDA", "relative_strength_index_vs_subindustry"]),
+            float(latest.loc["AMD", "relative_strength_index_vs_subindustry"]),
+        )
+        self.assertGreater(
+            float(latest.loc["NOW", "relative_strength_index_vs_subindustry"]),
+            float(latest.loc["TEAM", "relative_strength_index_vs_subindustry"]),
+        )
+        self.assertTrue(pd.isna(latest.loc["SMH", "relative_strength_index_vs_subindustry"]))
+        self.assertTrue(pd.isna(latest.loc["IGV", "relative_strength_index_vs_subindustry"]))
+
     def test_roc_feature_measures_multi_month_return(self) -> None:
         dates = pd.bdate_range("2026-01-01", periods=70)
         rows = []
@@ -420,6 +665,69 @@ class StrategyHelperTests(unittest.TestCase):
         self.assertEqual(float(ordered.iloc[2]["days_since_last_earnings"]), 0.0)
         self.assertEqual(float(ordered.iloc[3]["days_to_next_earnings"]), 4.0)
         self.assertEqual(float(ordered.iloc[3]["days_since_last_earnings"]), 1.0)
+
+    def test_post_earnings_reaction_features_capture_gap_volume_and_hold(self) -> None:
+        dates = pd.bdate_range("2026-01-01", periods=25)
+        rows = []
+        for index, day in enumerate(dates):
+            if index < 20:
+                open_price = 100.0
+                close_price = 100.0
+                volume = 100.0
+            elif index == 20:
+                open_price = 110.0
+                close_price = 111.0
+                volume = 250.0
+            elif index == 21:
+                open_price = 112.0
+                close_price = 112.0
+                volume = 120.0
+            else:
+                open_price = 109.0
+                close_price = 109.0
+                volume = 120.0
+            rows.append(
+                {
+                    "ticker": "AAA",
+                    "date": day.date(),
+                    "open": open_price,
+                    "high": close_price + 1.0,
+                    "low": min(open_price, close_price) - 1.0,
+                    "close": close_price,
+                    "volume": volume,
+                    "adj_close": close_price,
+                }
+            )
+        earnings_calendar = pd.DataFrame(
+            [{"ticker": "AAA", "earnings_date": dates[20]}]
+        )
+        frame, _ = apply_feature_definitions(
+            pd.DataFrame(rows),
+            {
+                "features": {
+                    "event_risk": [
+                        {"name": "days_since_last_earnings", "type": "days_since_last_event"},
+                        {"name": "last_earnings_gap_pct", "type": "last_earnings_gap_pct"},
+                        {"name": "last_earnings_volume_ratio_20", "type": "last_earnings_volume_ratio", "params": {"window": 20}},
+                        {"name": "last_earnings_open_vs_20d_high", "type": "last_earnings_open_vs_high", "params": {"window": 20}},
+                        {"name": "close_vs_last_earnings_close", "type": "close_vs_last_earnings_close"},
+                    ]
+                }
+            },
+            earnings_calendar=earnings_calendar,
+        )
+        ordered = frame.sort_values("date").reset_index(drop=True)
+        earnings_day = ordered.iloc[20]
+        next_day = ordered.iloc[21]
+        later_day = ordered.iloc[22]
+
+        self.assertEqual(float(earnings_day["days_since_last_earnings"]), 0.0)
+        self.assertAlmostEqual(float(earnings_day["last_earnings_gap_pct"]), 0.10, places=6)
+        self.assertAlmostEqual(float(earnings_day["last_earnings_volume_ratio_20"]), 2.5, places=6)
+        self.assertAlmostEqual(float(earnings_day["last_earnings_open_vs_20d_high"]), (110.0 / 101.0) - 1.0, places=6)
+        self.assertAlmostEqual(float(earnings_day["close_vs_last_earnings_close"]), 0.0, places=6)
+        self.assertAlmostEqual(float(next_day["close_vs_last_earnings_close"]), (112.0 / 111.0) - 1.0, places=6)
+        self.assertAlmostEqual(float(later_day["close_vs_last_earnings_close"]), (109.0 / 111.0) - 1.0, places=6)
 
     def test_gap_risk_features_measure_average_and_worst_overnight_gaps(self) -> None:
         dates = pd.bdate_range("2026-01-01", periods=65)

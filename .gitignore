@@ -204,6 +204,9 @@ cython_debug/
 # Temporary file for partial code execution
 tempCodeRunnerFile.py
 
+# Large generated research artifacts
+reports/shortlist_model_oos_predictions.csv
+
 # Ruff stuff:
 .ruff_cache/
 

@@ -276,7 +276,11 @@ class EvaluateService:
         signature_cache: dict[tuple[str, str], tuple[dict[str, list[str] | int], dict[str, object]]] = {}
         for row in ranked_frame.itertuples(index=False):
             params = json.loads(row.params_json)
-            signature = self._metadata_signature(row.sector, params["indicators"])
+            signature = self._metadata_signature(
+                row.sector,
+                params["indicators"],
+                params.get("sub_industry_whitelist", []),
+            )
             cached = signature_cache.get(signature)
             if cached is None:
                 row_diagnostic = self._build_gate_diagnostic(
@@ -284,10 +288,15 @@ class EvaluateService:
                     regime_snapshot=regime_snapshot,
                     indicators=params["indicators"],
                     sector=row.sector,
+                    sub_industry_whitelist=params.get("sub_industry_whitelist", []),
                 )
                 candidates = filter_signal_candidates(regime_snapshot, params["indicators"])
                 if row.sector != "ALL":
                     candidates = candidates[candidates["sector"] == row.sector]
+                candidates = self._apply_subindustry_whitelist(
+                    candidates,
+                    params.get("sub_industry_whitelist", []),
+                )
                 if "signal_score" not in candidates.columns:
                     candidates["signal_score"] = 0.0
                 candidates = candidates.sort_values(
@@ -490,6 +499,7 @@ class EvaluateService:
         regime_snapshot: pd.DataFrame,
         indicators: dict[str, float],
         sector: str,
+        sub_industry_whitelist: list[str] | tuple[str, ...] | None = None,
     ) -> dict[str, object]:
         counts: list[tuple[str, int]] = [
             ("universe", len(full_snapshot.index)),
@@ -500,8 +510,13 @@ class EvaluateService:
         if sector != "ALL":
             working = working[working["sector"] == sector].copy()
         counts.append(("sector_scope", len(working.index)))
+        working = self._apply_subindustry_whitelist(working, sub_industry_whitelist)
+        if sub_industry_whitelist:
+            counts.append(("subindustry_scope", len(working.index)))
 
         first_zero_gate: str | None = "sector_scope" if len(working.index) == 0 else None
+        if sub_industry_whitelist and len(working.index) == 0:
+            first_zero_gate = "subindustry_scope"
         for threshold_name, threshold_value in hard_filters.items():
             feature_name = threshold_name[:-4] if threshold_name.endswith(("_min", "_max")) else threshold_name
             if threshold_name.endswith("_min"):
@@ -619,8 +634,33 @@ class EvaluateService:
         )
         return scored
 
-    def _metadata_signature(self, sector: str, indicators: dict[str, float]) -> tuple[str, str]:
-        return sector, json.dumps(indicators, sort_keys=True)
+    def _metadata_signature(
+        self,
+        sector: str,
+        indicators: dict[str, float],
+        sub_industry_whitelist: list[str] | tuple[str, ...] | None = None,
+    ) -> tuple[str, str, str]:
+        normalized = [
+            str(value)
+            for value in (sub_industry_whitelist or [])
+            if str(value).strip()
+        ]
+        return sector, json.dumps(indicators, sort_keys=True), json.dumps(sorted(normalized))
+
+    def _apply_subindustry_whitelist(
+        self,
+        frame: pd.DataFrame,
+        sub_industry_whitelist: list[str] | tuple[str, ...] | None,
+    ) -> pd.DataFrame:
+        normalized = {
+            str(value)
+            for value in (sub_industry_whitelist or [])
+            if str(value).strip()
+        }
+        if not normalized or frame.empty or "sub_industry" not in frame.columns:
+            return frame.copy()
+        sub_industry_values = frame["sub_industry"].fillna("").astype(str)
+        return frame.loc[sub_industry_values.isin(normalized)].copy()
 
     def _dedupe_plateaus(self, frame: pd.DataFrame) -> pd.DataFrame:
         dedupe_frame = frame.copy()

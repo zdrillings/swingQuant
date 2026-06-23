@@ -127,6 +127,11 @@ class SweepService:
 
         feature_config = load_feature_config()
         sweep_config, sector_whitelist = self._resolve_sweep_mode(feature_config, mode)
+        sub_industry_whitelist = tuple(
+            str(value)
+            for value in sweep_config.get("_sub_industry_whitelist", [])
+            if str(value).strip()
+        )
         grid = self._build_parameter_grid(sweep_config)
         backtest_costs = self._load_backtest_costs(sweep_config)
         sectors = sorted({row["sector"] for row in universe_rows})
@@ -159,6 +164,8 @@ class SweepService:
                 scoped_frame = validation_frame
                 if sector != "ALL":
                     scoped_frame = validation_frame.filter(pl.col("sector") == sector)
+                if sub_industry_whitelist:
+                    scoped_frame = scoped_frame.filter(pl.col("sub_industry").is_in(sub_industry_whitelist))
                 metrics = self._run_backtest(
                     scoped_frame,
                     strategy_params["indicators"],
@@ -186,6 +193,7 @@ class SweepService:
                             "commission_bps_per_side": backtest_costs.commission_bps_per_side,
                         },
                         "sector": sector,
+                        "sub_industry_whitelist": list(sub_industry_whitelist),
                         "scope_size": 250,
                         "sweep_mode": mode,
                     },
@@ -244,6 +252,11 @@ class SweepService:
         for key, override in grid_overrides.items():
             resolved["sweep_grid"][key] = override
         sector_whitelist = [str(sector) for sector in mode_config.get("sector_whitelist", [])]
+        resolved["_sub_industry_whitelist"] = [
+            str(sub_industry)
+            for sub_industry in mode_config.get("sub_industry_whitelist", [])
+            if str(sub_industry).strip()
+        ]
         return resolved, sector_whitelist
 
     def _build_parameter_grid(self, config: dict) -> list[dict[str, dict[str, float | None]]]:

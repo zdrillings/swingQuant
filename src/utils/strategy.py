@@ -75,6 +75,7 @@ def load_active_strategy_for_slot(slot: str) -> ProductionStrategy:
 
 def clear_strategy_caches() -> None:
     load_signal_model_config.cache_clear()
+    load_monitor_policy_config.cache_clear()
     load_active_strategies.cache_clear()
 
 
@@ -260,6 +261,53 @@ def stop_risk_per_share(*, price: float, entry_atr: float | None, exit_rules: Ex
 
 
 @lru_cache(maxsize=1)
+def load_monitor_policy_config() -> dict:
+    config = load_feature_config().get("monitor_policy", {})
+    rsi_exit = config.get("rsi_2_exit", {}) if isinstance(config, dict) else {}
+    slot_overrides_payload = rsi_exit.get("slot_overrides", {}) if isinstance(rsi_exit, dict) else {}
+    slot_overrides: dict[str, dict[str, float | int]] = {}
+    for slot, payload in slot_overrides_payload.items():
+        if not isinstance(payload, dict):
+            continue
+        slot_overrides[str(slot)] = {
+            "threshold": float(payload.get("threshold", rsi_exit.get("threshold", 90.0))),
+            "min_unrealized_pct": float(payload.get("min_unrealized_pct", rsi_exit.get("min_unrealized_pct", 0.0))),
+            "min_days_in_trade": int(payload.get("min_days_in_trade", rsi_exit.get("min_days_in_trade", 0))),
+        }
+    return {
+        "threshold": float(rsi_exit.get("threshold", 90.0)),
+        "min_unrealized_pct": float(rsi_exit.get("min_unrealized_pct", 0.0)),
+        "min_days_in_trade": int(rsi_exit.get("min_days_in_trade", 0)),
+        "slot_overrides": slot_overrides,
+    }
+
+
+def rsi_2_exit_triggered(
+    *,
+    rsi_2: float,
+    unrealized_pct: float | None,
+    days_in_trade: int | None,
+    strategy_slot: str | None,
+) -> bool:
+    if not math.isfinite(rsi_2):
+        return False
+    policy = load_monitor_policy_config()
+    slot_policy = policy["slot_overrides"].get(str(strategy_slot), {}) if strategy_slot is not None else {}
+    threshold = float(slot_policy.get("threshold", policy["threshold"]))
+    min_unrealized_pct = float(slot_policy.get("min_unrealized_pct", policy["min_unrealized_pct"]))
+    min_days_in_trade = int(slot_policy.get("min_days_in_trade", policy["min_days_in_trade"]))
+    if rsi_2 <= threshold:
+        return False
+    if unrealized_pct is None or not math.isfinite(float(unrealized_pct)):
+        return False
+    if float(unrealized_pct) < min_unrealized_pct:
+        return False
+    if days_in_trade is None:
+        return False
+    return int(days_in_trade) >= min_days_in_trade
+
+
+@lru_cache(maxsize=1)
 def load_signal_model_config() -> dict:
     config = load_feature_config().get("signal_model", {})
     return {
@@ -398,3 +446,47 @@ def evaluate_signal_gate(
 def evaluate_indicator_gate(indicators: dict[str, float], latest_row: dict) -> tuple[bool, dict[str, dict[str, float | bool | str]]]:
     passed, details, _ = evaluate_signal_gate(indicators, latest_row)
     return passed, details
+
+
+def summarize_buy_setup(
+    *,
+    strategy_indicators: dict[str, float],
+    latest_row: dict | None,
+) -> tuple[str, str]:
+    if not latest_row:
+        return "unknown", "latest analysis snapshot unavailable"
+
+    passed, details, signal_score = evaluate_signal_gate(strategy_indicators, latest_row)
+    signal_detail = details.get(SIGNAL_SCORE_MIN_KEY, {})
+    threshold = signal_detail.get("threshold")
+    if passed:
+        threshold_text = f" vs required {float(threshold):.1f}" if threshold is not None else ""
+        return "yes", f"valid: hard filters passed; signal score {signal_score:.1f}{threshold_text}"
+
+    failed_hard_filters = [
+        humanize_indicator_name(name)
+        for name, detail in details.items()
+        if name != SIGNAL_SCORE_MIN_KEY and detail.get("mode") == "hard_filter" and not detail.get("passed")
+    ]
+    if failed_hard_filters:
+        return "no", f"invalid: fails {', '.join(failed_hard_filters[:2])}"
+    if threshold is not None:
+        threshold_value = float(threshold)
+        if threshold_value > 0 and signal_score >= threshold_value * 0.9:
+            return "no", f"close: signal score {signal_score:.1f} vs required {threshold_value:.1f}"
+        return "no", f"not enough confluence: signal score {signal_score:.1f} vs required {threshold_value:.1f}"
+    return "no", "invalid: signal gate failed"
+
+
+def humanize_indicator_name(name: str) -> str:
+    labels = {
+        "relative_strength_index_vs_spy_min": "SPY RS",
+        "relative_strength_index_vs_qqq_min": "QQQ RS",
+        "relative_strength_index_vs_xlk_min": "XLK RS",
+        "relative_strength_index_vs_subindustry_min": "subindustry RS",
+        "days_to_next_earnings_min": "earnings distance",
+        "days_since_last_earnings_max": "post-earnings window",
+        "breakout_above_20d_high_min": "20d breakout",
+        "distance_above_20d_high_max": "breakout extension",
+    }
+    return labels.get(name, name.replace("_min", "").replace("_max", "").replace("_", " "))

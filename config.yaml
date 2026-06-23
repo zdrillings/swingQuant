@@ -1,171 +1,306 @@
 features:
   trend:
-    - name: "sma_50_dist"
-      type: "pct_diff"
-      params: { window: 50 }
-    - name: "sma_200_dist"
-      type: "pct_diff"
-      params: { window: 200 }
-    - name: "ma_alignment_50_200"
-      type: "moving_average_gap"
-      params: { short_window: 50, long_window: 200 }
-    - name: "ma_slope_50_20"
-      type: "moving_average_slope"
-      params: { window: 50, slope_window: 20 }
-    - name: "ma_slope_200_20"
-      type: "moving_average_slope"
-      params: { window: 200, slope_window: 20 }
-    - name: "atr_14"
-      type: "atr"
-      params: { window: 14 }
-    - name: "atr_pct_14"
-      type: "atr_pct"
-      params: { window: 14 }
+  - name: sma_50_dist
+    type: pct_diff
+    params:
+      window: 50
+  - name: sma_200_dist
+    type: pct_diff
+    params:
+      window: 200
+  - name: ma_alignment_50_200
+    type: moving_average_gap
+    params:
+      short_window: 50
+      long_window: 200
+  - name: ma_slope_50_20
+    type: moving_average_slope
+    params:
+      window: 50
+      slope_window: 20
+  - name: ma_slope_200_20
+    type: moving_average_slope
+    params:
+      window: 200
+      slope_window: 20
+  - name: atr_14
+    type: atr
+    params:
+      window: 14
+  - name: atr_pct_14
+    type: atr_pct
+    params:
+      window: 14
   momentum:
-    - name: "rsi_14"
-      type: "rsi"
-      params: { window: 14 }
-    - name: "rsi_2"
-      type: "rsi"
-      params: { window: 2 }
-    - name: "roc_63"
-      type: "roc"
-      params: { window: 63 }
-    - name: "relative_strength_index_vs_spy"
-      ticker: "SPY"
-      type: "relative_strength_percentile"
-      params: { window: 63 }
+  - name: rsi_14
+    type: rsi
+    params:
+      window: 14
+  - name: rsi_2
+    type: rsi
+    params:
+      window: 2
+  - name: roc_63
+    type: roc
+    params:
+      window: 63
+  - name: roc_126
+    type: roc
+    params:
+      window: 126
+  - name: relative_strength_index_vs_spy
+    ticker: SPY
+    type: relative_strength_percentile
+    params:
+      window: 63
+  - name: relative_strength_index_vs_qqq
+    ticker: QQQ
+    type: relative_strength_percentile
+    params:
+      window: 63
+  - name: relative_strength_index_vs_xlk
+    ticker: XLK
+    type: relative_strength_percentile
+    params:
+      window: 63
+  - name: relative_strength_index_vs_subindustry
+    type: relative_strength_percentile_contextual
+    params:
+      window: 63
+      benchmark_column: subindustry_benchmark
   volume:
-    - name: "vol_alpha"
-      type: "ratio_to_avg"
-      params: { window: 20 }
-    - name: "breakout_volume_ratio_50"
-      type: "ratio_to_avg"
-      params: { window: 50 }
-    - name: "base_volume_dryup_ratio_20"
-      type: "volume_dryup_ratio"
-      params: { recent_window: 10, prior_window: 10 }
+  - name: vol_alpha
+    type: ratio_to_avg
+    params:
+      window: 20
+  - name: breakout_volume_ratio_50
+    type: ratio_to_avg
+    params:
+      window: 50
+  - name: base_volume_dryup_ratio_20
+    type: volume_dryup_ratio
+    params:
+      recent_window: 10
+      prior_window: 10
   price_structure:
-    - name: "base_range_pct_20"
-      type: "base_range_pct"
-      params: { window: 20 }
-    - name: "base_atr_contraction_20"
-      type: "base_atr_contraction"
-      params: { atr_window: 14, recent_window: 10, prior_window: 10 }
-    - name: "breakout_above_20d_high"
-      type: "breakout_above_high"
-      params: { window: 20 }
-    - name: "distance_above_20d_high"
-      type: "distance_above_high"
-      params: { window: 20 }
+  - name: base_range_pct_20
+    type: base_range_pct
+    params:
+      window: 20
+  - name: base_atr_contraction_20
+    type: base_atr_contraction
+    params:
+      atr_window: 14
+      recent_window: 10
+      prior_window: 10
+  - name: breakout_above_20d_high
+    type: breakout_above_high
+    params:
+      window: 20
+  - name: distance_above_20d_high
+    type: distance_above_high
+    params:
+      window: 20
   gap_risk:
-    - name: "avg_abs_gap_pct_20"
-      type: "avg_abs_gap_pct"
-      params: { window: 20 }
-    - name: "max_gap_down_pct_60"
-      type: "max_gap_down_pct"
-      params: { window: 60 }
+  - name: avg_abs_gap_pct_20
+    type: avg_abs_gap_pct
+    params:
+      window: 20
+  - name: max_gap_down_pct_60
+    type: max_gap_down_pct
+    params:
+      window: 60
   commodities:
-    - name: "oil_corr_60"
-      ticker: "USO"
-      type: "correlation"
-      params: { window: 60 }
+  - name: oil_corr_60
+    ticker: USO
+    type: correlation
+    params:
+      window: 60
   event_risk:
-    - name: "days_to_next_earnings"
-      type: "days_to_next_event"
-    - name: "days_since_last_earnings"
-      type: "days_since_last_event"
-
+  - name: days_to_next_earnings
+    type: days_to_next_event
+  - name: days_since_last_earnings
+    type: days_since_last_event
+  - name: last_earnings_gap_pct
+    type: last_earnings_gap_pct
+  - name: last_earnings_volume_ratio_20
+    type: last_earnings_volume_ratio
+    params:
+      window: 20
+  - name: last_earnings_open_vs_20d_high
+    type: last_earnings_open_vs_high
+    params:
+      window: 20
+  - name: close_vs_last_earnings_close
+    type: close_vs_last_earnings_close
 signal_model:
   default_pass_score: 30
   hard_filter_indicators:
-    - "relative_strength_index_vs_spy_min"
-    - "sma_50_dist_min"
-    - "ma_alignment_50_200_min"
-    - "ma_slope_50_20_min"
-    - "ma_slope_200_20_min"
-    - "breakout_above_20d_high_min"
-    - "distance_above_20d_high_max"
-    - "days_to_next_earnings_min"
-    - "days_since_last_earnings_min"
+  - relative_strength_index_vs_spy_min
+  - relative_strength_index_vs_qqq_min
+  - relative_strength_index_vs_xlk_min
+  - relative_strength_index_vs_subindustry_min
+  - sma_50_dist_min
+  - ma_alignment_50_200_min
+  - ma_slope_50_20_min
+  - ma_slope_200_20_min
+  - breakout_above_20d_high_min
+  - distance_above_20d_high_max
+  - days_to_next_earnings_min
+  - days_since_last_earnings_min
+  - days_since_last_earnings_max
+  - last_earnings_gap_pct_min
+  - last_earnings_volume_ratio_20_min
+  - last_earnings_open_vs_20d_high_min
   score_spans:
     rsi_14_min: 20
     rsi_14_max: 30
     vol_alpha_min: 1.2
     breakout_volume_ratio_50_min: 1.5
+    sma_50_dist_max: 0.06
     sma_200_dist_min: 0.25
-    sma_200_dist_max: 0.20
-    roc_63_min: 0.20
-    base_range_pct_20_max: 0.10
-    base_atr_contraction_20_max: 0.40
-    base_volume_dryup_ratio_20_max: 0.40
+    sma_200_dist_max: 0.2
+    roc_63_min: 0.2
+    roc_126_min: 0.25
+    base_range_pct_20_max: 0.1
+    base_atr_contraction_20_max: 0.4
+    base_volume_dryup_ratio_20_max: 0.4
     avg_abs_gap_pct_20_max: 0.03
     max_gap_down_pct_60_max: 0.06
-    oil_corr_60_min: 0.60
+    oil_corr_60_min: 0.6
+    close_vs_last_earnings_close_min: 0.05
   score_weights:
     rsi_14_min: 0.6
     rsi_14_max: 1.0
     vol_alpha_min: 0.4
     breakout_volume_ratio_50_min: 1.2
+    sma_50_dist_max: 1.0
     sma_200_dist_min: 1.0
     sma_200_dist_max: 0.8
     roc_63_min: 1.0
+    roc_126_min: 0.8
     base_range_pct_20_max: 1.0
     base_atr_contraction_20_max: 0.8
     base_volume_dryup_ratio_20_max: 0.8
     avg_abs_gap_pct_20_max: 0.7
     max_gap_down_pct_60_max: 0.8
     oil_corr_60_min: 0.6
-
+    close_vs_last_earnings_close_min: 1.0
 backtest_costs:
   slippage_bps_per_side: 5
   commission_bps_per_side: 0
-
 scan_policy:
   max_candidates_total: 6
   max_candidates_per_slot: 3
   max_candidates_per_sector: 3
   pre_cap_candidates_per_slot: 5
+  max_snapshot_age_days: 4
   min_opportunity_score: 0.55
   ranking_weights:
     signal_score: 0.35
-    expected_alpha: 0.30
-    freshness: 0.20
+    expected_alpha: 0.3
+    freshness: 0.2
     breadth: 0.15
   overlap_penalties:
-    same_ticker: 1.00
-    same_slot: 0.08
-    same_sector: 0.00
-    same_regime: 0.00
+    same_ticker: 1.0
+    same_slot: 0.03
+    same_sector: 0.0
+    same_regime: 0.0
   learned_ranker:
-    weight: 1.00
+    weight: 0.0
     min_train_rows: 40
     min_train_dates: 8
+    validation_gate:
+      enabled: true
+      min_q1_q5_spread: 0.0
+      min_ic_mean: 0.0
+      min_ic_dates: 5
+      min_validation_blocks: 1
     slot_weights:
-      energy: 2.00
-      materials: 0.25
-
+      energy: 0.0
+      materials: 0.0
+      industrials: 0.0
+  recent_selection_memory:
+    enabled: false
+    recent_scan_dates: 20
+    drag_min_picks: 2
+    drag_penalty_scale: 1.0
+    drag_penalty_cap: 0.1
+    missed_winner_min_count: 2
+    missed_winner_boost_scale: 0.25
+    missed_winner_boost_cap: 0.1
+    missed_winner_min_gap: 0.05
+    swap_feedback_gap: 0.03
+    swap_max_opportunity_gap: 0.1
+  slot_selection_overlay:
+    enabled: true
+    slot_weights:
+      energy:
+        distance_above_20d_high: -2.0
+        roc_63: -1.5
+        sma_200_dist: -1.0
+        sector_pct_above_50: -1.5
+      materials:
+        sector_pct_above_50: 2.0
+        sector_pct_above_200: 2.0
+        distance_above_20d_high: -2.0
+        freshness_score: -1.5
+        setup_quality_score: -1.0
+        signal_score: -1.0
+      industrials:
+        roc_63: -1.5
+        setup_quality_score: -1.0
+        signal_score: -1.0
+  shortlist_model:
+    enabled: true
+    horizon_days: 20
+    top_n: 10
+    min_opportunity_score: 0.30
+    min_train_dates: 252
+    test_window_dates: 20
+    recent_dates: 60
+    refresh_if_stale: true
+    use_as_candidate_source: true
+    eligible_universe_mode: passed_only
+    production_model_name: xgboost_model
+    production_eligible_universe_mode: passed_or_trend
+    production_model_scope: sector_specific
+    production_xgboost_config: balanced_depth4
+monitor_policy:
+  rsi_2_exit:
+    threshold: 90
+    min_unrealized_pct: 0.05
+    min_days_in_trade: 0
+    slot_overrides:
+      energy:
+        min_unrealized_pct: 0.05
+      industrials:
+        min_unrealized_pct: 0.05
 promotion_policy:
-  min_profit_factor: 1.30
+  min_profit_factor: 1.3
   min_expectancy: 0.004
   min_trade_count: 100
-  max_mdd: 0.30
+  max_mdd: 0.3
   walk_forward:
     windows: 5
     min_window_count: 5
-    min_positive_window_ratio: 0.60
+    min_positive_window_ratio: 0.6
     min_positive_alpha_window_ratio: 0.55
-    min_median_expectancy: 0.000
-    max_worst_mdd: 0.30
+    min_median_expectancy: 0.0
+    max_worst_mdd: 0.3
     min_trade_count_min: 8
-
 sleeve_research:
   sectors:
-    - "Materials"
-    - "Energy"
-    - "Industrials"
-  top_n_values: [1, 2]
-  horizon_days_values: [5, 10, 15]
+  - Materials
+  - Energy
+  - Industrials
+  top_n_values:
+  - 1
+  - 2
+  horizon_days_values:
+  - 5
+  - 10
+  - 15
   support:
     min_trade_count_for_rank: 75
     target_trade_count_for_score: 100
@@ -177,9 +312,17 @@ sleeve_research:
     target_live_match_count_for_score: 2
     min_live_match_count_for_top_sections: 1
   breadth_thresholds:
-    sector_pct_above_50_min: [0.40, 0.50, 0.60]
-    sector_pct_above_200_min: [0.40, 0.50, 0.60]
-    sector_median_roc_63_min: [0.00, 0.05]
+    sector_pct_above_50_min:
+    - 0.4
+    - 0.5
+    - 0.6
+    sector_pct_above_200_min:
+    - 0.4
+    - 0.5
+    - 0.6
+    sector_median_roc_63_min:
+    - 0.0
+    - 0.05
   base_filters:
     relative_strength_index_vs_spy_min: 75.0
     roc_63_min: 0.05
@@ -187,15 +330,14 @@ sleeve_research:
     rsi_14_min: 40.0
     rsi_14_max: 65.0
   rank_weights:
-    relative_strength_index_vs_spy: 0.40
+    relative_strength_index_vs_spy: 0.4
     roc_63: 0.25
-    rsi_14_pullback: 0.20
+    rsi_14_pullback: 0.2
     vol_alpha: 0.15
-
 sweep_modes:
   low_drawdown_technology:
     sector_whitelist:
-      - "Information Technology"
+    - Information Technology
     grid_overrides:
       rsi_14_max:
         min: 30
@@ -206,11 +348,11 @@ sweep_modes:
         max: 1.2
         step: 0.2
       sma_200_dist_min:
-        min: 0.10
-        max: 0.20
+        min: 0.1
+        max: 0.2
         step: 0.02
       roc_63_min:
-        min: 0.10
+        min: 0.1
         max: 0.15
         step: 0.05
       relative_strength_index_vs_spy_min:
@@ -231,7 +373,7 @@ sweep_modes:
         step: 0.5
   promotable_live_technology:
     sector_whitelist:
-      - "Information Technology"
+    - Information Technology
     grid_overrides:
       rsi_14_max:
         min: 40
@@ -243,10 +385,10 @@ sweep_modes:
         step: 0.2
       sma_200_dist_min:
         min: 0.18
-        max: 0.20
+        max: 0.2
         step: 0.02
       roc_63_min:
-        min: 0.10
+        min: 0.1
         max: 0.15
         step: 0.05
       relative_strength_index_vs_spy_min:
@@ -267,7 +409,7 @@ sweep_modes:
         step: 0.5
   promotable_live_technology_v2:
     sector_whitelist:
-      - "Information Technology"
+    - Information Technology
     grid_overrides:
       rsi_14_max:
         min: 40
@@ -279,11 +421,11 @@ sweep_modes:
         step: 0.2
       sma_200_dist_min:
         min: 0.18
-        max: 0.20
+        max: 0.2
         step: 0.02
       roc_63_min:
-        min: 0.10
-        max: 0.10
+        min: 0.1
+        max: 0.1
         step: 0.05
       relative_strength_index_vs_spy_min:
         min: 85
@@ -303,7 +445,7 @@ sweep_modes:
         step: 0.5
   promotable_live_technology_v3:
     sector_whitelist:
-      - "Information Technology"
+    - Information Technology
     grid_overrides:
       rsi_14_max:
         min: 40
@@ -315,11 +457,11 @@ sweep_modes:
         step: 0.2
       sma_200_dist_min:
         min: 0.18
-        max: 0.20
+        max: 0.2
         step: 0.02
       roc_63_min:
-        min: 0.10
-        max: 0.10
+        min: 0.1
+        max: 0.1
         step: 0.05
       relative_strength_index_vs_spy_min:
         min: 85
@@ -339,7 +481,7 @@ sweep_modes:
         step: 0.5
   promotable_live_technology_v4:
     sector_whitelist:
-      - "Information Technology"
+    - Information Technology
     grid_overrides:
       rsi_14_max:
         min: 40
@@ -351,11 +493,11 @@ sweep_modes:
         step: 0.2
       sma_200_dist_min:
         min: 0.18
-        max: 0.20
+        max: 0.2
         step: 0.02
       roc_63_min:
-        min: 0.10
-        max: 0.10
+        min: 0.1
+        max: 0.1
         step: 0.05
       relative_strength_index_vs_spy_min:
         min: 85
@@ -375,7 +517,7 @@ sweep_modes:
         step: 0.5
   promotable_live_technology_v5:
     sector_whitelist:
-      - "Information Technology"
+    - Information Technology
     grid_overrides:
       rsi_14_max:
         min: 40
@@ -387,11 +529,11 @@ sweep_modes:
         step: 0.2
       sma_200_dist_min:
         min: 0.18
-        max: 0.20
+        max: 0.2
         step: 0.02
       roc_63_min:
-        min: 0.10
-        max: 0.10
+        min: 0.1
+        max: 0.1
         step: 0.05
       relative_strength_index_vs_spy_min:
         min: 85
@@ -411,7 +553,7 @@ sweep_modes:
         step: 0.5
   high_performance_energy:
     sector_whitelist:
-      - "Energy"
+    - Energy
     grid_overrides:
       rsi_14_max:
         min: 40
@@ -422,21 +564,21 @@ sweep_modes:
         max: 1.4
         step: 0.2
       sma_200_dist_min:
-        min: 0.10
+        min: 0.1
         max: 0.22
         step: 0.04
       roc_63_min:
         min: 0.05
-        max: 0.20
+        max: 0.2
         step: 0.05
       relative_strength_index_vs_spy_min:
         min: 75
         max: 90
         step: 5
       oil_corr_60_min:
-        min: 0.10
-        max: 0.70
-        step: 0.30
+        min: 0.1
+        max: 0.7
+        step: 0.3
       signal_score_min:
         min: 30
         max: 36
@@ -451,7 +593,7 @@ sweep_modes:
         step: 0.5
   high_performance_energy_refined:
     sector_whitelist:
-      - "Energy"
+    - Energy
     grid_overrides:
       rsi_14_max:
         min: 55
@@ -462,7 +604,7 @@ sweep_modes:
         max: 1.2
         step: 0.2
       sma_200_dist_min:
-        min: 0.10
+        min: 0.1
         max: 0.14
         step: 0.04
       roc_63_min:
@@ -474,9 +616,9 @@ sweep_modes:
         max: 80
         step: 5
       oil_corr_60_min:
-        min: 0.10
-        max: 0.40
-        step: 0.30
+        min: 0.1
+        max: 0.4
+        step: 0.3
       signal_score_min:
         min: 30
         max: 32
@@ -491,7 +633,7 @@ sweep_modes:
         step: 0.5
   high_performance_energy_stability_refined:
     sector_whitelist:
-      - "Energy"
+    - Energy
     grid_overrides:
       rsi_14_max:
         min: 45
@@ -507,16 +649,16 @@ sweep_modes:
         step: 0.04
       roc_63_min:
         min: 0.05
-        max: 0.10
+        max: 0.1
         step: 0.05
       relative_strength_index_vs_spy_min:
         min: 75
         max: 80
         step: 5
       oil_corr_60_min:
-        min: 0.30
-        max: 0.50
-        step: 0.10
+        min: 0.3
+        max: 0.5
+        step: 0.1
       signal_score_min:
         min: 32
         max: 34
@@ -531,7 +673,7 @@ sweep_modes:
         step: 0.5
   high_performance_energy_earnings_refined:
     sector_whitelist:
-      - "Energy"
+    - Energy
     grid_overrides:
       rsi_14_max:
         min: 55
@@ -542,7 +684,7 @@ sweep_modes:
         max: 1.2
         step: 0.2
       sma_200_dist_min:
-        min: 0.10
+        min: 0.1
         max: 0.14
         step: 0.04
       roc_63_min:
@@ -554,9 +696,9 @@ sweep_modes:
         max: 80
         step: 5
       oil_corr_60_min:
-        min: 0.10
-        max: 0.40
-        step: 0.30
+        min: 0.1
+        max: 0.4
+        step: 0.3
       days_to_next_earnings_min:
         min: 0
         max: 6
@@ -583,7 +725,7 @@ sweep_modes:
         step: 1
   high_performance_materials:
     sector_whitelist:
-      - "Materials"
+    - Materials
     grid_overrides:
       rsi_14_max:
         min: 40
@@ -594,12 +736,12 @@ sweep_modes:
         max: 1.4
         step: 0.2
       sma_200_dist_min:
-        min: 0.10
+        min: 0.1
         max: 0.22
         step: 0.04
       roc_63_min:
         min: 0.05
-        max: 0.20
+        max: 0.2
         step: 0.05
       relative_strength_index_vs_spy_min:
         min: 75
@@ -619,7 +761,7 @@ sweep_modes:
         step: 0.5
   high_performance_materials_refined:
     sector_whitelist:
-      - "Materials"
+    - Materials
     grid_overrides:
       rsi_14_max:
         min: 55
@@ -655,7 +797,7 @@ sweep_modes:
         step: 0.5
   high_performance_materials_earnings_refined:
     sector_whitelist:
-      - "Materials"
+    - Materials
     grid_overrides:
       rsi_14_max:
         min: 55
@@ -703,7 +845,7 @@ sweep_modes:
         step: 1
   high_performance_industrials:
     sector_whitelist:
-      - "Industrials"
+    - Industrials
     grid_overrides:
       rsi_14_max:
         min: 40
@@ -714,12 +856,12 @@ sweep_modes:
         max: 1.4
         step: 0.2
       sma_200_dist_min:
-        min: 0.10
+        min: 0.1
         max: 0.22
         step: 0.04
       roc_63_min:
         min: 0.05
-        max: 0.20
+        max: 0.2
         step: 0.05
       relative_strength_index_vs_spy_min:
         min: 75
@@ -739,7 +881,7 @@ sweep_modes:
         step: 0.5
   high_performance_industrials_refined:
     sector_whitelist:
-      - "Industrials"
+    - Industrials
     grid_overrides:
       rsi_14_max:
         min: 50
@@ -750,12 +892,12 @@ sweep_modes:
         max: 1.2
         step: 0.2
       sma_200_dist_min:
-        min: 0.10
+        min: 0.1
         max: 0.14
         step: 0.04
       roc_63_min:
         min: 0.15
-        max: 0.20
+        max: 0.2
         step: 0.05
       relative_strength_index_vs_spy_min:
         min: 85
@@ -775,7 +917,7 @@ sweep_modes:
         step: 0.5
   high_performance_industrials_earnings_refined:
     sector_whitelist:
-      - "Industrials"
+    - Industrials
     grid_overrides:
       rsi_14_max:
         min: 50
@@ -786,12 +928,12 @@ sweep_modes:
         max: 1.2
         step: 0.2
       sma_200_dist_min:
-        min: 0.10
+        min: 0.1
         max: 0.14
         step: 0.04
       roc_63_min:
         min: 0.15
-        max: 0.20
+        max: 0.2
         step: 0.05
       relative_strength_index_vs_spy_min:
         min: 85
@@ -823,7 +965,7 @@ sweep_modes:
         step: 1
   high_performance_financials:
     sector_whitelist:
-      - "Financials"
+    - Financials
     grid_overrides:
       rsi_14_max:
         min: 40
@@ -834,12 +976,12 @@ sweep_modes:
         max: 1.4
         step: 0.2
       sma_200_dist_min:
-        min: 0.10
+        min: 0.1
         max: 0.22
         step: 0.04
       roc_63_min:
         min: 0.05
-        max: 0.20
+        max: 0.2
         step: 0.05
       relative_strength_index_vs_spy_min:
         min: 70
@@ -859,10 +1001,10 @@ sweep_modes:
         step: 0.5
   high_performance_real_economy:
     sector_whitelist:
-      - "Energy"
-      - "Materials"
-      - "Industrials"
-      - "Financials"
+    - Energy
+    - Materials
+    - Industrials
+    - Financials
     grid_overrides:
       rsi_14_max:
         min: 40
@@ -873,12 +1015,12 @@ sweep_modes:
         max: 1.4
         step: 0.2
       sma_200_dist_min:
-        min: 0.10
+        min: 0.1
         max: 0.22
         step: 0.04
       roc_63_min:
         min: 0.05
-        max: 0.20
+        max: 0.2
         step: 0.05
       relative_strength_index_vs_spy_min:
         min: 75
@@ -898,9 +1040,9 @@ sweep_modes:
         step: 0.5
   production_sleeves_earnings_refined:
     sector_whitelist:
-      - "Energy"
-      - "Materials"
-      - "Industrials"
+    - Energy
+    - Materials
+    - Industrials
     grid_overrides:
       rsi_14_max:
         min: 55
@@ -911,7 +1053,7 @@ sweep_modes:
         max: 1.2
         step: 0.2
       sma_200_dist_min:
-        min: 0.10
+        min: 0.1
         max: 0.18
         step: 0.04
       roc_63_min:
@@ -948,9 +1090,9 @@ sweep_modes:
         step: 1
   production_sleeves_gap_refined:
     sector_whitelist:
-      - "Energy"
-      - "Materials"
-      - "Industrials"
+    - Energy
+    - Materials
+    - Industrials
     grid_overrides:
       rsi_14_max:
         min: 55
@@ -961,7 +1103,7 @@ sweep_modes:
         max: 1.2
         step: 0.2
       sma_200_dist_min:
-        min: 0.10
+        min: 0.1
         max: 0.18
         step: 0.04
       roc_63_min:
@@ -994,7 +1136,7 @@ sweep_modes:
         step: 0.5
   breakout_v1_information_technology:
     sector_whitelist:
-      - "Information Technology"
+    - Information Technology
     replace_base_grid: true
     grid_overrides:
       sma_50_dist_min:
@@ -1026,16 +1168,16 @@ sweep_modes:
         max: 90
         step: 5
       roc_63_min:
-        min: 0.10
-        max: 0.10
+        min: 0.1
+        max: 0.1
         step: 0.05
       rsi_14_min:
         min: 50
         max: 50
         step: 5
       sma_200_dist_max:
-        min: 0.30
-        max: 0.30
+        min: 0.3
+        max: 0.3
         step: 0.05
       base_range_pct_20_max:
         min: 0.08
@@ -1044,11 +1186,11 @@ sweep_modes:
       base_atr_contraction_20_max:
         min: 0.95
         max: 0.95
-        step: 0.10
+        step: 0.1
       base_volume_dryup_ratio_20_max:
         min: 0.95
         max: 0.95
-        step: 0.10
+        step: 0.1
       breakout_volume_ratio_50_min:
         min: 2.0
         max: 2.5
@@ -1067,7 +1209,7 @@ sweep_modes:
         step: 1.0
   breakout_v1_information_technology_v2:
     sector_whitelist:
-      - "Information Technology"
+    - Information Technology
     replace_base_grid: true
     grid_overrides:
       sma_50_dist_min:
@@ -1099,16 +1241,16 @@ sweep_modes:
         max: 90
         step: 5
       roc_63_min:
-        min: 0.10
-        max: 0.10
+        min: 0.1
+        max: 0.1
         step: 0.05
       rsi_14_min:
         min: 50
         max: 50
         step: 5
       sma_200_dist_max:
-        min: 0.30
-        max: 0.30
+        min: 0.3
+        max: 0.3
         step: 0.05
       base_range_pct_20_max:
         min: 0.08
@@ -1117,11 +1259,11 @@ sweep_modes:
       base_atr_contraction_20_max:
         min: 0.95
         max: 0.95
-        step: 0.10
+        step: 0.1
       base_volume_dryup_ratio_20_max:
         min: 0.95
         max: 0.95
-        step: 0.10
+        step: 0.1
       breakout_volume_ratio_50_min:
         min: 2.0
         max: 2.5
@@ -1140,7 +1282,7 @@ sweep_modes:
         step: 1.0
   breakout_v1_information_technology_v3:
     sector_whitelist:
-      - "Information Technology"
+    - Information Technology
     replace_base_grid: true
     grid_overrides:
       sma_50_dist_min:
@@ -1172,16 +1314,16 @@ sweep_modes:
         max: 90
         step: 5
       roc_63_min:
-        min: 0.10
-        max: 0.10
+        min: 0.1
+        max: 0.1
         step: 0.05
       rsi_14_min:
         min: 50
         max: 50
         step: 5
       sma_200_dist_max:
-        min: 0.30
-        max: 0.30
+        min: 0.3
+        max: 0.3
         step: 0.05
       base_range_pct_20_max:
         min: 0.08
@@ -1190,11 +1332,11 @@ sweep_modes:
       base_atr_contraction_20_max:
         min: 0.95
         max: 0.95
-        step: 0.10
+        step: 0.1
       base_volume_dryup_ratio_20_max:
         min: 0.95
         max: 0.95
-        step: 0.10
+        step: 0.1
       breakout_volume_ratio_50_min:
         min: 2.0
         max: 2.5
@@ -1213,7 +1355,7 @@ sweep_modes:
         step: 1.0
   breakout_v1_information_technology_v4:
     sector_whitelist:
-      - "Information Technology"
+    - Information Technology
     replace_base_grid: true
     grid_overrides:
       sma_50_dist_min:
@@ -1245,16 +1387,16 @@ sweep_modes:
         max: 85
         step: 5
       roc_63_min:
-        min: 0.10
-        max: 0.10
+        min: 0.1
+        max: 0.1
         step: 0.05
       rsi_14_min:
         min: 50
         max: 50
         step: 5
       sma_200_dist_max:
-        min: 0.30
-        max: 0.30
+        min: 0.3
+        max: 0.3
         step: 0.05
       base_range_pct_20_max:
         min: 0.08
@@ -1263,11 +1405,11 @@ sweep_modes:
       base_atr_contraction_20_max:
         min: 0.95
         max: 0.95
-        step: 0.10
+        step: 0.1
       base_volume_dryup_ratio_20_max:
         min: 0.95
         max: 0.95
-        step: 0.10
+        step: 0.1
       breakout_volume_ratio_50_min:
         min: 2.0
         max: 2.5
@@ -1284,9 +1426,1624 @@ sweep_modes:
         min: 3.0
         max: 3.0
         step: 1.0
+  breakout_v1_information_technology_continuation:
+    sector_whitelist:
+    - Information Technology
+    replace_base_grid: true
+    grid_overrides:
+      sma_50_dist_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_alignment_50_200_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_50_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_200_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      breakout_above_20d_high_min:
+        min: 1.0
+        max: 1.0
+        step: 1.0
+      distance_above_20d_high_max:
+        min: 0.01
+        max: 0.02
+        step: 0.01
+      relative_strength_index_vs_spy_min:
+        min: 80
+        max: 85
+        step: 5
+      relative_strength_index_vs_qqq_min:
+        min: 80
+        max: 85
+        step: 5
+      relative_strength_index_vs_xlk_min:
+        min: 80
+        max: 85
+        step: 5
+      roc_63_min:
+        min: 0.1
+        max: 0.15
+        step: 0.05
+      roc_126_min:
+        min: 0.2
+        max: 0.3
+        step: 0.1
+      rsi_14_min:
+        min: 50
+        max: 55
+        step: 5
+      sma_200_dist_max:
+        min: 0.25
+        max: 0.3
+        step: 0.05
+      base_range_pct_20_max:
+        min: 0.08
+        max: 0.1
+        step: 0.02
+      base_atr_contraction_20_max:
+        min: 0.85
+        max: 0.95
+        step: 0.1
+      base_volume_dryup_ratio_20_max:
+        min: 0.85
+        max: 0.95
+        step: 0.1
+      breakout_volume_ratio_50_min:
+        min: 1.8
+        max: 2.2
+        step: 0.4
+      signal_score_min:
+        min: 34
+        max: 36
+        step: 2
+      trailing_stop_atr_mult:
+        min: 1.5
+        max: 2.0
+        step: 0.5
+      profit_target_atr_mult:
+        min: 3.0
+        max: 3.5
+        step: 0.5
+  breakout_v1_information_technology_continuation_v2:
+    sector_whitelist:
+    - Information Technology
+    replace_base_grid: true
+    grid_overrides:
+      sma_50_dist_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_alignment_50_200_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_50_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_200_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      breakout_above_20d_high_min:
+        min: 1.0
+        max: 1.0
+        step: 1.0
+      distance_above_20d_high_max:
+        min: 0.01
+        max: 0.01
+        step: 0.01
+      relative_strength_index_vs_spy_min:
+        min: 80
+        max: 85
+        step: 5
+      relative_strength_index_vs_qqq_min:
+        min: 80
+        max: 85
+        step: 5
+      relative_strength_index_vs_xlk_min:
+        min: 85
+        max: 85
+        step: 5
+      roc_63_min:
+        min: 0.1
+        max: 0.15
+        step: 0.05
+      roc_126_min:
+        min: 0.2
+        max: 0.2
+        step: 0.1
+      rsi_14_min:
+        min: 50
+        max: 50
+        step: 5
+      sma_200_dist_max:
+        min: 0.25
+        max: 0.25
+        step: 0.05
+      base_range_pct_20_max:
+        min: 0.08
+        max: 0.08
+        step: 0.02
+      base_atr_contraction_20_max:
+        min: 0.85
+        max: 0.95
+        step: 0.1
+      base_volume_dryup_ratio_20_max:
+        min: 0.85
+        max: 0.85
+        step: 0.1
+      breakout_volume_ratio_50_min:
+        min: 1.6
+        max: 2.0
+        step: 0.2
+      signal_score_min:
+        min: 34
+        max: 36
+        step: 2
+      trailing_stop_atr_mult:
+        min: 1.5
+        max: 2.0
+        step: 0.5
+      profit_target_atr_mult:
+        min: 2.0
+        max: 3.0
+        step: 0.5
+      time_limit_days:
+        min: 5
+        max: 10
+        step: 5
+  tech_post_earnings_drift_v1:
+    sector_whitelist:
+    - Information Technology
+    replace_base_grid: true
+    grid_overrides:
+      relative_strength_index_vs_spy_min:
+        min: 80
+        max: 80
+        step: 5
+      relative_strength_index_vs_qqq_min:
+        min: 80
+        max: 80
+        step: 5
+      relative_strength_index_vs_xlk_min:
+        min: 80
+        max: 80
+        step: 5
+      days_since_last_earnings_max:
+        min: 3
+        max: 5
+        step: 2
+      days_to_next_earnings_min:
+        min: 5
+        max: 5
+        step: 1
+      last_earnings_gap_pct_min:
+        min: 0.03
+        max: 0.05
+        step: 0.02
+      last_earnings_volume_ratio_20_min:
+        min: 1.5
+        max: 2.0
+        step: 0.5
+      last_earnings_open_vs_20d_high_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      roc_63_min:
+        min: 0.05
+        max: 0.1
+        step: 0.05
+      roc_126_min:
+        min: 0.1
+        max: 0.1
+        step: 0.1
+      close_vs_last_earnings_close_min:
+        min: 0.0
+        max: 0.02
+        step: 0.02
+      vol_alpha_min:
+        min: 1.0
+        max: 1.0
+        step: 0.2
+      signal_score_min:
+        min: 32
+        max: 34
+        step: 2
+      trailing_stop_atr_mult:
+        min: 1.5
+        max: 2.0
+        step: 0.5
+      profit_target_atr_mult:
+        min: 2.0
+        max: 2.5
+        step: 0.5
+      time_limit_days:
+        min: 5
+        max: 10
+        step: 5
+  tech_post_earnings_drift_v2:
+    sector_whitelist:
+    - Information Technology
+    replace_base_grid: true
+    grid_overrides:
+      relative_strength_index_vs_spy_min:
+        min: 80
+        max: 80
+        step: 5
+      relative_strength_index_vs_qqq_min:
+        min: 80
+        max: 80
+        step: 5
+      relative_strength_index_vs_xlk_min:
+        min: 80
+        max: 80
+        step: 5
+      days_since_last_earnings_max:
+        min: 3
+        max: 7
+        step: 2
+      days_to_next_earnings_min:
+        min: 5
+        max: 5
+        step: 1
+      last_earnings_gap_pct_min:
+        min: 0.02
+        max: 0.05
+        step: 0.01
+      last_earnings_volume_ratio_20_min:
+        min: 1.2
+        max: 1.5
+        step: 0.3
+      last_earnings_open_vs_20d_high_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      roc_63_min:
+        min: 0.05
+        max: 0.1
+        step: 0.05
+      roc_126_min:
+        min: 0.1
+        max: 0.1
+        step: 0.1
+      close_vs_last_earnings_close_min:
+        min: 0.0
+        max: 0.02
+        step: 0.02
+      vol_alpha_min:
+        min: 1.0
+        max: 1.0
+        step: 0.2
+      signal_score_min:
+        min: 32
+        max: 34
+        step: 2
+      trailing_stop_atr_mult:
+        min: 1.5
+        max: 2.0
+        step: 0.5
+      profit_target_atr_mult:
+        min: 2.0
+        max: 2.5
+        step: 0.5
+      time_limit_days:
+        min: 5
+        max: 5
+        step: 5
+  tech_post_earnings_followthrough_v1:
+    sector_whitelist:
+    - Information Technology
+    replace_base_grid: true
+    grid_overrides:
+      relative_strength_index_vs_spy_min:
+        min: 75
+        max: 75
+        step: 5
+      relative_strength_index_vs_qqq_min:
+        min: 75
+        max: 75
+        step: 5
+      relative_strength_index_vs_subindustry_min:
+        min: 75
+        max: 80
+        step: 5
+      days_since_last_earnings_max:
+        min: 3
+        max: 7
+        step: 2
+      days_to_next_earnings_min:
+        min: 7
+        max: 7
+        step: 1
+      last_earnings_gap_pct_min:
+        min: 0.0
+        max: 0.01
+        step: 0.01
+      last_earnings_volume_ratio_20_min:
+        min: 1.0
+        max: 1.2
+        step: 0.2
+      last_earnings_open_vs_20d_high_min:
+        min: 0.0
+        max: 0.02
+        step: 0.02
+      roc_63_min:
+        min: 0.05
+        max: 0.05
+        step: 0.05
+      roc_126_min:
+        min: 0.1
+        max: 0.2
+        step: 0.1
+      close_vs_last_earnings_close_min:
+        min: 0.02
+        max: 0.04
+        step: 0.02
+      signal_score_min:
+        min: 30
+        max: 32
+        step: 2
+      trailing_stop_atr_mult:
+        min: 1.5
+        max: 1.5
+        step: 0.5
+      profit_target_atr_mult:
+        min: 1.5
+        max: 2.0
+        step: 0.5
+      time_limit_days:
+        min: 3
+        max: 5
+        step: 2
+  tech_post_earnings_followthrough_v2:
+    sector_whitelist:
+    - Information Technology
+    replace_base_grid: true
+    grid_overrides:
+      relative_strength_index_vs_spy_min:
+        min: 75
+        max: 75
+        step: 5
+      relative_strength_index_vs_qqq_min:
+        min: 75
+        max: 80
+        step: 5
+      days_since_last_earnings_max:
+        min: 5
+        max: 10
+        step: 5
+      days_to_next_earnings_min:
+        min: 3
+        max: 5
+        step: 2
+      close_vs_last_earnings_close_min:
+        min: 0.0
+        max: 0.04
+        step: 0.02
+      roc_63_min:
+        min: 0.05
+        max: 0.1
+        step: 0.05
+      roc_126_min:
+        min: 0.1
+        max: 0.2
+        step: 0.1
+      vol_alpha_min:
+        min: 0.8
+        max: 1.0
+        step: 0.2
+      signal_score_min:
+        min: 26
+        max: 30
+        step: 2
+      trailing_stop_atr_mult:
+        min: 1.5
+        max: 2.0
+        step: 0.5
+      profit_target_atr_mult:
+        min: 1.5
+        max: 2.5
+        step: 0.5
+      time_limit_days:
+        min: 3
+        max: 5
+        step: 2
+  tech_post_earnings_followthrough_v3:
+    sector_whitelist:
+    - Information Technology
+    replace_base_grid: true
+    grid_overrides:
+      relative_strength_index_vs_spy_min:
+        min: 75
+        max: 75
+        step: 5
+      relative_strength_index_vs_qqq_min:
+        min: 80
+        max: 80
+        step: 5
+      days_since_last_earnings_max:
+        min: 3
+        max: 5
+        step: 2
+      days_to_next_earnings_min:
+        min: 3
+        max: 5
+        step: 2
+      close_vs_last_earnings_close_min:
+        min: 0.0
+        max: 0.02
+        step: 0.02
+      roc_63_min:
+        min: 0.05
+        max: 0.05
+        step: 0.05
+      roc_126_min:
+        min: 0.1
+        max: 0.2
+        step: 0.1
+      vol_alpha_min:
+        min: 0.8
+        max: 0.8
+        step: 0.2
+      signal_score_min:
+        min: 28
+        max: 30
+        step: 2
+      trailing_stop_atr_mult:
+        min: 1.5
+        max: 2.0
+        step: 0.5
+      profit_target_atr_mult:
+        min: 2.0
+        max: 2.0
+        step: 0.5
+      time_limit_days:
+        min: 5
+        max: 5
+        step: 5
+  tech_infrastructure_post_earnings_v1:
+    sector_whitelist:
+    - Information Technology
+    sub_industry_whitelist:
+    - Communications Equipment
+    - Semiconductor Materials & Equipment
+    - Technology Hardware, Storage & Peripherals
+    - Internet Services & Infrastructure
+    replace_base_grid: true
+    grid_overrides:
+      relative_strength_index_vs_spy_min:
+        min: 75
+        max: 75
+        step: 5
+      relative_strength_index_vs_qqq_min:
+        min: 80
+        max: 80
+        step: 5
+      days_since_last_earnings_max:
+        min: 3
+        max: 5
+        step: 2
+      days_to_next_earnings_min:
+        min: 3
+        max: 5
+        step: 2
+      close_vs_last_earnings_close_min:
+        min: 0.0
+        max: 0.02
+        step: 0.02
+      roc_63_min:
+        min: 0.05
+        max: 0.05
+        step: 0.05
+      roc_126_min:
+        min: 0.1
+        max: 0.2
+        step: 0.1
+      vol_alpha_min:
+        min: 0.8
+        max: 0.8
+        step: 0.2
+      signal_score_min:
+        min: 28
+        max: 30
+        step: 2
+      trailing_stop_atr_mult:
+        min: 2.0
+        max: 2.0
+        step: 0.5
+      profit_target_atr_mult:
+        min: 2.0
+        max: 2.0
+        step: 0.5
+      time_limit_days:
+        min: 5
+        max: 5
+        step: 5
+  tech_comms_infra_post_earnings_v1:
+    sector_whitelist:
+    - Information Technology
+    sub_industry_whitelist:
+    - Communications Equipment
+    - Internet Services & Infrastructure
+    replace_base_grid: true
+    grid_overrides:
+      relative_strength_index_vs_spy_min:
+        min: 75
+        max: 75
+        step: 5
+      relative_strength_index_vs_qqq_min:
+        min: 80
+        max: 80
+        step: 5
+      days_since_last_earnings_max:
+        min: 5
+        max: 5
+        step: 2
+      days_to_next_earnings_min:
+        min: 3
+        max: 5
+        step: 2
+      close_vs_last_earnings_close_min:
+        min: 0.0
+        max: 0.02
+        step: 0.02
+      roc_63_min:
+        min: 0.05
+        max: 0.05
+        step: 0.05
+      roc_126_min:
+        min: 0.1
+        max: 0.2
+        step: 0.1
+      vol_alpha_min:
+        min: 0.8
+        max: 0.8
+        step: 0.2
+      signal_score_min:
+        min: 28
+        max: 30
+        step: 2
+      trailing_stop_atr_mult:
+        min: 2.0
+        max: 2.0
+        step: 0.5
+      profit_target_atr_mult:
+        min: 2.0
+        max: 2.0
+        step: 0.5
+      time_limit_days:
+        min: 5
+        max: 5
+        step: 5
+  tech_comms_infra_post_earnings_v2:
+    sector_whitelist:
+    - Information Technology
+    sub_industry_whitelist:
+    - Communications Equipment
+    - Internet Services & Infrastructure
+    replace_base_grid: true
+    grid_overrides:
+      relative_strength_index_vs_spy_min:
+        min: 75
+        max: 75
+        step: 5
+      relative_strength_index_vs_qqq_min:
+        min: 80
+        max: 80
+        step: 5
+      days_since_last_earnings_max:
+        min: 5
+        max: 5
+        step: 2
+      days_to_next_earnings_min:
+        min: 3
+        max: 3
+        step: 2
+      close_vs_last_earnings_close_min:
+        min: 0.02
+        max: 0.02
+        step: 0.02
+      roc_63_min:
+        min: 0.05
+        max: 0.05
+        step: 0.05
+      roc_126_min:
+        min: 0.1
+        max: 0.1
+        step: 0.1
+      vol_alpha_min:
+        min: 0.8
+        max: 0.8
+        step: 0.2
+      signal_score_min:
+        min: 28
+        max: 30
+        step: 2
+      trailing_stop_atr_mult:
+        min: 2.0
+        max: 2.0
+        step: 0.5
+      profit_target_atr_mult:
+        min: 2.0
+        max: 2.0
+        step: 0.5
+      time_limit_days:
+        min: 5
+        max: 7
+        step: 2
+  tech_comms_infra_breakout_v1:
+    sector_whitelist:
+    - Information Technology
+    sub_industry_whitelist:
+    - Communications Equipment
+    - Internet Services & Infrastructure
+    replace_base_grid: true
+    grid_overrides:
+      sma_50_dist_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_alignment_50_200_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_50_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_200_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      breakout_above_20d_high_min:
+        min: 1.0
+        max: 1.0
+        step: 1.0
+      distance_above_20d_high_max:
+        min: 0.01
+        max: 0.02
+        step: 0.01
+      relative_strength_index_vs_spy_min:
+        min: 75
+        max: 80
+        step: 5
+      relative_strength_index_vs_qqq_min:
+        min: 75
+        max: 80
+        step: 5
+      roc_63_min:
+        min: 0.05
+        max: 0.1
+        step: 0.05
+      roc_126_min:
+        min: 0.1
+        max: 0.2
+        step: 0.1
+      sma_200_dist_max:
+        min: 0.25
+        max: 0.3
+        step: 0.05
+      base_range_pct_20_max:
+        min: 0.08
+        max: 0.12
+        step: 0.04
+      base_atr_contraction_20_max:
+        min: 0.85
+        max: 0.95
+        step: 0.1
+      base_volume_dryup_ratio_20_max:
+        min: 0.85
+        max: 0.95
+        step: 0.1
+      breakout_volume_ratio_50_min:
+        min: 1.6
+        max: 2.0
+        step: 0.4
+      signal_score_min:
+        min: 32
+        max: 34
+        step: 2
+      trailing_stop_atr_mult:
+        min: 1.5
+        max: 2.0
+        step: 0.5
+      profit_target_atr_mult:
+        min: 2.5
+        max: 3.0
+        step: 0.5
+      time_limit_days:
+        min: 10
+        max: 10
+        step: 5
+  tech_hardware_equipment_post_earnings_v1:
+    sector_whitelist:
+    - Information Technology
+    sub_industry_whitelist:
+    - Semiconductor Materials & Equipment
+    - Technology Hardware, Storage & Peripherals
+    replace_base_grid: true
+    grid_overrides:
+      relative_strength_index_vs_spy_min:
+        min: 75
+        max: 75
+        step: 5
+      relative_strength_index_vs_qqq_min:
+        min: 80
+        max: 80
+        step: 5
+      days_since_last_earnings_max:
+        min: 5
+        max: 5
+        step: 2
+      days_to_next_earnings_min:
+        min: 3
+        max: 5
+        step: 2
+      close_vs_last_earnings_close_min:
+        min: 0.0
+        max: 0.02
+        step: 0.02
+      roc_63_min:
+        min: 0.05
+        max: 0.05
+        step: 0.05
+      roc_126_min:
+        min: 0.1
+        max: 0.2
+        step: 0.1
+      vol_alpha_min:
+        min: 0.8
+        max: 0.8
+        step: 0.2
+      signal_score_min:
+        min: 28
+        max: 30
+        step: 2
+      trailing_stop_atr_mult:
+        min: 2.0
+        max: 2.0
+        step: 0.5
+      profit_target_atr_mult:
+        min: 2.0
+        max: 2.0
+        step: 0.5
+      time_limit_days:
+        min: 5
+        max: 5
+        step: 5
+  tech_leader_pullback_v1:
+    sector_whitelist:
+    - Information Technology
+    replace_base_grid: true
+    grid_overrides:
+      sma_50_dist_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      sma_50_dist_max:
+        min: 0.02
+        max: 0.06
+        step: 0.02
+      sma_200_dist_min:
+        min: 0.1
+        max: 0.18
+        step: 0.08
+      ma_alignment_50_200_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_50_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_200_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      relative_strength_index_vs_spy_min:
+        min: 85
+        max: 85
+        step: 5
+      relative_strength_index_vs_qqq_min:
+        min: 85
+        max: 85
+        step: 5
+      relative_strength_index_vs_xlk_min:
+        min: 85
+        max: 85
+        step: 5
+      roc_63_min:
+        min: 0.1
+        max: 0.15
+        step: 0.05
+      roc_126_min:
+        min: 0.2
+        max: 0.2
+        step: 0.1
+      rsi_14_min:
+        min: 45
+        max: 50
+        step: 5
+      rsi_14_max:
+        min: 55
+        max: 60
+        step: 5
+      vol_alpha_min:
+        min: 1.0
+        max: 1.2
+        step: 0.2
+      signal_score_min:
+        min: 32
+        max: 34
+        step: 2
+      trailing_stop_atr_mult:
+        min: 2.0
+        max: 2.5
+        step: 0.5
+      profit_target_atr_mult:
+        min: 2.5
+        max: 3.0
+        step: 0.5
+      time_limit_days:
+        min: 10
+        max: 15
+        step: 5
+  tech_leader_pullback_v2:
+    sector_whitelist:
+    - Information Technology
+    replace_base_grid: true
+    grid_overrides:
+      sma_50_dist_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      sma_50_dist_max:
+        min: 0.02
+        max: 0.04
+        step: 0.02
+      sma_200_dist_min:
+        min: 0.14
+        max: 0.18
+        step: 0.04
+      ma_alignment_50_200_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_50_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_200_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      relative_strength_index_vs_spy_min:
+        min: 85
+        max: 85
+        step: 5
+      relative_strength_index_vs_qqq_min:
+        min: 85
+        max: 85
+        step: 5
+      relative_strength_index_vs_xlk_min:
+        min: 85
+        max: 85
+        step: 5
+      roc_63_min:
+        min: 0.1
+        max: 0.15
+        step: 0.05
+      roc_126_min:
+        min: 0.2
+        max: 0.2
+        step: 0.1
+      rsi_14_min:
+        min: 50
+        max: 50
+        step: 5
+      rsi_14_max:
+        min: 55
+        max: 55
+        step: 5
+      vol_alpha_min:
+        min: 1.2
+        max: 1.2
+        step: 0.2
+      signal_score_min:
+        min: 34
+        max: 36
+        step: 2
+      trailing_stop_atr_mult:
+        min: 2.0
+        max: 2.5
+        step: 0.5
+      profit_target_atr_mult:
+        min: 2.5
+        max: 3.0
+        step: 0.5
+      time_limit_days:
+        min: 5
+        max: 10
+        step: 5
+  tech_leader_pullback_v3:
+    sector_whitelist:
+    - Information Technology
+    replace_base_grid: true
+    grid_overrides:
+      sma_50_dist_min:
+        min: 0.02
+        max: 0.02
+        step: 0.01
+      sma_200_dist_min:
+        min: 0.18
+        max: 0.24
+        step: 0.06
+      ma_alignment_50_200_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_50_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_200_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      breakout_above_20d_high_min:
+        min: 1.0
+        max: 1.0
+        step: 1.0
+      distance_above_20d_high_max:
+        min: 0.005
+        max: 0.01
+        step: 0.005
+      relative_strength_index_vs_spy_min:
+        min: 85
+        max: 85
+        step: 5
+      relative_strength_index_vs_qqq_min:
+        min: 85
+        max: 85
+        step: 5
+      relative_strength_index_vs_xlk_min:
+        min: 85
+        max: 85
+        step: 5
+      roc_63_min:
+        min: 0.1
+        max: 0.15
+        step: 0.05
+      roc_126_min:
+        min: 0.2
+        max: 0.2
+        step: 0.1
+      base_range_pct_20_max:
+        min: 0.04
+        max: 0.06
+        step: 0.02
+      base_atr_contraction_20_max:
+        min: 0.75
+        max: 0.85
+        step: 0.1
+      base_volume_dryup_ratio_20_max:
+        min: 0.75
+        max: 0.75
+        step: 0.1
+      breakout_volume_ratio_50_min:
+        min: 1.2
+        max: 1.6
+        step: 0.4
+      signal_score_min:
+        min: 34
+        max: 36
+        step: 2
+      trailing_stop_atr_mult:
+        min: 1.5
+        max: 2.0
+        step: 0.5
+      profit_target_atr_mult:
+        min: 2.5
+        max: 3.0
+        step: 0.5
+      time_limit_days:
+        min: 5
+        max: 10
+        step: 5
+  tech_leader_pullback_v4:
+    sector_whitelist:
+    - Information Technology
+    replace_base_grid: true
+    grid_overrides:
+      sma_50_dist_min:
+        min: 0.02
+        max: 0.02
+        step: 0.01
+      sma_200_dist_min:
+        min: 0.18
+        max: 0.24
+        step: 0.06
+      ma_alignment_50_200_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_50_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_200_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      breakout_above_20d_high_min:
+        min: 1.0
+        max: 1.0
+        step: 1.0
+      distance_above_20d_high_max:
+        min: 0.005
+        max: 0.005
+        step: 0.005
+      relative_strength_index_vs_spy_min:
+        min: 85
+        max: 85
+        step: 5
+      relative_strength_index_vs_qqq_min:
+        min: 85
+        max: 85
+        step: 5
+      relative_strength_index_vs_xlk_min:
+        min: 85
+        max: 85
+        step: 5
+      roc_63_min:
+        min: 0.1
+        max: 0.15
+        step: 0.05
+      roc_126_min:
+        min: 0.2
+        max: 0.2
+        step: 0.1
+      base_atr_contraction_20_max:
+        min: 0.75
+        max: 0.75
+        step: 0.1
+      base_volume_dryup_ratio_20_max:
+        min: 0.75
+        max: 0.75
+        step: 0.1
+      breakout_volume_ratio_50_min:
+        min: 1.8
+        max: 2.0
+        step: 0.2
+      signal_score_min:
+        min: 34
+        max: 36
+        step: 2
+      trailing_stop_atr_mult:
+        min: 1.5
+        max: 2.0
+        step: 0.5
+      profit_target_atr_mult:
+        min: 2.5
+        max: 3.0
+        step: 0.5
+      time_limit_days:
+        min: 10
+        max: 10
+        step: 5
+  tech_leader_pullback_v5:
+    sector_whitelist:
+    - Information Technology
+    replace_base_grid: true
+    grid_overrides:
+      sma_50_dist_min:
+        min: 0.02
+        max: 0.02
+        step: 0.01
+      sma_200_dist_min:
+        min: 0.18
+        max: 0.24
+        step: 0.06
+      ma_alignment_50_200_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_50_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_200_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      breakout_above_20d_high_min:
+        min: 1.0
+        max: 1.0
+        step: 1.0
+      distance_above_20d_high_max:
+        min: 0.01
+        max: 0.01
+        step: 0.01
+      relative_strength_index_vs_spy_min:
+        min: 85
+        max: 85
+        step: 5
+      relative_strength_index_vs_qqq_min:
+        min: 85
+        max: 85
+        step: 5
+      relative_strength_index_vs_xlk_min:
+        min: 85
+        max: 85
+        step: 5
+      roc_63_min:
+        min: 0.1
+        max: 0.15
+        step: 0.05
+      roc_126_min:
+        min: 0.2
+        max: 0.2
+        step: 0.1
+      base_atr_contraction_20_max:
+        min: 0.75
+        max: 0.75
+        step: 0.1
+      base_volume_dryup_ratio_20_max:
+        min: 0.75
+        max: 0.75
+        step: 0.1
+      breakout_volume_ratio_50_min:
+        min: 1.8
+        max: 2.0
+        step: 0.2
+      signal_score_min:
+        min: 34
+        max: 36
+        step: 2
+      trailing_stop_atr_mult:
+        min: 1.5
+        max: 2.0
+        step: 0.5
+      profit_target_atr_mult:
+        min: 2.5
+        max: 3.0
+        step: 0.5
+      time_limit_days:
+        min: 10
+        max: 10
+        step: 5
+  tech_subindustry_reacceleration_v1:
+    sector_whitelist:
+    - Information Technology
+    replace_base_grid: true
+    grid_overrides:
+      sma_50_dist_min:
+        min: 0.02
+        max: 0.02
+        step: 0.01
+      sma_200_dist_min:
+        min: 0.18
+        max: 0.24
+        step: 0.06
+      ma_alignment_50_200_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_50_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_200_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      breakout_above_20d_high_min:
+        min: 1.0
+        max: 1.0
+        step: 1.0
+      distance_above_20d_high_max:
+        min: 0.01
+        max: 0.01
+        step: 0.01
+      relative_strength_index_vs_spy_min:
+        min: 85
+        max: 85
+        step: 5
+      relative_strength_index_vs_qqq_min:
+        min: 85
+        max: 85
+        step: 5
+      relative_strength_index_vs_xlk_min:
+        min: 85
+        max: 85
+        step: 5
+      relative_strength_index_vs_subindustry_min:
+        min: 80
+        max: 90
+        step: 5
+      roc_63_min:
+        min: 0.1
+        max: 0.15
+        step: 0.05
+      roc_126_min:
+        min: 0.2
+        max: 0.2
+        step: 0.1
+      base_atr_contraction_20_max:
+        min: 0.75
+        max: 0.75
+        step: 0.1
+      base_volume_dryup_ratio_20_max:
+        min: 0.75
+        max: 0.75
+        step: 0.1
+      breakout_volume_ratio_50_min:
+        min: 1.8
+        max: 2.0
+        step: 0.2
+      signal_score_min:
+        min: 34
+        max: 36
+        step: 2
+      trailing_stop_atr_mult:
+        min: 1.5
+        max: 2.0
+        step: 0.5
+      profit_target_atr_mult:
+        min: 2.5
+        max: 3.0
+        step: 0.5
+      time_limit_days:
+        min: 10
+        max: 10
+        step: 5
+  tech_subindustry_reacceleration_v2:
+    sector_whitelist:
+    - Information Technology
+    replace_base_grid: true
+    grid_overrides:
+      sma_50_dist_min:
+        min: 0.02
+        max: 0.02
+        step: 0.01
+      sma_200_dist_min:
+        min: 0.18
+        max: 0.24
+        step: 0.06
+      ma_alignment_50_200_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_50_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_200_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      breakout_above_20d_high_min:
+        min: 1.0
+        max: 1.0
+        step: 1.0
+      distance_above_20d_high_max:
+        min: 0.01
+        max: 0.01
+        step: 0.01
+      relative_strength_index_vs_spy_min:
+        min: 85
+        max: 85
+        step: 5
+      relative_strength_index_vs_qqq_min:
+        min: 80
+        max: 85
+        step: 5
+      relative_strength_index_vs_xlk_min:
+        min: 80
+        max: 85
+        step: 5
+      relative_strength_index_vs_subindustry_min:
+        min: 85
+        max: 90
+        step: 5
+      roc_63_min:
+        min: 0.1
+        max: 0.15
+        step: 0.05
+      roc_126_min:
+        min: 0.2
+        max: 0.2
+        step: 0.1
+      base_atr_contraction_20_max:
+        min: 0.75
+        max: 0.75
+        step: 0.1
+      base_volume_dryup_ratio_20_max:
+        min: 0.75
+        max: 0.75
+        step: 0.1
+      breakout_volume_ratio_50_min:
+        min: 1.8
+        max: 2.0
+        step: 0.2
+      signal_score_min:
+        min: 34
+        max: 36
+        step: 2
+      trailing_stop_atr_mult:
+        min: 1.5
+        max: 2.0
+        step: 0.5
+      profit_target_atr_mult:
+        min: 2.5
+        max: 3.0
+        step: 0.5
+      time_limit_days:
+        min: 10
+        max: 10
+        step: 5
+  tech_subindustry_reacceleration_v3:
+    sector_whitelist:
+    - Information Technology
+    replace_base_grid: true
+    grid_overrides:
+      sma_50_dist_min:
+        min: 0.02
+        max: 0.02
+        step: 0.01
+      sma_200_dist_min:
+        min: 0.18
+        max: 0.24
+        step: 0.06
+      ma_alignment_50_200_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_50_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_200_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      breakout_above_20d_high_min:
+        min: 1.0
+        max: 1.0
+        step: 1.0
+      distance_above_20d_high_max:
+        min: 0.005
+        max: 0.01
+        step: 0.005
+      relative_strength_index_vs_spy_min:
+        min: 85
+        max: 85
+        step: 5
+      relative_strength_index_vs_qqq_min:
+        min: 80
+        max: 85
+        step: 5
+      relative_strength_index_vs_xlk_min:
+        min: 80
+        max: 80
+        step: 5
+      relative_strength_index_vs_subindustry_min:
+        min: 75
+        max: 85
+        step: 5
+      roc_63_min:
+        min: 0.1
+        max: 0.15
+        step: 0.05
+      roc_126_min:
+        min: 0.2
+        max: 0.3
+        step: 0.1
+      base_atr_contraction_20_max:
+        min: 0.75
+        max: 0.75
+        step: 0.1
+      base_volume_dryup_ratio_20_max:
+        min: 0.75
+        max: 0.75
+        step: 0.1
+      breakout_volume_ratio_50_min:
+        min: 1.6
+        max: 1.8
+        step: 0.2
+      signal_score_min:
+        min: 34
+        max: 36
+        step: 2
+      trailing_stop_atr_mult:
+        min: 1.5
+        max: 2.0
+        step: 0.5
+      profit_target_atr_mult:
+        min: 2.5
+        max: 3.0
+        step: 0.5
+      time_limit_days:
+        min: 10
+        max: 10
+        step: 5
+  tech_subindustry_reacceleration_v4:
+    sector_whitelist:
+    - Information Technology
+    replace_base_grid: true
+    grid_overrides:
+      sma_50_dist_min:
+        min: 0.02
+        max: 0.02
+        step: 0.01
+      sma_200_dist_min:
+        min: 0.18
+        max: 0.24
+        step: 0.06
+      ma_alignment_50_200_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_50_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_200_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      breakout_above_20d_high_min:
+        min: 1.0
+        max: 1.0
+        step: 1.0
+      distance_above_20d_high_max:
+        min: 0.005
+        max: 0.01
+        step: 0.005
+      relative_strength_index_vs_spy_min:
+        min: 85
+        max: 85
+        step: 5
+      relative_strength_index_vs_qqq_min:
+        min: 75
+        max: 80
+        step: 5
+      relative_strength_index_vs_xlk_min:
+        min: 75
+        max: 80
+        step: 5
+      relative_strength_index_vs_subindustry_min:
+        min: 85
+        max: 85
+        step: 5
+      roc_63_min:
+        min: 0.1
+        max: 0.15
+        step: 0.05
+      roc_126_min:
+        min: 0.2
+        max: 0.3
+        step: 0.1
+      base_atr_contraction_20_max:
+        min: 0.75
+        max: 0.75
+        step: 0.1
+      base_volume_dryup_ratio_20_max:
+        min: 0.75
+        max: 0.75
+        step: 0.1
+      breakout_volume_ratio_50_min:
+        min: 1.6
+        max: 1.8
+        step: 0.2
+      signal_score_min:
+        min: 34
+        max: 36
+        step: 2
+      trailing_stop_atr_mult:
+        min: 1.5
+        max: 2.0
+        step: 0.5
+      profit_target_atr_mult:
+        min: 2.5
+        max: 3.0
+        step: 0.5
+      time_limit_days:
+        min: 10
+        max: 10
+        step: 5
+  tech_subindustry_reacceleration_v5:
+    sector_whitelist:
+    - Information Technology
+    replace_base_grid: true
+    grid_overrides:
+      sma_50_dist_min:
+        min: 0.02
+        max: 0.02
+        step: 0.01
+      sma_200_dist_min:
+        min: 0.18
+        max: 0.24
+        step: 0.06
+      ma_alignment_50_200_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_50_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      ma_slope_200_20_min:
+        min: 0.0
+        max: 0.0
+        step: 0.1
+      breakout_above_20d_high_min:
+        min: 1.0
+        max: 1.0
+        step: 1.0
+      distance_above_20d_high_max:
+        min: 0.005
+        max: 0.01
+        step: 0.005
+      relative_strength_index_vs_spy_min:
+        min: 75
+        max: 75
+        step: 5
+      relative_strength_index_vs_qqq_min:
+        min: 75
+        max: 80
+        step: 5
+      relative_strength_index_vs_subindustry_min:
+        min: 85
+        max: 85
+        step: 5
+      roc_63_min:
+        min: 0.1
+        max: 0.15
+        step: 0.05
+      roc_126_min:
+        min: 0.2
+        max: 0.3
+        step: 0.1
+      base_atr_contraction_20_max:
+        min: 0.75
+        max: 0.75
+        step: 0.1
+      base_volume_dryup_ratio_20_max:
+        min: 0.75
+        max: 0.75
+        step: 0.1
+      breakout_volume_ratio_50_min:
+        min: 1.6
+        max: 1.8
+        step: 0.2
+      signal_score_min:
+        min: 34
+        max: 36
+        step: 2
+      trailing_stop_atr_mult:
+        min: 1.5
+        max: 2.0
+        step: 0.5
+      profit_target_atr_mult:
+        min: 2.5
+        max: 3.0
+        step: 0.5
+      time_limit_days:
+        min: 10
+        max: 10
+        step: 5
   breakout_v1_industrials:
     sector_whitelist:
-      - "Industrials"
+    - Industrials
     replace_base_grid: true
     grid_overrides:
       sma_50_dist_min:
@@ -1318,16 +3075,16 @@ sweep_modes:
         max: 90
         step: 5
       roc_63_min:
-        min: 0.10
-        max: 0.10
+        min: 0.1
+        max: 0.1
         step: 0.05
       rsi_14_min:
         min: 50
         max: 50
         step: 5
       sma_200_dist_max:
-        min: 0.30
-        max: 0.30
+        min: 0.3
+        max: 0.3
         step: 0.05
       base_range_pct_20_max:
         min: 0.08
@@ -1336,11 +3093,11 @@ sweep_modes:
       base_atr_contraction_20_max:
         min: 0.95
         max: 0.95
-        step: 0.10
+        step: 0.1
       base_volume_dryup_ratio_20_max:
         min: 0.95
         max: 0.95
-        step: 0.10
+        step: 0.1
       breakout_volume_ratio_50_min:
         min: 2.0
         max: 2.5
@@ -1359,7 +3116,7 @@ sweep_modes:
         step: 1.0
   breakout_v1_financials:
     sector_whitelist:
-      - "Financials"
+    - Financials
     replace_base_grid: true
     grid_overrides:
       sma_50_dist_min:
@@ -1391,16 +3148,16 @@ sweep_modes:
         max: 90
         step: 5
       roc_63_min:
-        min: 0.10
-        max: 0.10
+        min: 0.1
+        max: 0.1
         step: 0.05
       rsi_14_min:
         min: 50
         max: 50
         step: 5
       sma_200_dist_max:
-        min: 0.30
-        max: 0.30
+        min: 0.3
+        max: 0.3
         step: 0.05
       base_range_pct_20_max:
         min: 0.08
@@ -1409,11 +3166,11 @@ sweep_modes:
       base_atr_contraction_20_max:
         min: 0.95
         max: 0.95
-        step: 0.10
+        step: 0.1
       base_volume_dryup_ratio_20_max:
         min: 0.95
         max: 0.95
-        step: 0.10
+        step: 0.1
       breakout_volume_ratio_50_min:
         min: 2.0
         max: 2.5
@@ -1432,9 +3189,9 @@ sweep_modes:
         step: 1.0
   breakout_v1_growth_leaders:
     sector_whitelist:
-      - "Information Technology"
-      - "Industrials"
-      - "Financials"
+    - Information Technology
+    - Industrials
+    - Financials
     replace_base_grid: true
     grid_overrides:
       sma_50_dist_min:
@@ -1466,16 +3223,16 @@ sweep_modes:
         max: 90
         step: 5
       roc_63_min:
-        min: 0.10
-        max: 0.10
+        min: 0.1
+        max: 0.1
         step: 0.05
       rsi_14_min:
         min: 50
         max: 50
         step: 5
       sma_200_dist_max:
-        min: 0.30
-        max: 0.30
+        min: 0.3
+        max: 0.3
         step: 0.05
       base_range_pct_20_max:
         min: 0.08
@@ -1484,11 +3241,11 @@ sweep_modes:
       base_atr_contraction_20_max:
         min: 0.95
         max: 0.95
-        step: 0.10
+        step: 0.1
       base_volume_dryup_ratio_20_max:
         min: 0.95
         max: 0.95
-        step: 0.10
+        step: 0.1
       breakout_volume_ratio_50_min:
         min: 2.0
         max: 2.5
@@ -1505,7 +3262,6 @@ sweep_modes:
         min: 3.0
         max: 3.0
         step: 1.0
-
 sweep_grid:
   rsi_14_max:
     min: 25
@@ -1517,11 +3273,11 @@ sweep_grid:
     step: 0.2
   sma_200_dist_min:
     min: 0.0
-    max: 0.20
+    max: 0.2
     step: 0.01
   roc_63_min:
-    min: 0.10
-    max: 0.10
+    min: 0.1
+    max: 0.1
     step: 0.05
   relative_strength_index_vs_spy_min:
     min: 80
