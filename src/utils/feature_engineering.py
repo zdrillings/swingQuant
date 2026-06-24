@@ -217,16 +217,22 @@ def add_rolling_percentile_feature(
     feature_name: str,
     window: int,
 ) -> None:
-    def _last_percentile(series: pd.Series) -> float:
-        values = pd.to_numeric(series, errors="coerce")
-        latest = values.iloc[-1]
-        if pd.isna(latest):
+    def _last_percentile(values: np.ndarray) -> float:
+        latest = values[-1]
+        if not np.isfinite(latest):
             return np.nan
-        return float(values.rank(method="average", pct=True).iloc[-1])
+        finite_values = values[np.isfinite(values)]
+        count = len(finite_values)
+        if count == 0:
+            return np.nan
+        less_count = int(np.sum(finite_values < latest))
+        equal_count = int(np.sum(finite_values == latest))
+        average_rank = less_count + ((equal_count + 1) / 2.0)
+        return float(average_rank / count)
 
     frame[feature_name] = (
         frame.groupby("ticker", group_keys=False)[source_column]
-        .transform(lambda series: series.rolling(window=window, min_periods=window).apply(_last_percentile, raw=False))
+        .transform(lambda series: series.rolling(window=window, min_periods=window).apply(_last_percentile, raw=True))
     )
 
 

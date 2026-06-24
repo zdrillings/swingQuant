@@ -63,16 +63,19 @@ def expand_model_feature_columns(base_features: list[str] | tuple[str, ...]) -> 
 
 def build_rank_augmented_feature_frame(frame: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
     working = frame.copy()
+    rank_columns: dict[str, pd.Series] = {}
     for column in MODEL_FEATURE_COLUMNS:
         if column not in working.columns:
             working[column] = np.nan
         values = pd.to_numeric(working[column], errors="coerce")
         working[column] = values
-        working[f"{column}__rank_all"] = values.groupby(working["snapshot_date"]).rank(method="average", pct=True)
+        rank_columns[f"{column}__rank_all"] = values.groupby(working["snapshot_date"]).rank(method="average", pct=True)
         if "sector" in working.columns:
-            working[f"{column}__rank_sector"] = values.groupby(
+            rank_columns[f"{column}__rank_sector"] = values.groupby(
                 [working["snapshot_date"], working["sector"]]
             ).rank(method="average", pct=True)
+    if rank_columns:
+        working = pd.concat([working, pd.DataFrame(rank_columns, index=working.index)], axis=1)
     feature_columns = expand_model_feature_columns(MODEL_FEATURE_COLUMNS)
     return working, feature_columns
 
