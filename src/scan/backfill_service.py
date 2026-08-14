@@ -37,7 +37,11 @@ class ScanBackfillService:
         skip_existing: bool = False,
     ) -> ScanBackfillReport:
         self.db_manager.initialize()
-        strategies = load_active_strategies()
+        strategies = {
+            slot: strategy
+            for slot, strategy in load_active_strategies().items()
+            if getattr(strategy, "scan_enabled", True)
+        }
         settings = get_settings()
         config = load_feature_config()
         scan_policy = ScanPolicy.from_config(config)
@@ -186,7 +190,20 @@ class ScanBackfillService:
                     pd.to_numeric(candidates["opportunity_score"], errors="coerce")
                     >= float(scan_policy.shortlist_model.min_opportunity_score)
                 ].copy()
-                selected = scan_service._apply_portfolio_caps(selected_candidates, scan_policy)
+                throttle_diagnostics = scan_service._candidate_quality_throttle_diagnostics(
+                    selected_candidates,
+                    scan_policy=scan_policy,
+                    selection_opportunity_floor=float(scan_policy.shortlist_model.min_opportunity_score),
+                )
+                persisted_candidates = scan_service._annotate_candidate_quality_throttle(
+                    persisted_candidates,
+                    throttle_diagnostics,
+                )
+                selected = scan_service._apply_portfolio_caps(
+                    selected_candidates,
+                    scan_policy,
+                    max_candidates_total=throttle_diagnostics["effective_max_candidates"],
+                )
                 persisted_rows = scan_service._build_persisted_scan_rows(persisted_candidates, selected)
                 self.db_manager.replace_scan_candidates(scan_date=scan_date, rows=persisted_rows)
                 return len(persisted_rows), len(selected.index)
@@ -239,8 +256,21 @@ class ScanBackfillService:
 
         candidates = pd.concat(candidate_frames, ignore_index=True).reset_index(drop=True)
         persisted_candidates = pd.concat(persisted_candidate_frames, ignore_index=True).reset_index(drop=True)
-        selected = scan_service._apply_portfolio_caps(candidates, scan_policy)
-        selected = selected[selected["opportunity_score"] >= scan_policy.min_opportunity_score].copy()
+        eligible_candidates = candidates[candidates["opportunity_score"] >= scan_policy.min_opportunity_score].copy()
+        throttle_diagnostics = scan_service._candidate_quality_throttle_diagnostics(
+            eligible_candidates,
+            scan_policy=scan_policy,
+            selection_opportunity_floor=float(scan_policy.min_opportunity_score),
+        )
+        persisted_candidates = scan_service._annotate_candidate_quality_throttle(
+            persisted_candidates,
+            throttle_diagnostics,
+        )
+        selected = scan_service._apply_portfolio_caps(
+            eligible_candidates,
+            scan_policy,
+            max_candidates_total=throttle_diagnostics["effective_max_candidates"],
+        )
         persisted_rows = scan_service._build_persisted_scan_rows(persisted_candidates, selected)
         self.db_manager.replace_scan_candidates(scan_date=scan_date, rows=persisted_rows)
         return len(persisted_rows), len(selected.index)

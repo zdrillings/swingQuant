@@ -3,9 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 
+import numpy as np
 import pandas as pd
 
 from src.research.shortlist_model_service import ShortlistModelService
+from src.settings import load_feature_config
+
+CONFIDENCE_BASKET_SIZE = 2
 
 
 @dataclass(frozen=True)
@@ -15,6 +19,12 @@ class LiveShortlistModelContext:
     live_snapshot_date: str | None
     live_predictions: pd.DataFrame
     top_n: int
+    recent_20d_beat_rate: float | None = None
+    recent_20d_mean_target: float | None = None
+    recent_20d_hit_rate: float | None = None
+    recent_60d_beat_rate: float | None = None
+    recent_60d_mean_target: float | None = None
+    recent_60d_hit_rate: float | None = None
 
 
 def load_live_shortlist_model_context(
@@ -39,7 +49,8 @@ def load_live_shortlist_model_context(
     if not all(hasattr(db_manager, name) for name in required_methods):
         return None
 
-    runs = db_manager.load_shortlist_model_runs(
+    runs = _load_shortlist_model_runs(
+        db_manager,
         horizon_days=int(horizon_days),
         eligible_universe_mode=str(eligible_universe_mode or "passed_only"),
         model_scope=str(model_scope or "global"),
@@ -63,7 +74,8 @@ def load_live_shortlist_model_context(
             model_scope=str(model_scope or "global"),
             xgboost_config=str(xgboost_config or "baseline"),
         )
-        runs = db_manager.load_shortlist_model_runs(
+        runs = _load_shortlist_model_runs(
+            db_manager,
             horizon_days=int(horizon_days),
             eligible_universe_mode=str(eligible_universe_mode or "passed_only"),
             model_scope=str(model_scope or "global"),
@@ -76,11 +88,9 @@ def load_live_shortlist_model_context(
     latest_run = runs.iloc[0]
     generated_at = str(latest_run["generated_at"])
     champion_model = str(latest_run["champion_model"])
-    selected_model = (
-        str(preferred_model_name).strip()
-        if preferred_model_name not in (None, "")
-        else champion_model
-    )
+    selected_model = str(preferred_model_name).strip() if preferred_model_name not in (None, "") else champion_model
+    if not selected_model:
+        selected_model = champion_model
     live_predictions = db_manager.load_shortlist_model_predictions(
         generated_at=generated_at,
         horizon_days=int(horizon_days),
@@ -89,16 +99,6 @@ def load_live_shortlist_model_context(
         dataset_split="live",
         model_name=selected_model,
     )
-    if live_predictions.empty and selected_model != champion_model:
-        live_predictions = db_manager.load_shortlist_model_predictions(
-            generated_at=generated_at,
-            horizon_days=int(horizon_days),
-            eligible_universe_mode=str(eligible_universe_mode or "passed_only"),
-            model_scope=str(model_scope or "global"),
-            dataset_split="live",
-            model_name=champion_model,
-        )
-        selected_model = champion_model
     if live_predictions.empty:
         return None
     live_predictions = live_predictions.copy()
@@ -115,13 +115,144 @@ def load_live_shortlist_model_context(
     ).reset_index(drop=True)
     live_predictions["model_rank"] = range(1, len(live_predictions.index) + 1)
     live_predictions = _annotate_live_prediction_comparisons(live_predictions, top_n=int(top_n))
+    recent_metrics = {
+        20: {"beat_rate": None, "mean_target": None, "hit_rate": None},
+        60: {"beat_rate": None, "mean_target": None, "hit_rate": None},
+    }
+    try:
+        oos_predictions = db_manager.load_shortlist_model_predictions(
+            generated_at=generated_at,
+            horizon_days=int(horizon_days),
+            eligible_universe_mode=str(eligible_universe_mode or "passed_only"),
+            model_scope=str(model_scope or "global"),
+            dataset_split="oos",
+            model_name=selected_model,
+        )
+        if not oos_predictions.empty:
+            oos_predictions["snapshot_date"] = pd.to_datetime(oos_predictions["snapshot_date"]).dt.normalize()
+            oos_dates = sorted(oos_predictions["snapshot_date"].drop_duplicates().tolist())
+            for window in recent_metrics:
+                recent_oos_dates = oos_dates[-window:] if len(oos_dates) >= window else oos_dates
+                recent = oos_predictions[oos_predictions["snapshot_date"].isin(recent_oos_dates)].copy()
+                recent_metrics[window] = _score_recent_oos_basket(recent)
+    except Exception:
+        pass
+    if not _passes_runtime_promotion_gate(
+        recent_metrics=recent_metrics,
+    ):
+        return None
+
     return LiveShortlistModelContext(
         generated_at=generated_at,
         champion_model=selected_model,
         live_snapshot_date=str(latest_run["live_snapshot_date"]) if latest_run["live_snapshot_date"] is not None else None,
         live_predictions=live_predictions,
         top_n=int(top_n),
+        recent_20d_beat_rate=recent_metrics[20]["beat_rate"],
+        recent_20d_mean_target=recent_metrics[20]["mean_target"],
+        recent_20d_hit_rate=recent_metrics[20]["hit_rate"],
+        recent_60d_beat_rate=recent_metrics[60]["beat_rate"],
+        recent_60d_mean_target=recent_metrics[60]["mean_target"],
+        recent_60d_hit_rate=recent_metrics[60]["hit_rate"],
     )
+
+
+def _score_recent_oos_basket(frame: pd.DataFrame) -> dict[str, float | None]:
+    if frame.empty:
+        return {"beat_rate": None, "mean_target": None, "hit_rate": None}
+    daily_means = []
+    daily_universe = []
+    pick_actuals = []
+    for _snap_date, day_frame in frame.groupby("snapshot_date", sort=True):
+        ordered = day_frame.sort_values("predicted_alpha", ascending=False)
+        picks = ordered.head(CONFIDENCE_BASKET_SIZE)
+        actual = pd.to_numeric(picks["actual_alpha_vs_sector"], errors="coerce").dropna()
+        universe = pd.to_numeric(day_frame["actual_alpha_vs_sector"], errors="coerce").dropna()
+        if not actual.empty and not universe.empty:
+            daily_means.append(float(actual.mean()))
+            daily_universe.append(float(universe.mean()))
+            pick_actuals.extend(float(value) for value in actual.tolist())
+    beat_rate = None
+    mean_target = None
+    hit_rate = None
+    if daily_means:
+        mean_target = float(np.mean(daily_means))
+        beats = sum(1 for picks_mean, universe_mean in zip(daily_means, daily_universe) if picks_mean > universe_mean)
+        beat_rate = beats / len(daily_means)
+    if pick_actuals:
+        hit_rate = sum(1 for value in pick_actuals if value > 0) / len(pick_actuals)
+    return {"beat_rate": beat_rate, "mean_target": mean_target, "hit_rate": hit_rate}
+
+
+def _runtime_promotion_gate() -> dict[str, float | bool]:
+    config = load_feature_config()
+    payload = (
+        config.get("scan_policy", {})
+        .get("shortlist_model", {})
+        .get("promotion_gate", {})
+        if isinstance(config, dict)
+        else {}
+    )
+    return {
+        "enabled": bool(payload.get("enabled", True)),
+        "min_recent_20d_hit_rate": float(payload.get("min_recent_20d_hit_rate", 0.50)),
+        "min_recent_20d_beat_universe_rate": float(payload.get("min_recent_20d_beat_universe_rate", 0.50)),
+        "min_recent_20d_mean_target": float(payload.get("min_recent_20d_mean_target", 0.0)),
+        "min_recent_60d_hit_rate": float(payload.get("min_recent_60d_hit_rate", 0.50)),
+        "min_recent_60d_beat_universe_rate": float(payload.get("min_recent_60d_beat_universe_rate", 0.50)),
+        "min_recent_60d_mean_target": float(payload.get("min_recent_60d_mean_target", 0.0)),
+    }
+
+
+def _passes_runtime_promotion_gate(
+    *,
+    recent_metrics: dict[int, dict[str, float | None]],
+) -> bool:
+    gate = _runtime_promotion_gate()
+    if not bool(gate.get("enabled", True)):
+        return True
+    for window in (20, 60):
+        metrics = recent_metrics.get(window, {})
+        checks = (
+            (metrics.get("hit_rate"), gate[f"min_recent_{window}d_hit_rate"]),
+            (metrics.get("beat_rate"), gate[f"min_recent_{window}d_beat_universe_rate"]),
+            (metrics.get("mean_target"), gate[f"min_recent_{window}d_mean_target"]),
+        )
+        for value, threshold in checks:
+            try:
+                numeric = float(value)
+                required = float(threshold)
+            except (TypeError, ValueError):
+                return False
+            if not np.isfinite(numeric) or numeric < required:
+                return False
+    return True
+
+
+def _load_shortlist_model_runs(
+    db_manager,
+    *,
+    horizon_days: int,
+    eligible_universe_mode: str,
+    model_scope: str,
+    xgboost_config: str,
+    limit: int,
+) -> pd.DataFrame:
+    try:
+        return db_manager.load_shortlist_model_runs(
+            horizon_days=horizon_days,
+            eligible_universe_mode=eligible_universe_mode,
+            model_scope=model_scope,
+            xgboost_config=xgboost_config,
+            limit=limit,
+        )
+    except TypeError:
+        return db_manager.load_shortlist_model_runs(
+            horizon_days=horizon_days,
+            eligible_universe_mode=eligible_universe_mode,
+            model_scope=model_scope,
+            limit=limit,
+        )
 
 
 def _parse_prediction_details(value) -> dict:

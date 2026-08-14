@@ -284,6 +284,14 @@ def add_distance_from_high_feature(frame: pd.DataFrame, *, feature_name: str, wi
     frame[feature_name] = (frame["close"] / rolling_high) - 1.0
 
 
+def add_distance_from_low_feature(frame: pd.DataFrame, *, feature_name: str, window: int) -> None:
+    rolling_low = (
+        frame.groupby("ticker", group_keys=False)["low"]
+        .transform(lambda series: series.rolling(window=window, min_periods=window).min())
+    )
+    frame[feature_name] = (frame["close"] / rolling_low) - 1.0
+
+
 def add_days_since_high_feature(frame: pd.DataFrame, *, feature_name: str, window: int) -> None:
     def _days_since_window_high(series: pd.Series) -> pd.Series:
         values = pd.to_numeric(series, errors="coerce").to_numpy(dtype=float)
@@ -398,6 +406,20 @@ def add_contextual_relative_strength_percentile_feature(
     )
     frame.loc[~eligible_mask, feature_name] = pd.NA
     frame.drop(columns=["roc_value", "reference_roc", "rs_excess_return"], inplace=True)
+
+
+def add_feature_change_feature(
+    frame: pd.DataFrame,
+    *,
+    source_column: str,
+    feature_name: str,
+    periods: int,
+) -> None:
+    if source_column not in frame.columns:
+        frame[feature_name] = pd.NA
+        return
+    values = pd.to_numeric(frame[source_column], errors="coerce")
+    frame[feature_name] = values - values.groupby(frame["ticker"], group_keys=False).shift(int(periods))
 
 
 def add_days_to_next_event_feature(
@@ -640,6 +662,35 @@ def add_sector_breadth_features(frame: pd.DataFrame) -> None:
         frame[column] = merged[column]
 
 
+def add_reference_return_feature(
+    frame: pd.DataFrame,
+    *,
+    feature_name: str,
+    reference_ticker: str,
+    window: int,
+) -> None:
+    reference = (
+        frame.loc[frame["ticker"] == reference_ticker, ["date", "close"]]
+        .sort_values("date")
+        .assign(**{feature_name: lambda df: df["close"].pct_change(periods=int(window))})
+        [[ "date", feature_name ]]
+    )
+    frame[feature_name] = frame["date"].map(reference.set_index("date")[feature_name])
+
+
+def add_reference_realized_vol_feature(
+    frame: pd.DataFrame,
+    *,
+    feature_name: str,
+    reference_ticker: str,
+    window: int,
+) -> None:
+    reference = frame.loc[frame["ticker"] == reference_ticker, ["date", "close"]].sort_values("date")
+    reference["_daily_return"] = reference["close"].pct_change()
+    reference[feature_name] = reference["_daily_return"].rolling(window=int(window), min_periods=int(window)).std()
+    frame[feature_name] = frame["date"].map(reference.set_index("date")[feature_name])
+
+
 def apply_feature_definitions(
     price_history: pd.DataFrame,
     feature_config: dict,
@@ -730,6 +781,8 @@ def apply_feature_definitions(
                 )
             elif feature_type == "distance_from_high":
                 add_distance_from_high_feature(frame, feature_name=feature_name, window=int(params["window"]))
+            elif feature_type == "distance_from_low":
+                add_distance_from_low_feature(frame, feature_name=feature_name, window=int(params["window"]))
             elif feature_type == "days_since_high":
                 add_days_since_high_feature(frame, feature_name=feature_name, window=int(params["window"]))
             elif feature_type == "correlation":
@@ -752,6 +805,13 @@ def apply_feature_definitions(
                     feature_name=feature_name,
                     benchmark_column=str(params["benchmark_column"]),
                     window=int(params["window"]),
+                )
+            elif feature_type == "feature_change":
+                add_feature_change_feature(
+                    frame,
+                    source_column=str(params["source_column"]),
+                    feature_name=feature_name,
+                    periods=int(params["periods"]),
                 )
             elif feature_type == "days_to_next_event":
                 add_days_to_next_event_feature(
@@ -790,6 +850,20 @@ def apply_feature_definitions(
                     frame,
                     feature_name=feature_name,
                     earnings_calendar=earnings_calendar,
+                )
+            elif feature_type == "reference_return":
+                add_reference_return_feature(
+                    frame,
+                    feature_name=feature_name,
+                    reference_ticker=feature["ticker"],
+                    window=int(params["window"]),
+                )
+            elif feature_type == "reference_realized_vol":
+                add_reference_realized_vol_feature(
+                    frame,
+                    feature_name=feature_name,
+                    reference_ticker=feature["ticker"],
+                    window=int(params["window"]),
                 )
             else:
                 raise ValueError(f"Unsupported feature type: {feature_type}")

@@ -329,6 +329,57 @@ class StrategyHelperTests(unittest.TestCase):
         )
         self.assertTrue(pd.isna(latest.loc["SPY", "relative_strength_index_vs_spy"]))
 
+    def test_feature_change_is_point_in_time_and_ticker_scoped(self) -> None:
+        dates = pd.bdate_range("2026-01-01", periods=8)
+        rows = []
+        for index, day in enumerate(dates):
+            rows.extend(
+                [
+                    {
+                        "ticker": "AAA",
+                        "date": day.date(),
+                        "open": 10.0,
+                        "high": 10.0,
+                        "low": 10.0,
+                        "close": 10.0,
+                        "volume": 1_000_000,
+                        "adj_close": 10.0,
+                        "synthetic_rs": 50.0 + index,
+                    },
+                    {
+                        "ticker": "BBB",
+                        "date": day.date(),
+                        "open": 20.0,
+                        "high": 20.0,
+                        "low": 20.0,
+                        "close": 20.0,
+                        "volume": 1_000_000,
+                        "adj_close": 20.0,
+                        "synthetic_rs": 80.0 - (index * 2.0),
+                    },
+                ]
+            )
+
+        frame, feature_columns = apply_feature_definitions(
+            pd.DataFrame(rows),
+            {
+                "features": {
+                    "momentum": [
+                        {
+                            "name": "synthetic_rs_5d_change",
+                            "type": "feature_change",
+                            "params": {"source_column": "synthetic_rs", "periods": 5},
+                        }
+                    ]
+                }
+            },
+        )
+        latest = frame.sort_values("date").groupby("ticker").tail(1).set_index("ticker")
+
+        self.assertIn("synthetic_rs_5d_change", feature_columns)
+        self.assertEqual(float(latest.loc["AAA", "synthetic_rs_5d_change"]), 5.0)
+        self.assertEqual(float(latest.loc["BBB", "synthetic_rs_5d_change"]), -10.0)
+
     def test_relative_strength_feature_supports_qqq_and_xlk_references(self) -> None:
         dates = pd.bdate_range("2026-01-01", periods=70)
         rows = []

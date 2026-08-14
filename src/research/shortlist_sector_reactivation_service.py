@@ -100,6 +100,7 @@ class ShortlistSectorReactivationService:
         scenario_policy_builders = [
             ("raw_top_n", lambda day, top_n=int(top_n): self._pick_raw_top_n(day, top_n=top_n)),
             ("sector_cap_3", lambda day, top_n=int(top_n): self._pick_sector_capped(day, top_n=top_n, cap=3)),
+            ("sector_cap_2", lambda day, top_n=int(top_n): self._pick_sector_capped(day, top_n=top_n, cap=2)),
         ]
         expanded_policy_builders = [
             ("raw_top_n", lambda day, top_n=int(top_n): self._pick_raw_top_n(day, top_n=top_n)),
@@ -267,6 +268,8 @@ class ShortlistSectorReactivationService:
         strategies = load_active_strategies()
         sectors = []
         for strategy in strategies.values():
+            if not getattr(strategy, "scan_enabled", True):
+                continue
             sector = str(strategy.sector)
             if sector in ("", "ALL"):
                 continue
@@ -449,8 +452,10 @@ class ShortlistSectorReactivationService:
                 lines.append(
                     f"- {row['scenario']}: "
                     f"full_mean_target={self._fmt(row['full_mean_target'])}, "
+                    f"full_hit_rate={self._fmt(row['full_hit_rate'])}, "
                     f"full_beat_universe={self._fmt(row['full_beat_universe_rate'])}, "
                     f"recent_mean_target={self._fmt(row['recent_mean_target'])}, "
+                    f"recent_hit_rate={self._fmt(row['recent_hit_rate'])}, "
                     f"recent_beat_universe={self._fmt(row['recent_beat_universe_rate'])}, "
                     f"live_max_sector_share={self._fmt(row['live_max_sector_share'])}"
                 )
@@ -467,10 +472,12 @@ class ShortlistSectorReactivationService:
             lines.append(
                 f"- full_mean_target: {self._fmt(row['full_mean_target'])}"
             )
+            lines.append(f"- full_hit_rate: {self._fmt(row['full_hit_rate'])}")
             lines.append(
                 f"- full_beat_universe: {self._fmt(row['full_beat_universe_rate'])}"
             )
             lines.append(f"- recent_mean_target: {self._fmt(row['recent_mean_target'])}")
+            lines.append(f"- recent_hit_rate: {self._fmt(row['recent_hit_rate'])}")
             lines.append(
                 f"- recent_beat_universe: {self._fmt(row['recent_beat_universe_rate'])}"
             )
@@ -485,10 +492,12 @@ class ShortlistSectorReactivationService:
         for row in rows:
             lines.append(f"### top_n={int(row['top_n'])}")
             lines.append(f"- full_mean_target: {self._fmt(row['full_mean_target'])}")
+            lines.append(f"- full_hit_rate: {self._fmt(row['full_hit_rate'])}")
             lines.append(
                 f"- full_beat_universe: {self._fmt(row['full_beat_universe_rate'])}"
             )
             lines.append(f"- recent_mean_target: {self._fmt(row['recent_mean_target'])}")
+            lines.append(f"- recent_hit_rate: {self._fmt(row['recent_hit_rate'])}")
             lines.append(
                 f"- recent_beat_universe: {self._fmt(row['recent_beat_universe_rate'])}"
             )

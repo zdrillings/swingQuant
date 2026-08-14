@@ -20,6 +20,7 @@ from src.utils.strategy import (
     DEFAULT_EXIT_RULES,
     ExitRules,
     SIGNAL_SCORE_MIN_KEY,
+    entry_stop_price,
     load_signal_model_config,
     profit_target_price,
     split_signal_indicators,
@@ -57,6 +58,7 @@ EXIT_RULE_GRID_KEYS = {
     "profit_target_atr_mult",
     "time_limit_days",
     "exit_before_earnings_days",
+    "hard_stop_pct",
 }
 
 OPTIONAL_EVENT_FILTER_KEYS = {
@@ -187,6 +189,7 @@ class SweepService:
                             "trailing_stop_atr_mult": strategy_params["exit_rules"].get("trailing_stop_atr_mult"),
                             "profit_target_atr_mult": strategy_params["exit_rules"].get("profit_target_atr_mult"),
                             "exit_before_earnings_days": strategy_params["exit_rules"].get("exit_before_earnings_days"),
+                            "hard_stop_pct": strategy_params["exit_rules"].get("hard_stop_pct"),
                         },
                         "backtest_costs": {
                             "slippage_bps_per_side": backtest_costs.slippage_bps_per_side,
@@ -309,6 +312,11 @@ class SweepService:
                     if "exit_before_earnings_days" in flat_params and float(flat_params["exit_before_earnings_days"]) > 0
                     else DEFAULT_EXIT_RULES.exit_before_earnings_days
                 ),
+                "hard_stop_pct": (
+                    float(flat_params["hard_stop_pct"])
+                    if "hard_stop_pct" in flat_params and float(flat_params["hard_stop_pct"]) > 0
+                    else DEFAULT_EXIT_RULES.hard_stop_pct
+                ),
             }
             combinations.append({"indicators": indicators, "exit_rules": exit_rules})
         return combinations
@@ -383,6 +391,11 @@ class SweepService:
                 if exit_rules.get("exit_before_earnings_days") is not None
                 else None
             ),
+            hard_stop_pct=(
+                float(exit_rules["hard_stop_pct"])
+                if exit_rules.get("hard_stop_pct") is not None
+                else None
+            ),
         )
 
         for ticker, ticker_frame in prepared.partition_by("ticker", as_dict=True).items():
@@ -390,6 +403,10 @@ class SweepService:
             for row in ticker_frame.to_dicts():
                 if position is not None:
                     position["max_price"] = max(position["max_price"], float(row["high"]))
+                    hard_stop = entry_stop_price(
+                        entry_price=position["entry_price"],
+                        exit_rules=resolved_exit_rules,
+                    )
                     stop_price = trailing_stop_price(
                         max_price_seen=position["max_price"],
                         entry_atr=position["entry_atr"],
@@ -404,6 +421,8 @@ class SweepService:
                     exit_price = None
                     if not bool(row["regime_green"]):
                         exit_price = float(row["close"])
+                    elif hard_stop is not None and float(row["low"]) <= hard_stop:
+                        exit_price = hard_stop
                     elif float(row["low"]) <= stop_price:
                         exit_price = stop_price
                     elif float(row["high"]) >= target_price:

@@ -275,6 +275,50 @@ class DatabaseManagerInitializationTests(unittest.TestCase):
             placeholder_count = statement.count("?")
             self.assertEqual(placeholder_count, len(rows[0]))
 
+    def test_replace_extended_hours_snapshots_builds_matching_insert_placeholders(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            paths = AppPaths(
+                root_dir=root,
+                data_dir=root / "data",
+                duckdb_path=root / "data" / "market_data.duckdb",
+                sqlite_path=root / "data" / "ledger.sqlite",
+                reports_dir=root / "reports",
+                logs_dir=root / "logs",
+                config_path=root / "config.yaml",
+                env_path=root / ".env",
+                production_strategy_path=root / "production_strategy.json",
+            )
+            manager = DatabaseManager(paths)
+            fake_duckdb = FakeDuckDBConnection()
+
+            with patch.object(manager, "duckdb_connection", return_value=fake_duckdb):
+                inserted = manager.replace_extended_hours_snapshots(
+                    snapshot_date="2026-07-03",
+                    rows=[
+                        {
+                            "ticker": "AAA",
+                            "captured_at": "2026-07-03T23:30:00+00:00",
+                            "source": "research",
+                            "sector": "Information Technology",
+                            "sector_etf": "XLK",
+                            "regular_close": 100.0,
+                            "extended_price": 103.0,
+                            "extended_return": 0.03,
+                            "extended_volume": 10_000,
+                            "last_trade_at": "2026-07-03T19:30:00-04:00",
+                            "sector_etf_extended_return": 0.01,
+                            "relative_extended_return": 0.02,
+                            "details": {"has_extended_rows": True},
+                        }
+                    ],
+                )
+
+            self.assertEqual(inserted, 1)
+            statement, rows = fake_duckdb.executemany_calls[-1]
+            placeholder_count = statement.count("?")
+            self.assertEqual(placeholder_count, len(rows[0]))
+
     def test_replace_analyst_revision_snapshots_builds_matching_insert_placeholders(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

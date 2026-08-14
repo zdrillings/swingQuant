@@ -168,10 +168,11 @@ class QuoteService:
         sector_map = {str(row["ticker"]).upper(): row["sector"] for row in universe_rows}
         strategies = load_active_strategies()
 
-        trade_sector = (
-            sector_map.get(normalized_ticker)
-            or (open_trade["strategy_slot"] if open_trade is not None and hasattr(open_trade, "keys") else None)
-        )
+        trade_sector = sector_map.get(normalized_ticker)
+        if trade_sector is None and open_trade is not None and hasattr(open_trade, "keys"):
+            strategy_slot = open_trade["strategy_slot"]
+            strategy = strategies.get(str(strategy_slot)) if strategy_slot not in (None, "") else None
+            trade_sector = strategy.sector if strategy is not None else strategy_slot
         regime_etf = regime_etf_for_sector(trade_sector) if trade_sector else "SPY"
         history_tickers = sorted({normalized_ticker, "SPY", "QQQ", regime_etf})
         intraday_prices = self._load_intraday_last_prices(history_tickers)
@@ -363,12 +364,14 @@ class QuoteService:
                     target_price is not None and current_price >= target_price
                 )
 
-            exit_flags_map["time_limit"] = bool(
-                days_in_trade > int(strategy.exit_rules.time_limit_days)
-            )
-            exit_flags_map["regime_flip"] = regime_green is False
+            if current_price is not None:
+                exit_flags_map["time_limit"] = bool(
+                    days_in_trade > int(strategy.exit_rules.time_limit_days)
+                )
+                exit_flags_map["regime_flip"] = regime_green is False
             if (
-                strategy.exit_rules.exit_before_earnings_days is not None
+                current_price is not None
+                and strategy.exit_rules.exit_before_earnings_days is not None
                 and pd.notna(latest_ticker_row.get("days_to_next_earnings"))
             ):
                 exit_flags_map["pre_earnings_exit"] = bool(
@@ -418,7 +421,7 @@ class QuoteService:
                 if isinstance(config, dict)
                 else {}
             )
-            preferred_model_name = shortlist_model_config.get("production_model_name", "xgboost_model")
+            preferred_model_name = shortlist_model_config.get("production_model_name")
             eligible_universe_mode = shortlist_model_config.get(
                 "production_eligible_universe_mode",
                 shortlist_model_config.get("eligible_universe_mode", "passed_only"),

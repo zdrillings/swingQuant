@@ -14,13 +14,16 @@ from src.utils.strategy import ExitRules, ProductionStrategy
 
 class QuoteServiceTests(unittest.TestCase):
     def test_quote_reports_live_trade_context_and_model_metadata(self) -> None:
+        entry_date = (pd.Timestamp.today().normalize() - pd.offsets.BDay(5)).date().isoformat()
+        snapshot_date = (pd.Timestamp.today().normalize() - pd.offsets.BDay(4)).date().isoformat()
+
         class FakeDB:
             def initialize(self): return None
 
             def get_latest_open_trade(self, ticker):
                 return {
                     "ticker": "CC",
-                    "entry_date": "2026-06-01",
+                    "entry_date": entry_date,
                     "entry_price": 23.62,
                     "entry_atr": 1.4086,
                     "strategy_id": 987486,
@@ -58,7 +61,7 @@ class QuoteServiceTests(unittest.TestCase):
                 return pd.DataFrame(
                     [
                         {
-                            "scan_date": "2026-06-01",
+                            "scan_date": entry_date,
                             "ticker": "CC",
                             "selected": 0,
                             "selected_rank": None,
@@ -78,12 +81,12 @@ class QuoteServiceTests(unittest.TestCase):
         service = QuoteService(FakeDB())
         analysis_frame = pd.DataFrame(
             [
-                {"ticker": "SPY", "date": pd.Timestamp("2026-06-02"), "adj_close": 100.0, "spy_sma_200": 95.0, "qqq_sma_200": None},
-                {"ticker": "QQQ", "date": pd.Timestamp("2026-06-02"), "adj_close": 100.0, "spy_sma_200": None, "qqq_sma_200": 95.0},
-                {"ticker": "XLB", "date": pd.Timestamp("2026-06-02"), "adj_close": 100.0, "spy_sma_200": 95.0, "qqq_sma_200": None},
+                {"ticker": "SPY", "date": pd.Timestamp(snapshot_date), "adj_close": 100.0, "spy_sma_200": 95.0, "qqq_sma_200": None},
+                {"ticker": "QQQ", "date": pd.Timestamp(snapshot_date), "adj_close": 100.0, "spy_sma_200": None, "qqq_sma_200": 95.0},
+                {"ticker": "XLB", "date": pd.Timestamp(snapshot_date), "adj_close": 100.0, "spy_sma_200": 95.0, "qqq_sma_200": None},
                 {
                     "ticker": "CC",
-                    "date": pd.Timestamp("2026-06-02"),
+                    "date": pd.Timestamp(snapshot_date),
                     "adj_close": 22.15,
                     "atr_14": 1.6,
                     "days_to_next_earnings": 12.0,
@@ -92,9 +95,9 @@ class QuoteServiceTests(unittest.TestCase):
             ]
         )
         model_context = LiveShortlistModelContext(
-            generated_at="2026-06-02T18:00:00",
+            generated_at=f"{snapshot_date}T18:00:00",
             champion_model="xgboost_model",
-            live_snapshot_date="2026-06-02",
+            live_snapshot_date=snapshot_date,
             top_n=10,
             live_predictions=pd.DataFrame(
                 [
@@ -135,13 +138,16 @@ class QuoteServiceTests(unittest.TestCase):
         self.assertIn("Sell now: no", rendered)
 
     def test_quote_uses_fresher_scan_close_when_intraday_missing(self) -> None:
+        entry_date = (pd.Timestamp.today().normalize() - pd.offsets.BDay(4)).date().isoformat()
+        latest_scan_date = (pd.Timestamp.today().normalize() - pd.offsets.BDay(1)).date().isoformat()
+
         class FakeDB:
             def initialize(self): return None
 
             def get_latest_open_trade(self, ticker):
                 return {
                     "ticker": "VSH",
-                    "entry_date": "2026-06-11",
+                    "entry_date": entry_date,
                     "entry_price": 57.34,
                     "entry_atr": 6.5,
                     "strategy_id": 1140440,
@@ -178,7 +184,7 @@ class QuoteServiceTests(unittest.TestCase):
                 return pd.DataFrame(
                     [
                         {
-                            "scan_date": "2026-06-22",
+                            "scan_date": latest_scan_date,
                             "ticker": "VSH",
                             "adj_close": 57.54,
                             "selected": 0,
@@ -213,7 +219,7 @@ class QuoteServiceTests(unittest.TestCase):
             report = service.run(ticker="VSH")
 
         self.assertAlmostEqual(report.current_price, 57.54)
-        self.assertEqual(report.current_price_source, "scan_close:2026-06-22")
+        self.assertEqual(report.current_price_source, f"scan_close:{latest_scan_date}")
         self.assertAlmostEqual(report.unrealized_pct, (57.54 / 57.34) - 1.0)
         self.assertFalse(report.sell_now)
         self.assertEqual(report.exit_flags, ())

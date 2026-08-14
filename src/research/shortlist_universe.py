@@ -11,6 +11,7 @@ VALID_ELIGIBLE_UNIVERSE_MODES = (
 VALID_MODEL_SCOPES = (
     "global",
     "sector_specific",
+    "regime_specific",
 )
 
 

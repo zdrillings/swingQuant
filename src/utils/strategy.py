@@ -17,6 +17,7 @@ class ExitRules:
     trailing_stop_atr_mult: float | None = None
     profit_target_atr_mult: float | None = None
     exit_before_earnings_days: int | None = None
+    hard_stop_pct: float | None = None
 
 
 @dataclass(frozen=True)
@@ -27,6 +28,7 @@ class ProductionStrategy:
     exit_rules: ExitRules
     slot: str = "default"
     sector: str = "ALL"
+    scan_enabled: bool = True
 
 
 @dataclass(frozen=True)
@@ -157,7 +159,13 @@ def _production_strategy_from_payload(data: dict, *, slot: str) -> ProductionStr
                 if exit_rules.get("exit_before_earnings_days") is not None
                 else None
             ),
+            hard_stop_pct=(
+                float(exit_rules["hard_stop_pct"])
+                if exit_rules.get("hard_stop_pct") is not None
+                else None
+            ),
         ),
+        scan_enabled=bool(data.get("scan_enabled", True)),
     )
 
 
@@ -180,6 +188,7 @@ def build_production_strategy_payload(
             "trailing_stop_atr_mult": exit_rules.trailing_stop_atr_mult,
             "profit_target_atr_mult": exit_rules.profit_target_atr_mult,
             "exit_before_earnings_days": exit_rules.exit_before_earnings_days,
+            "hard_stop_pct": exit_rules.hard_stop_pct,
         },
     }
 
@@ -216,6 +225,11 @@ def production_strategy_from_backtest_result(
                 if exit_rules.get("exit_before_earnings_days") is not None
                 else None
             ),
+            hard_stop_pct=(
+                float(exit_rules["hard_stop_pct"])
+                if exit_rules.get("hard_stop_pct") is not None
+                else None
+            ),
         ),
     )
 
@@ -236,6 +250,12 @@ def trailing_stop_price(*, max_price_seen: float, entry_atr: float | None, exit_
     if exit_rules.trailing_stop_pct is None or exit_rules.trailing_stop_pct <= 0:
         raise ValueError("Percent trailing stop requires a positive trailing_stop_pct")
     return max_price_seen * (1 - exit_rules.trailing_stop_pct)
+
+
+def entry_stop_price(*, entry_price: float, exit_rules: ExitRules) -> float | None:
+    if exit_rules.hard_stop_pct is None or exit_rules.hard_stop_pct <= 0:
+        return None
+    return entry_price * (1 - exit_rules.hard_stop_pct)
 
 
 def profit_target_price(*, entry_price: float, entry_atr: float | None, exit_rules: ExitRules) -> float:

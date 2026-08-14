@@ -26,6 +26,7 @@ class MarketDataClient:
         end_date: date | None = None,
         period: str | None = None,
         interval: str = "1d",
+        include_prepost: bool = False,
     ) -> pd.DataFrame:
         import yfinance as yf
 
@@ -38,6 +39,7 @@ class MarketDataClient:
             "group_by": "ticker",
             "progress": False,
             "threads": True,
+            "prepost": include_prepost,
         }
         if period is not None:
             kwargs["period"] = period
@@ -59,8 +61,8 @@ class MarketDataClient:
         return self.download_history(tickers, start_date=start_date, end_date=end_date, interval="1d")
 
     @retry(retries=3, backoff_seconds=1.0, backoff_multiplier=2.0)
-    def download_intraday_history(self, tickers: list[str]) -> pd.DataFrame:
-        return self.download_history(tickers, period="1d", interval="1m")
+    def download_intraday_history(self, tickers: list[str], *, include_prepost: bool = False) -> pd.DataFrame:
+        return self.download_history(tickers, period="1d", interval="1m", include_prepost=include_prepost)
 
     @retry(retries=3, backoff_seconds=1.0, backoff_multiplier=2.0)
     def download_earnings_dates(self, ticker: str, *, limit: int = 24) -> list[date]:

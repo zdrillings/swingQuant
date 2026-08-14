@@ -1077,6 +1077,43 @@ class PromoteAndTradeTests(unittest.TestCase):
             self.assertEqual(latest_trade["strategy_id"], 172365)
             self.assertEqual(latest_trade["shares"], 60)
 
+    def test_trade_buy_requires_slot_for_new_off_universe_ticker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            paths = AppPaths(
+                root_dir=root,
+                data_dir=root / "data",
+                duckdb_path=root / "data" / "market_data.duckdb",
+                sqlite_path=root / "data" / "ledger.sqlite",
+                reports_dir=root / "reports",
+                logs_dir=root / "logs",
+                config_path=root / "config.yaml",
+                env_path=root / ".env",
+                production_strategy_path=root / "production_strategy.json",
+                production_strategies_path=root / "production_strategies.json",
+            )
+            db = DatabaseManager(paths)
+            with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                db.initialize()
+            strategy = ProductionStrategy(
+                strategy_id=172365,
+                promoted_at="2026-05-06T17:00:00",
+                indicators={},
+                exit_rules=ExitRules(
+                    trailing_stop_pct=0.08,
+                    profit_target_pct=0.10,
+                    time_limit_days=20,
+                ),
+                slot="technology",
+                sector="Information Technology",
+            )
+
+            clear_strategy_caches()
+            with patch("src.trade.service.load_active_strategies", return_value={"technology": strategy}):
+                with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
+                    with self.assertRaisesRegex(ValueError, "off-universe ticker, pass --slot explicitly"):
+                        TradeService(db).buy(ticker="CHEOY", price=41.61, shares=200)
+
     def test_trade_buy_fetches_recent_history_for_atr_based_off_universe_ticker(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

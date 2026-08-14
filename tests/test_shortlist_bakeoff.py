@@ -95,8 +95,7 @@ class ShortlistBakeoffServiceTests(unittest.TestCase):
             self.assertIn("- eligible_universe_mode: passed_only", report_text)
             self.assertIn("## Universe Model Bakeoff", report_text)
             self.assertIn("## Current Scan Policy Bakeoff", report_text)
-            self.assertIn("### ridge_model", report_text)
-            self.assertIn("### ensemble_model", report_text)
+            self.assertIn("### lasso_model", report_text)
             self.assertIn("### runtime_selected", report_text)
 
     def test_shortlist_bakeoff_parser_accepts_args(self) -> None:

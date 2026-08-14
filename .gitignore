@@ -150,6 +150,10 @@ activemq-data/
 # Environments
 .env
 .envrc
+schwab.json
+schwab.yml
+schwab.yaml
+.schwab_tokens.json
 .venv
 env/
 venv/
@@ -206,6 +210,11 @@ tempCodeRunnerFile.py
 
 # Large generated research artifacts
 reports/shortlist_model_oos_predictions.csv
+reports/ai_diversification_analysis.md
+reports/earnings_confirmation_live_comparison.md
+reports/extended_hours_snapshots.md
+reports/factor_tearsheet_*_20d.md
+reports/healthcare_param_sweeps/
 
 # Ruff stuff:
 .ruff_cache/

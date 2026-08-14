@@ -57,9 +57,9 @@ class ScanPerformanceServiceTests(unittest.TestCase):
                                 "sector": "Materials",
                                 "selected": 1,
                                 "selected_rank": 1,
-                                "selection_source": "heuristic",
-                                "model_name": None,
-                                "model_generated_at": None,
+                                "selection_source": "shortlist_model",
+                                "model_name": "xgboost_model",
+                                "model_generated_at": "2026-06-03T20:08:10+00:00",
                             },
                         ]
                     )
@@ -109,8 +109,10 @@ class ScanPerformanceServiceTests(unittest.TestCase):
             self.assertTrue(report.output_path.endswith("scan_performance.md"))
             report_text = (reports_dir / "scan_performance.md").read_text(encoding="utf-8")
             self.assertIn("# Scan Performance", report_text)
-            self.assertIn("- scope: latest_model", report_text)
-            self.assertIn("- scan_dates: 1", report_text)
+            self.assertIn("- scope: latest_model_family", report_text)
+            self.assertIn("- model_generated_at: all", report_text)
+            self.assertIn("- latest_model_generated_at: 2026-06-03T20:08:10+00:00", report_text)
+            self.assertIn("- scan_dates: 2", report_text)
             self.assertIn("### 2d", report_text)
             self.assertIn("### 60d", report_text)
             self.assertIn("## 20d Timeframe Summary", report_text)
@@ -254,6 +256,68 @@ class ScanPerformanceServiceTests(unittest.TestCase):
         self.assertIn("mean_return=5.00%", report_text)
         self.assertIn("median_alpha=3.00%", report_text)
 
+    def test_scan_performance_renders_market_turn_diagnostics(self) -> None:
+        class FakeDB:
+            def load_price_history(self, tickers):
+                rows = []
+                for ticker, start in [("SPY", 100.0), ("QQQ", 100.0), ("XLK", 100.0), ("SMH", 100.0)]:
+                    for index in range(21):
+                        price = start + index
+                        if ticker == "SMH" and index == 20:
+                            price = 90.0
+                        rows.append({"ticker": ticker, "date": f"2026-06-{index + 1:02d}", "adj_close": price})
+                return pd.DataFrame(rows)
+
+        service = ScanPerformanceService(db_manager=FakeDB())
+        frame = pd.DataFrame(
+            [
+                {
+                    "scan_date": "2026-06-01",
+                    "ticker": "AAA",
+                    "sector": "Information Technology",
+                    "strategy_slot": "technology",
+                    "opportunity_score": 0.46,
+                    "fwd_return_20d": -0.08,
+                    "alpha_vs_sector_20d": -0.07,
+                    "details_json": (
+                        '{"feature_snapshot": {'
+                        '"rs_vs_spy_5d_change": -12.0, '
+                        '"rs_vs_subindustry_5d_change": -18.0'
+                        "}}"
+                    ),
+                },
+                {
+                    "scan_date": "2026-06-01",
+                    "ticker": "BBB",
+                    "sector": "Health Care",
+                    "strategy_slot": "healthcare",
+                    "opportunity_score": 0.51,
+                    "fwd_return_20d": 0.06,
+                    "alpha_vs_sector_20d": 0.04,
+                    "details_json": (
+                        '{"feature_snapshot": {'
+                        '"rs_vs_spy_5d_change": 8.0, '
+                        '"rs_vs_subindustry_5d_change": 4.0'
+                        "}}"
+                    ),
+                },
+            ]
+        )
+
+        report_text = "\n".join(service._render_market_turn_diagnostics(frame, benchmark="sector"))
+
+        self.assertIn("## Market Turn Diagnostics", report_text)
+        self.assertIn("### Market ETF Snapshot", report_text)
+        self.assertIn("SMH", report_text)
+        self.assertIn("### Latest Selection Concentration", report_text)
+        self.assertIn("by_sector: Information Technology=1, Health Care=1", report_text)
+        self.assertIn("### Latest RS Deterioration", report_text)
+        self.assertIn("rs_deteriorating_ge_10pts: 1/2", report_text)
+        self.assertIn("AAA: rs_vs_spy_5d_change=-12.0pts", report_text)
+        self.assertIn("### Matured 20d Outcomes By RS Change", report_text)
+        self.assertIn("deterioration -20pts to -10pts: n=1", report_text)
+        self.assertIn("stable -10pts to +10pts: n=1", report_text)
+
     def test_scan_performance_renders_20d_timeframe_summary(self) -> None:
         service = ScanPerformanceService(db_manager=None)
         frame = pd.DataFrame(
@@ -262,6 +326,7 @@ class ScanPerformanceServiceTests(unittest.TestCase):
                 {"scan_date": "2026-04-15", "fwd_return_20d": -0.03, "alpha_vs_sector_20d": -0.04},
                 {"scan_date": "2026-06-01", "fwd_return_20d": 0.08, "alpha_vs_sector_20d": 0.06},
                 {"scan_date": "2026-06-20", "fwd_return_20d": 0.10, "alpha_vs_sector_20d": 0.07},
+                {"scan_date": "2026-07-01", "fwd_return_20d": None, "alpha_vs_sector_20d": None},
             ]
         )
 
@@ -273,11 +338,41 @@ class ScanPerformanceServiceTests(unittest.TestCase):
         self.assertIn("### ytd", report_text)
         self.assertIn("### 3m", report_text)
         self.assertIn("### 20d", report_text)
+        self.assertIn("- latest_selected_scan_date: 2026-07-01", report_text)
+        self.assertIn("- latest_matured_20d_scan_date: 2026-06-20", report_text)
+        self.assertIn("- note: 20d summaries are anchored to scan dates with a full 20 trading sessions of forward data.", report_text)
         self.assertIn("- end_date: 2026-06-20", report_text)
         self.assertIn("- matured_picks: 4", report_text)
         self.assertIn("- matured_picks: 3", report_text)
         self.assertIn("- matured_picks: 2", report_text)
         self.assertIn("- hit_rate: 75.00%", report_text)
+
+    def test_scan_performance_skips_missing_horizon_columns(self) -> None:
+        service = ScanPerformanceService(db_manager=None)
+        frame = pd.DataFrame(
+            [
+                {
+                    "scan_date": pd.Timestamp("2026-06-20"),
+                    "ticker": "AAA",
+                    "selected_rank": 1,
+                    "sector": "Industrials",
+                    "fwd_return_20d": 0.04,
+                    "alpha_vs_sector_20d": 0.02,
+                }
+            ]
+        )
+
+        horizon_text = "\n".join(service._render_horizon_summary(frame, horizons=(2, 20), benchmark="sector"))
+        dates_text = "\n".join(service._render_recent_scan_dates(frame, horizons=(2, 20), benchmark="sector"))
+        extremes_text = "\n".join(service._render_best_and_worst_picks(frame, horizons=(2, 20), benchmark="sector"))
+        repeated_text = "\n".join(service._render_repeated_winners_and_losers(frame, horizons=(2, 20), benchmark="sector"))
+
+        self.assertIn("### 2d\n- matured_picks: 0", horizon_text)
+        self.assertIn("### 20d\n- matured_picks: 1", horizon_text)
+        self.assertIn("- picks: AAA", dates_text)
+        self.assertIn("- 20d: median_return=4.00%", dates_text)
+        self.assertIn("### 2d\nNo matured picks.", extremes_text)
+        self.assertIn("### 2d\nNo matured picks.", repeated_text)
 
     def test_scan_performance_renders_portfolio_performance(self) -> None:
         class FakeDB:
@@ -410,7 +505,7 @@ class ScanPerformanceServiceTests(unittest.TestCase):
 
             self.assertEqual(len(email_calls), 1)
             subject, html_body, _ = email_calls[0]
-            self.assertIn("Scan Performance", subject)
+            self.assertIn("SwingQuant Performance", subject)
             self.assertIn("<html>", html_body)
             self.assertIn("Horizon Summary", html_body)
 

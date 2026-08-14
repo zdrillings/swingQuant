@@ -17,6 +17,8 @@ SNAPSHOT_REFRESH_COLUMNS = (
     "sub_industry",
     "subindustry_benchmark",
     "relative_strength_index_vs_subindustry",
+    "rs_vs_spy_5d_change",
+    "rs_vs_subindustry_5d_change",
 )
 SNAPSHOT_FEATURE_COLUMNS = [
     "md_volume_30d",
@@ -29,6 +31,11 @@ SNAPSHOT_FEATURE_COLUMNS = [
     "relative_strength_index_vs_qqq",
     "relative_strength_index_vs_xlk",
     "relative_strength_index_vs_subindustry",
+    "rs_vs_spy_5d_change",
+    "rs_vs_qqq_5d_change",
+    "rs_vs_xlk_5d_change",
+    "rs_vs_subindustry_5d_change",
+    "rs_vs_subindustry_10d_change",
     "roc_63",
     "roc_126",
     "vol_alpha",
@@ -52,9 +59,17 @@ SNAPSHOT_FEATURE_COLUMNS = [
     "volume_percentile_60",
     "distance_from_52w_high",
     "days_since_52w_high",
+    "rsi_2",
+    "ret_1d",
+    "ret_5d",
+    "close_vs_20d_low",
     "sector_pct_above_50",
     "sector_pct_above_200",
     "sector_median_roc_63",
+    "spy_roc_20",
+    "spy_roc_5",
+    "spy_realized_vol_20",
+    "qqq_roc_20",
 ]
 
 
@@ -78,7 +93,11 @@ class UniverseSnapshotBackfillService:
         skip_existing: bool = False,
     ) -> UniverseSnapshotBackfillReport:
         self.db_manager.initialize()
-        strategies = load_active_strategies()
+        strategies = {
+            slot: strategy
+            for slot, strategy in load_active_strategies().items()
+            if getattr(strategy, "scan_enabled", True)
+        }
         universe_rows = self.db_manager.list_universe_rows(active_only=True)
         if not universe_rows:
             raise ValueError("Universe is empty. Run `sq sync` first.")
@@ -282,6 +301,10 @@ class UniverseSnapshotBackfillService:
                 horizon=horizon,
                 benchmark_ticker=benchmark_ticker,
             )
+        alpha_20d = payload.get("alpha_vs_sector_20d")
+        payload["alpha_vs_sector_20d_pos"] = (
+            1 if alpha_20d is not None and float(alpha_20d) > 0.02 else 0
+        )
         payload["mfe_20d"] = self._excursion(
             ticker_frame=ticker_frame,
             index=int(index),

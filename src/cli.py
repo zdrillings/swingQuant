@@ -10,6 +10,7 @@ from src.research.factor_tearsheet_service import FactorTearsheetService
 from src.research.rsi_exit_bakeoff_service import RsiExitBakeoffService
 from src.research.shortlist_bakeoff_service import ShortlistBakeoffService
 from src.research.shortlist_allocation_analysis_service import ShortlistAllocationAnalysisService
+from src.research.shortlist_earnings_overlay_service import ShortlistEarningsOverlayService
 from src.research.shortlist_model_service import ShortlistModelService
 from src.research.shortlist_promote_service import ShortlistPromoteService
 from src.research.shortlist_scoreboard_service import ShortlistScoreboardService
@@ -28,10 +29,13 @@ from src.research.service import ResearchService
 from src.scan.analyst_snapshot_service import AnalystSnapshotService
 from src.scan.analysis_service import ScanAnalysisService
 from src.scan.backfill_service import ScanBackfillService
+from src.scan.extended_hours_snapshot_service import ExtendedHoursSnapshotService
 from src.scan.performance_service import ScanPerformanceService
 from src.scan.portfolio_rotation_service import PortfolioRotationService
 from src.scan.slot_attribution_service import SlotAttributionService
 from src.scan.service import ScanService
+from src.schwab.client import SchwabClient
+from src.schwab.ledger_sync import SchwabLedgerSyncService
 from src.sleeves.service import SleeveResearchService
 from src.sweep.service import SweepService
 from src.sync.refresh_service import RefreshUniverseService
@@ -94,6 +98,11 @@ def build_parser() -> argparse.ArgumentParser:
     analyst_snapshot_parser.add_argument("--source", choices=("research", "active"), default="research")
     analyst_snapshot_parser.add_argument("--top", type=int, default=250)
     analyst_snapshot_parser.add_argument("--ticker", action="append", default=None)
+    extended_hours_parser = subparsers.add_parser("extended-hours-snapshot", help="Capture postmarket movement snapshots for later analysis.")
+    extended_hours_parser.add_argument("--snapshot-date", type=str, default=None)
+    extended_hours_parser.add_argument("--source", choices=("research", "open", "all", "explicit"), default="all")
+    extended_hours_parser.add_argument("--top", type=int, default=250)
+    extended_hours_parser.add_argument("--ticker", action="append", default=None)
     scan_backfill_parser = subparsers.add_parser("scan-backfill", help="Replay daily scans across historical dates without using future prices.")
     scan_backfill_parser.add_argument("--date-from", required=True, type=str)
     scan_backfill_parser.add_argument("--date-to", default=None, type=str)
@@ -150,6 +159,7 @@ def build_parser() -> argparse.ArgumentParser:
     shortlist_model_parser.add_argument("--recent-dates", type=int, default=60)
     shortlist_model_parser.add_argument("--eligible-universe-mode", choices=VALID_ELIGIBLE_UNIVERSE_MODES, default="passed_only")
     shortlist_model_parser.add_argument("--model-scope", choices=VALID_MODEL_SCOPES, default="global")
+    shortlist_model_parser.add_argument("--target-type", choices=["regression", "classification"], default="regression")
     shortlist_model_parser.add_argument("--xgboost-config", choices=["baseline", "balanced_depth4", "shallower_regularized"], default="baseline")
     shortlist_scoreboard_parser = subparsers.add_parser("shortlist-scoreboard", help="Render model scorecards and explicit promotion decisions for shortlist candidates.")
     shortlist_scoreboard_parser.add_argument("--top", type=int, default=10)
@@ -190,7 +200,7 @@ def build_parser() -> argparse.ArgumentParser:
     shortlist_reactivation_parser.add_argument("--model-scope", choices=VALID_MODEL_SCOPES, default=None)
     shortlist_reactivation_parser.add_argument("--model-name", type=str, default=None)
     shortlist_reactivation_parser.add_argument("--xgboost-config", choices=["baseline", "balanced_depth4", "shallower_regularized"], default=None)
-    shortlist_reactivation_parser.add_argument("--candidate-sector", action="append", default=["Information Technology"])
+    shortlist_reactivation_parser.add_argument("--candidate-sector", action="append", default=None)
     shortlist_reactivation_parser.add_argument("--no-refresh-if-stale", action="store_true")
     shortlist_promote_parser = subparsers.add_parser("shortlist-promote", help="Pin a shortlist model configuration for production scan and monitor.")
     shortlist_promote_parser.add_argument("--model-name", required=True, type=str)
@@ -210,6 +220,18 @@ def build_parser() -> argparse.ArgumentParser:
     shortlist_tune_parser.add_argument("--tuning-profile", choices=["focused", "full"], default="focused")
     shortlist_tune_parser.add_argument("--ablation-profile", choices=["focused", "full"], default="focused")
     shortlist_tune_parser.add_argument("--ablation-params-candidate", type=str, default=None)
+    shortlist_earnings_overlay_parser = subparsers.add_parser(
+        "shortlist-earnings-overlay",
+        help="Compare the live shortlist model against earnings-reaction rank overlays.",
+    )
+    shortlist_earnings_overlay_parser.add_argument("--top", type=int, default=10)
+    shortlist_earnings_overlay_parser.add_argument("--horizon", type=int, default=20)
+    shortlist_earnings_overlay_parser.add_argument("--recent-dates", type=int, default=60)
+    shortlist_earnings_overlay_parser.add_argument("--model-name", type=str, default=None)
+    shortlist_earnings_overlay_parser.add_argument("--eligible-universe-mode", choices=VALID_ELIGIBLE_UNIVERSE_MODES, default=None)
+    shortlist_earnings_overlay_parser.add_argument("--model-scope", choices=VALID_MODEL_SCOPES, default=None)
+    shortlist_earnings_overlay_parser.add_argument("--xgboost-config", choices=["baseline", "balanced_depth4", "shallower_regularized"], default=None)
+    shortlist_earnings_overlay_parser.add_argument("--generated-at", type=str, default=None)
     exit_analysis_parser = subparsers.add_parser("exit-analysis", help="Compare realized exits against simple fixed-horizon counterfactual holds.")
     exit_analysis_parser.add_argument("--horizons", type=int, nargs="*", default=[5, 10, 15, 20])
     rsi_exit_bakeoff_parser = subparsers.add_parser("rsi-exit-bakeoff", help="Compare RSI_2 exit variants on historical selected scan picks.")
@@ -226,6 +248,16 @@ def build_parser() -> argparse.ArgumentParser:
     scan_analysis_parser.add_argument("--horizons", type=int, nargs="*", default=[5, 10, 20])
     slot_attribution_parser = subparsers.add_parser("slot-attribution", help="Compare active-slot candidate selection methods on historical scan snapshots.")
     slot_attribution_parser.add_argument("--horizon", type=int, default=10)
+    schwab_parser = subparsers.add_parser("schwab", help="Authenticate with Schwab and inspect broker positions.")
+    schwab_parser.add_argument("action", choices=("auth-url", "token", "refresh", "accounts", "positions", "sync-ledger"))
+    schwab_parser.add_argument("code", nargs="?", help="Authorization code or full callback URL for `token`.")
+    schwab_parser.add_argument("--credentials", default="~/schwab.yml")
+    schwab_parser.add_argument("--token-file", default="~/.schwab_tokens.json")
+    schwab_parser.add_argument("--account", default=None, help="Optional Schwab account hash/account value for positions.")
+    schwab_parser.add_argument("--dry-run", action="store_true", help="Show ledger reconciliation actions without writing.")
+    schwab_parser.add_argument("--ignore-ticker", action="append", default=None, help="Ticker to exclude from Schwab ledger reconciliation.")
+    schwab_parser.add_argument("--include-funds", action="store_true", help="Include Schwab fund/ETF positions in ledger reconciliation.")
+    schwab_parser.add_argument("--close-missing", action="store_true", help="Close local ledger trades missing from Schwab positions.")
     subparsers.add_parser("monitor", help="Run the intraday monitor and send a consolidated digest.")
     return parser
 
@@ -366,6 +398,20 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
 
+        if args.command == "extended-hours-snapshot":
+            report = ExtendedHoursSnapshotService(db_manager).run(
+                snapshot_date=args.snapshot_date,
+                source=args.source,
+                top=args.top,
+                tickers=args.ticker or [],
+            )
+            print(
+                f"Extended-hours snapshot written to {report.output_path} "
+                f"(date={report.snapshot_date}, requested={report.requested_tickers}, "
+                f"rows={report.persisted_rows}, with_extended_price={report.rows_with_extended_price})"
+            )
+            return 0
+
         if args.command == "scan-backfill":
             report = ScanBackfillService(db_manager).run(
                 date_from=args.date_from,
@@ -485,6 +531,7 @@ def main(argv: list[str] | None = None) -> int:
                 eligible_universe_mode=args.eligible_universe_mode,
                 model_scope=args.model_scope,
                 xgboost_config=args.xgboost_config,
+                target_type=args.target_type,
             )
             print(
                 f"Shortlist model written to {report.output_path} "
@@ -558,7 +605,7 @@ def main(argv: list[str] | None = None) -> int:
                 model_scope=args.model_scope,
                 model_name=args.model_name,
                 xgboost_config=args.xgboost_config,
-                candidate_sectors=tuple(args.candidate_sector),
+                candidate_sectors=tuple(args.candidate_sector or ["Information Technology"]),
             )
             print(
                 f"Shortlist sector reactivation analysis written to {report.output_path} "
@@ -597,6 +644,23 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"Shortlist tune report written to {report.output_path} "
                 f"(tuned_candidate={report.tuned_candidate}, ablations={report.ablation_count})"
+            )
+            return 0
+
+        if args.command == "shortlist-earnings-overlay":
+            report = ShortlistEarningsOverlayService(db_manager).run(
+                top_n=args.top,
+                horizon_days=args.horizon,
+                recent_dates=args.recent_dates,
+                model_name=args.model_name,
+                eligible_universe_mode=args.eligible_universe_mode,
+                model_scope=args.model_scope,
+                xgboost_config=args.xgboost_config,
+                generated_at=args.generated_at,
+            )
+            print(
+                f"Shortlist earnings overlay written to {report.output_path} "
+                f"(generated_at={report.generated_at}, rows={report.row_count}, dates={report.date_count})"
             )
             return 0
 
@@ -651,6 +715,59 @@ def main(argv: list[str] | None = None) -> int:
                 f"(target_column={report.target_column}, slots={report.slot_count}, validation_dates={report.scan_dates})"
             )
             return 0
+
+        if args.command == "schwab":
+            client = SchwabClient(credentials_path=args.credentials, token_path=args.token_file)
+            if args.action == "auth-url":
+                print(client.build_authorization_url())
+                return 0
+            if args.action == "token":
+                if not args.code:
+                    raise ValueError("Pass the Schwab authorization code or full callback URL.")
+                token_state = client.exchange_authorization_code(args.code)
+                print(f"Schwab token saved to {client.token_path} expires_at={token_state.expires_at}")
+                return 0
+            if args.action == "refresh":
+                token_state = client.refresh_access_token()
+                print(f"Schwab token refreshed at {client.token_path} expires_at={token_state.expires_at}")
+                return 0
+            if args.action == "accounts":
+                accounts = client.list_account_numbers()
+                if not accounts:
+                    print("No Schwab accounts returned.")
+                    return 0
+                for account in accounts:
+                    print(
+                        "account",
+                        f"number={account.get('accountNumber')}",
+                        f"hash={account.get('hashValue')}",
+                    )
+                return 0
+            if args.action == "positions":
+                positions = client.list_positions(account_hash=args.account)
+                if not positions:
+                    print("No Schwab positions returned.")
+                    return 0
+                for position in positions:
+                    print(
+                        "position",
+                        f"ticker={position.get('ticker')}",
+                        f"qty={position.get('quantity')}",
+                        f"avg_price={position.get('average_price')}",
+                        f"market_value={position.get('market_value')}",
+                        f"account={position.get('account_number')}",
+                    )
+                return 0
+            if args.action == "sync-ledger":
+                report = SchwabLedgerSyncService(db_manager, schwab_client=client).run(
+                    account_hash=args.account,
+                    dry_run=args.dry_run,
+                    ignore_tickers=tuple(args.ignore_ticker or ()),
+                    ignore_funds=not args.include_funds,
+                    close_missing=args.close_missing,
+                )
+                print(report.render_console())
+                return 0
 
         if args.command == "monitor":
             report = MonitorService(db_manager).run()

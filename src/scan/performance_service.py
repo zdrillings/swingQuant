@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from html import escape
+import json
 import math
 
 import pandas as pd
@@ -97,6 +98,7 @@ class ScanPerformanceService:
             f"- selection_source: {resolved_scope['selection_source'] or 'all'}",
             f"- model_name: {resolved_scope['model_name'] or 'all'}",
             f"- model_generated_at: {resolved_scope['model_generated_at'] or 'all'}",
+            f"- latest_model_generated_at: {resolved_scope.get('latest_model_generated_at') or 'n/a'}",
             f"- recent_scan_dates: {window_label}",
             f"- scan_dates: {len(scoped_dates)}",
             f"- selected_rows: {len(enriched.index)}",
@@ -107,6 +109,7 @@ class ScanPerformanceService:
         lines.extend(self._render_horizon_summary(enriched, horizons=horizons, benchmark=benchmark))
         lines.extend(self._render_20d_timeframe_summary(enriched, benchmark=benchmark))
         lines.extend(self._render_20d_score_bands(enriched, benchmark=benchmark))
+        lines.extend(self._render_market_turn_diagnostics(enriched, benchmark=benchmark))
         lines.extend(self._render_portfolio_performance())
         lines.extend(self._render_best_and_worst_picks(enriched, horizons=horizons, benchmark=benchmark))
         lines.extend(self._render_repeated_winners_and_losers(enriched, horizons=horizons, benchmark=benchmark))
@@ -115,9 +118,17 @@ class ScanPerformanceService:
         report_text = "\n".join(lines)
         report_path.write_text(report_text, encoding="utf-8")
         if email:
+            dashboard = self._build_performance_dashboard(
+                enriched=enriched,
+                horizons=horizons,
+                benchmark=benchmark,
+                resolved_scope=resolved_scope,
+                window_label=window_label,
+            )
+            forward_predictions = self._load_forward_predictions()
             self.email_sender(
-                subject=f"Scan Performance ({benchmark})",
-                html_body=self._render_email_html(report_text),
+                subject=f"SwingQuant Performance ({benchmark})",
+                html_body=self._render_performance_email(enriched, dashboard, horizons, benchmark, forward_predictions),
                 settings=settings,
             )
 
@@ -168,12 +179,13 @@ class ScanPerformanceService:
         latest_generated_at = str(sorted(model_rows["model_generated_at"].astype(str).unique())[-1])
         latest_rows = model_rows[model_rows["model_generated_at"].astype(str) == latest_generated_at].copy()
         model_names = sorted(latest_rows["model_name"].astype(str).unique())
-        latest_model_name = "xgboost_model" if "xgboost_model" in model_names else model_names[0]
+        latest_model_name = model_names[0]
         return selected.copy(), {
-            "scope": "latest_model",
+            "scope": "latest_model_family",
             "selection_source": "shortlist_model",
             "model_name": latest_model_name,
-            "model_generated_at": latest_generated_at,
+            "model_generated_at": None,
+            "latest_model_generated_at": latest_generated_at,
         }
 
     def _filter_selected(
@@ -327,8 +339,12 @@ class ScanPerformanceService:
         for horizon in horizons:
             return_column = f"fwd_return_{horizon}d"
             alpha_column = f"alpha_vs_{benchmark}_{horizon}d"
-            scoped = frame.dropna(subset=[return_column, alpha_column]).copy()
             lines.append(f"### {horizon}d")
+            scoped = self._matured_outcome_frame(
+                frame,
+                return_column=return_column,
+                alpha_column=alpha_column,
+            )
             if scoped.empty:
                 lines.append("- matured_picks: 0")
                 lines.append("")
@@ -336,6 +352,8 @@ class ScanPerformanceService:
             returns = pd.to_numeric(scoped[return_column], errors="coerce").dropna()
             alphas = pd.to_numeric(scoped[alpha_column], errors="coerce").dropna()
             matured_dates = int(scoped["scan_date"].nunique())
+            latest_selected_scan_date = pd.to_datetime(frame["scan_date"]).dt.normalize().max()
+            latest_matured_scan_date = pd.to_datetime(scoped["scan_date"]).dt.normalize().max()
             return_p25 = float(returns.quantile(0.25))
             return_p75 = float(returns.quantile(0.75))
             return_p05 = float(returns.quantile(0.05))
@@ -344,6 +362,8 @@ class ScanPerformanceService:
             alpha_p75 = float(alphas.quantile(0.75))
             lines.append(f"- matured_picks: {len(scoped.index)}")
             lines.append(f"- matured_scan_dates: {matured_dates}")
+            lines.append(f"- latest_selected_scan_date: {latest_selected_scan_date.date()}")
+            lines.append(f"- latest_matured_scan_date: {latest_matured_scan_date.date()}")
             lines.append(f"- mean_return: {self._fmt_pct(returns.mean())}")
             lines.append(f"- median_return: {self._fmt_pct(returns.median())}")
             lines.append(f"- return_iqr: {self._fmt_pct(return_p25)} to {self._fmt_pct(return_p75)}")
@@ -386,6 +406,11 @@ class ScanPerformanceService:
             lines.append("")
             return lines
         anchor = scoped["scan_date"].max()
+        latest_selected_scan_date = pd.to_datetime(frame["scan_date"]).dt.normalize().max()
+        lines.append(f"- latest_selected_scan_date: {latest_selected_scan_date.date()}")
+        lines.append(f"- latest_matured_20d_scan_date: {anchor.date()}")
+        lines.append("- note: 20d summaries are anchored to scan dates with a full 20 trading sessions of forward data.")
+        lines.append("")
         windows = [
             ("1y", anchor - pd.DateOffset(years=1)),
             ("ytd", pd.Timestamp(year=int(anchor.year), month=1, day=1)),
@@ -648,6 +673,266 @@ class ScanPerformanceService:
             ("score >= 0.50", 0.50, None),
         ]
 
+    def _render_market_turn_diagnostics(
+        self,
+        frame: pd.DataFrame,
+        *,
+        benchmark: str,
+    ) -> list[str]:
+        lines = ["## Market Turn Diagnostics", ""]
+        lines.append("- purpose: surface stale-leadership risk without hiding candidates from the scanner")
+        latest_scan_date = pd.to_datetime(frame["scan_date"], errors="coerce").dropna().max()
+        if pd.isna(latest_scan_date):
+            lines.append("- latest_scan_date: n/a")
+            lines.append("")
+            return lines
+        latest_scan_date = latest_scan_date.normalize()
+        latest = frame[pd.to_datetime(frame["scan_date"], errors="coerce").dt.normalize() == latest_scan_date].copy()
+        lines.append(f"- latest_scan_date: {latest_scan_date.date()}")
+        lines.append("")
+        lines.extend(self._render_market_etf_snapshot())
+        lines.extend(self._render_latest_selection_concentration(latest))
+        lines.extend(self._render_rs_deterioration_snapshot(latest))
+        lines.extend(self._render_20d_rs_deterioration_bands(frame, benchmark=benchmark))
+        return lines
+
+    def _render_market_etf_snapshot(self) -> list[str]:
+        lines = ["### Market ETF Snapshot"]
+        if not hasattr(self.db_manager, "load_price_history"):
+            lines.append("- note: price history helper is unavailable.")
+            lines.append("")
+            return lines
+        tickers = ["SPY", "QQQ", "XLK", "SMH", "XLI", "XLB", "XLV"]
+        history = self.db_manager.load_price_history(tickers)
+        if history.empty:
+            lines.append("- observations: 0")
+            lines.append("")
+            return lines
+        working = history.copy()
+        working["date"] = pd.to_datetime(working["date"], errors="coerce").dt.normalize()
+        working["adj_close"] = pd.to_numeric(working["adj_close"], errors="coerce")
+        rows: list[str] = []
+        latest_date = working["date"].dropna().max()
+        if pd.isna(latest_date):
+            lines.append("- observations: 0")
+            lines.append("")
+            return lines
+        lines.append(f"- latest_price_date: {latest_date.date()}")
+        for ticker in tickers:
+            group = working[working["ticker"].astype(str) == ticker].dropna(subset=["date", "adj_close"]).sort_values("date")
+            if group.empty:
+                continue
+            latest_index = len(group.index) - 1
+            parts = [ticker]
+            for horizon in (5, 10, 20):
+                prior_index = latest_index - horizon
+                if prior_index < 0:
+                    parts.append(f"{horizon}d=n/a")
+                    continue
+                latest_price = float(group.iloc[latest_index]["adj_close"])
+                prior_price = float(group.iloc[prior_index]["adj_close"])
+                value = (latest_price / prior_price) - 1.0 if prior_price else float("nan")
+                parts.append(f"{horizon}d={self._fmt_pct(value)}")
+            rows.append("- " + ", ".join(parts))
+        lines.extend(rows if rows else ["- observations: 0"])
+        lines.append("")
+        return lines
+
+    def _render_latest_selection_concentration(self, latest: pd.DataFrame) -> list[str]:
+        lines = ["### Latest Selection Concentration"]
+        if latest.empty:
+            lines.append("- selected_picks: 0")
+            lines.append("")
+            return lines
+        lines.append(f"- selected_picks: {len(latest.index)}")
+        for column, label in [("sector", "sector"), ("strategy_slot", "slot")]:
+            if column not in latest.columns:
+                continue
+            counts = latest[column].fillna("unknown").astype(str).value_counts()
+            if counts.empty:
+                continue
+            summary = ", ".join(f"{name}={int(count)}" for name, count in counts.items())
+            lines.append(f"- by_{label}: {summary}")
+        if "opportunity_score" in latest.columns:
+            values = pd.to_numeric(latest["opportunity_score"], errors="coerce").dropna()
+            if not values.empty:
+                lines.append(f"- median_opportunity_score: {float(values.median()):.4f}")
+                lines.append(f"- opportunity_ge_0_40: {int((values >= 0.40).sum())}/{len(values.index)}")
+                lines.append(f"- opportunity_ge_0_45: {int((values >= 0.45).sum())}/{len(values.index)}")
+                lines.append(f"- opportunity_ge_0_50: {int((values >= 0.50).sum())}/{len(values.index)}")
+        lines.append("")
+        return lines
+
+    def _render_rs_deterioration_snapshot(self, latest: pd.DataFrame) -> list[str]:
+        lines = ["### Latest RS Deterioration"]
+        if latest.empty:
+            lines.append("- observations: 0")
+            lines.append("")
+            return lines
+        enriched = self._attach_feature_snapshot_columns(
+            latest,
+            [
+                "relative_strength_index_vs_spy",
+                "relative_strength_index_vs_subindustry",
+                "rs_vs_spy_5d_change",
+                "rs_vs_subindustry_5d_change",
+                "rs_vs_subindustry_10d_change",
+            ],
+        )
+        if "rs_vs_spy_5d_change" not in enriched.columns and "rs_vs_subindustry_5d_change" not in enriched.columns:
+            lines.append("- observations: 0")
+            lines.append("- note: RS change fields are unavailable until universe snapshots are refreshed.")
+            lines.append("")
+            return lines
+        spy_change = pd.to_numeric(enriched.get("rs_vs_spy_5d_change"), errors="coerce")
+        group_change = pd.to_numeric(enriched.get("rs_vs_subindustry_5d_change"), errors="coerce")
+        deterioration = spy_change.le(-10.0).fillna(False) | group_change.le(-10.0).fillna(False)
+        severe = spy_change.le(-20.0).fillna(False) | group_change.le(-20.0).fillna(False)
+        observed = spy_change.notna() | group_change.notna()
+        lines.append(f"- observations: {int(observed.sum())}/{len(enriched.index)}")
+        if int(observed.sum()) == 0:
+            lines.append("- note: RS change fields are unavailable until universe snapshots are refreshed.")
+            lines.append("")
+            return lines
+        lines.append(f"- rs_deteriorating_ge_10pts: {int(deterioration.sum())}/{len(enriched.index)}")
+        lines.append(f"- rs_deteriorating_ge_20pts: {int(severe.sum())}/{len(enriched.index)}")
+        risky = enriched.loc[deterioration].copy()
+        if not risky.empty:
+            risky["_worst_rs_change"] = pd.concat([spy_change, group_change], axis=1).min(axis=1)
+            risky = risky.sort_values(["_worst_rs_change", "ticker"], ascending=[True, True]).head(5)
+            lines.append("- watch_only_candidates:")
+            for row in risky.itertuples(index=False):
+                lines.append(
+                    f"  - {row.ticker}: "
+                    f"rs_vs_spy_5d_change={self._fmt_points(getattr(row, 'rs_vs_spy_5d_change', float('nan')))}, "
+                    f"rs_vs_group_5d_change={self._fmt_points(getattr(row, 'rs_vs_subindustry_5d_change', float('nan')))}, "
+                    f"opportunity={self._fmt_score(getattr(row, 'opportunity_score', float('nan')))}"
+                )
+        lines.append("")
+        return lines
+
+    def _render_20d_rs_deterioration_bands(
+        self,
+        frame: pd.DataFrame,
+        *,
+        benchmark: str,
+    ) -> list[str]:
+        lines = ["### Matured 20d Outcomes By RS Change"]
+        return_column = "fwd_return_20d"
+        alpha_column = f"alpha_vs_{benchmark}_20d"
+        enriched = self._attach_feature_snapshot_columns(
+            frame,
+            ["rs_vs_spy_5d_change", "rs_vs_subindustry_5d_change"],
+        )
+        required_columns = [return_column, alpha_column, "rs_vs_spy_5d_change", "rs_vs_subindustry_5d_change"]
+        if any(column not in enriched.columns for column in required_columns):
+            lines.append("- observations: 0")
+            lines.append("- note: RS change fields are unavailable until universe snapshots are refreshed.")
+            lines.append("")
+            return lines
+        scoped = enriched.copy()
+        scoped[return_column] = pd.to_numeric(scoped[return_column], errors="coerce")
+        scoped[alpha_column] = pd.to_numeric(scoped[alpha_column], errors="coerce")
+        scoped["rs_vs_spy_5d_change"] = pd.to_numeric(scoped["rs_vs_spy_5d_change"], errors="coerce")
+        scoped["rs_vs_subindustry_5d_change"] = pd.to_numeric(scoped["rs_vs_subindustry_5d_change"], errors="coerce")
+        scoped = scoped.dropna(subset=[return_column, alpha_column]).copy()
+        scoped = scoped[scoped["rs_vs_spy_5d_change"].notna() | scoped["rs_vs_subindustry_5d_change"].notna()].copy()
+        if scoped.empty:
+            lines.append("- observations: 0")
+            lines.append("- note: RS change fields are unavailable until universe snapshots are refreshed.")
+            lines.append("")
+            return lines
+        scoped["worst_rs_5d_change"] = scoped[["rs_vs_spy_5d_change", "rs_vs_subindustry_5d_change"]].min(axis=1)
+        bands = [
+            ("severe deterioration <= -20pts", float("-inf"), -20.0),
+            ("deterioration -20pts to -10pts", -20.0, -10.0),
+            ("stable -10pts to +10pts", -10.0, 10.0),
+            ("improving >= +10pts", 10.0, float("inf")),
+        ]
+        lines.append(f"- observations: {len(scoped.index)}")
+        for label, lower, upper in bands:
+            band = scoped[(scoped["worst_rs_5d_change"] >= lower) & (scoped["worst_rs_5d_change"] < upper)].copy()
+            if band.empty:
+                lines.append(f"- {label}: n=0, pick_share=0.00%")
+                continue
+            returns = band[return_column].astype(float)
+            alphas = band[alpha_column].astype(float)
+            lines.append(
+                f"- {label}: n={len(band.index)}, "
+                f"pick_share={self._fmt_pct(len(band.index) / len(scoped.index))}, "
+                f"median_return={self._fmt_pct(returns.median())}, "
+                f"hit_rate={self._fmt_pct((returns > 0.0).mean())}, "
+                f"median_alpha={self._fmt_pct(alphas.median())}, "
+                f"positive_alpha_rate={self._fmt_pct((alphas > 0.0).mean())}"
+            )
+        lines.append("")
+        return lines
+
+    def _attach_feature_snapshot_columns(self, frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+        working = frame.copy()
+        if "details_json" not in working.columns:
+            return self._merge_universe_snapshot_features(working, columns)
+        parsed = working["details_json"].map(self._parse_details_json)
+        snapshots = parsed.map(lambda payload: payload.get("feature_snapshot", {}) if isinstance(payload.get("feature_snapshot"), dict) else {})
+        for column in columns:
+            if column in working.columns and working[column].notna().any():
+                continue
+            working[column] = snapshots.map(lambda payload, key=column: payload.get(key))
+        missing_columns = [
+            column
+            for column in columns
+            if column not in working.columns or not pd.to_numeric(working[column], errors="coerce").notna().any()
+        ]
+        if missing_columns:
+            working = self._merge_universe_snapshot_features(working, missing_columns)
+        return working
+
+    def _merge_universe_snapshot_features(self, frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
+        if not columns or not hasattr(self.db_manager, "load_universe_daily_snapshots"):
+            return frame
+        required = {"scan_date", "ticker"}
+        if not required.issubset(frame.columns):
+            return frame
+        try:
+            snapshots = self.db_manager.load_universe_daily_snapshots()
+        except Exception as exc:
+            self.logger.warning("Unable to load universe snapshots for market-turn diagnostics: %s", exc)
+            return frame
+        if snapshots.empty:
+            return frame
+        available_columns = ["snapshot_date", "ticker"] + [column for column in columns if column in snapshots.columns]
+        if len(available_columns) <= 2:
+            return frame
+        left = frame.copy()
+        left["_snapshot_date_key"] = pd.to_datetime(left["scan_date"], errors="coerce").dt.normalize()
+        left["_ticker_key"] = left["ticker"].astype(str)
+        right = snapshots[available_columns].copy()
+        right["_snapshot_date_key"] = pd.to_datetime(right["snapshot_date"], errors="coerce").dt.normalize()
+        right["_ticker_key"] = right["ticker"].astype(str)
+        right = right.drop(columns=["snapshot_date", "ticker"])
+        merged = left.merge(right, on=["_snapshot_date_key", "_ticker_key"], how="left", suffixes=("", "__snapshot"))
+        for column in columns:
+            snapshot_column = f"{column}__snapshot"
+            if snapshot_column not in merged.columns:
+                continue
+            if column not in merged.columns:
+                merged[column] = merged[snapshot_column]
+            else:
+                merged[column] = merged[column].where(merged[column].notna(), merged[snapshot_column])
+            merged = merged.drop(columns=[snapshot_column])
+        return merged.drop(columns=["_snapshot_date_key", "_ticker_key"])
+
+    def _parse_details_json(self, value) -> dict[str, object]:
+        if isinstance(value, dict):
+            return value
+        if value in (None, ""):
+            return {}
+        try:
+            parsed = json.loads(str(value))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return {}
+        return parsed if isinstance(parsed, dict) else {}
+
     def _render_recent_scan_dates(
         self,
         frame: pd.DataFrame,
@@ -665,7 +950,11 @@ class ScanPerformanceService:
             for horizon in horizons:
                 return_column = f"fwd_return_{horizon}d"
                 alpha_column = f"alpha_vs_{benchmark}_{horizon}d"
-                scoped = day_frame.dropna(subset=[return_column, alpha_column]).copy()
+                scoped = self._matured_outcome_frame(
+                    day_frame,
+                    return_column=return_column,
+                    alpha_column=alpha_column,
+                )
                 if scoped.empty:
                     continue
                 returns = pd.to_numeric(scoped[return_column], errors="coerce").dropna()
@@ -692,8 +981,12 @@ class ScanPerformanceService:
         for horizon in horizons:
             return_column = f"fwd_return_{horizon}d"
             alpha_column = f"alpha_vs_{benchmark}_{horizon}d"
-            scoped = frame.dropna(subset=[return_column, alpha_column]).copy()
             lines.append(f"### {horizon}d")
+            scoped = self._matured_outcome_frame(
+                frame,
+                return_column=return_column,
+                alpha_column=alpha_column,
+            )
             if scoped.empty:
                 lines.append("No matured picks.")
                 lines.append("")
@@ -738,8 +1031,12 @@ class ScanPerformanceService:
         for horizon in horizons:
             return_column = f"fwd_return_{horizon}d"
             alpha_column = f"alpha_vs_{benchmark}_{horizon}d"
-            scoped = frame.dropna(subset=[return_column, alpha_column]).copy()
             lines.append(f"### {horizon}d")
+            scoped = self._matured_outcome_frame(
+                frame,
+                return_column=return_column,
+                alpha_column=alpha_column,
+            )
             if scoped.empty:
                 lines.append("No matured picks.")
                 lines.append("")
@@ -790,6 +1087,18 @@ class ScanPerformanceService:
         distinct = ordered.drop_duplicates(subset=["ticker"], keep="first")
         return distinct.head(int(top_n)).copy()
 
+    def _matured_outcome_frame(
+        self,
+        frame: pd.DataFrame,
+        *,
+        return_column: str,
+        alpha_column: str,
+    ) -> pd.DataFrame:
+        required_columns = [return_column, alpha_column]
+        if any(column not in frame.columns for column in required_columns):
+            return frame.iloc[0:0].copy()
+        return frame.dropna(subset=required_columns).copy()
+
     def _render_recent_picks(
         self,
         frame: pd.DataFrame,
@@ -837,6 +1146,16 @@ class ScanPerformanceService:
             return "n/a"
         return f"{float(value):.2f}"
 
+    def _fmt_points(self, value: float) -> str:
+        if value is None or not math.isfinite(float(value)):
+            return "n/a"
+        return f"{float(value):+.1f}pts"
+
+    def _fmt_score(self, value: float) -> str:
+        if value is None or not math.isfinite(float(value)):
+            return "n/a"
+        return f"{float(value):.4f}"
+
     def _coerce_float(self, value) -> float:
         try:
             return float(value)
@@ -849,12 +1168,263 @@ class ScanPerformanceService:
         except (TypeError, ValueError):
             return 0
 
-    def _render_email_html(self, report_text: str) -> str:
-        escaped = escape(report_text)
-        return (
-            "<html><body>"
-            "<div style=\"font-family:Menlo,Consolas,monospace;font-size:13px;white-space:pre-wrap;line-height:1.45;\">"
-            f"{escaped}"
-            "</div>"
-            "</body></html>"
-        )
+    def _build_performance_dashboard(
+        self,
+        *,
+        enriched: pd.DataFrame,
+        horizons: tuple[int, ...],
+        benchmark: str,
+        resolved_scope: dict,
+        window_label: str,
+    ) -> dict:
+        dashboard: dict[str, object] = {
+            "model_name": resolved_scope.get("model_name") or "unknown",
+            "scope": resolved_scope.get("scope") or "all",
+            "scan_dates": int(enriched["scan_date"].nunique()),
+            "total_picks": len(enriched.index),
+            "window_label": window_label,
+        }
+        return_column = "fwd_return_20d"
+        alpha_column = f"alpha_vs_{benchmark}_20d"
+        if return_column in enriched.columns and alpha_column in enriched.columns:
+            scoped = enriched.dropna(subset=[return_column, alpha_column]).copy()
+            if not scoped.empty:
+                scoped[return_column] = pd.to_numeric(scoped[return_column], errors="coerce")
+                scoped[alpha_column] = pd.to_numeric(scoped[alpha_column], errors="coerce")
+                anchor = scoped["scan_date"].max()
+                windows_def = {
+                    "20d": anchor - pd.DateOffset(days=20),
+                    "3m": anchor - pd.DateOffset(months=3),
+                    "1y": anchor - pd.DateOffset(years=1),
+                }
+                for label, start in windows_def.items():
+                    window = scoped[scoped["scan_date"] >= pd.Timestamp(start).normalize()]
+                    if window.empty:
+                        continue
+                    returns = window[return_column].astype(float)
+                    alphas = window[alpha_column].astype(float)
+                    beats = sum(
+                        1 for d in sorted(window["scan_date"].unique())
+                        if window[window["scan_date"] == d][alpha_column].mean() > 0
+                    )
+                    unique_dates = int(window["scan_date"].nunique())
+                    dashboard[f"window_{label}"] = {
+                        "picks": len(window.index),
+                        "dates": unique_dates,
+                        "mean_return": float(returns.mean()),
+                        "median_return": float(returns.median()),
+                        "hit_rate": float((returns > 0).mean()),
+                        "mean_alpha": float(alphas.mean()),
+                        "positive_alpha_rate": float((alphas > 0).mean()),
+                        "beat_rate": float(beats / unique_dates) if unique_dates > 0 else 0.0,
+                    }
+                recent = dashboard.get("window_20d", {})
+                older = dashboard.get("window_3m", {})
+                if recent and older:
+                    recent_alpha = float(recent.get("mean_alpha", 0))
+                    older_alpha = float(older.get("mean_alpha", 0))
+                    recent_hit = float(recent.get("hit_rate", 0))
+                    older_hit = float(older.get("hit_rate", 0))
+                    if recent_alpha > older_alpha and recent_hit > older_hit:
+                        dashboard["trend"] = "improving"
+                    elif recent_alpha < older_alpha and recent_hit < older_hit:
+                        dashboard["trend"] = "worsening"
+                    else:
+                        dashboard["trend"] = "mixed"
+                    if recent_alpha < -0.02 or recent_hit < 0.45:
+                        dashboard["recommendation"] = "push_harder"
+                    elif recent_alpha > 0.03 and recent_hit > 0.55:
+                        dashboard["recommendation"] = "on_track"
+                    else:
+                        dashboard["recommendation"] = "monitor"
+                else:
+                    dashboard["trend"] = "insufficient_data"
+                    dashboard["recommendation"] = "monitor"
+        return dashboard
+
+    def _load_forward_predictions(self) -> pd.DataFrame:
+        if not hasattr(self.db_manager, "load_shortlist_model_predictions"):
+            return pd.DataFrame()
+        try:
+            runs = self.db_manager.load_shortlist_model_runs(
+                horizon_days=20,
+                eligible_universe_mode="passed_or_trend",
+                model_scope="sector_specific",
+                limit=1,
+            )
+            if runs.empty:
+                return pd.DataFrame()
+            latest_run = runs.iloc[0]
+            predictions = self.db_manager.load_shortlist_model_predictions(
+                generated_at=str(latest_run["generated_at"]),
+                horizon_days=20,
+                eligible_universe_mode="passed_or_trend",
+                model_scope="sector_specific",
+                dataset_split="live",
+                model_name=str(latest_run["champion_model"]),
+            )
+            if predictions.empty:
+                return pd.DataFrame()
+            predictions["predicted_alpha"] = pd.to_numeric(predictions["predicted_alpha"], errors="coerce")
+            predictions["md_volume_30d"] = pd.to_numeric(predictions["md_volume_30d"], errors="coerce")
+            return predictions.sort_values("predicted_alpha", ascending=False).reset_index(drop=True)
+        except Exception:
+            return pd.DataFrame()
+
+    def _render_performance_email(
+        self,
+        enriched: pd.DataFrame,
+        dashboard: dict,
+        horizons: tuple[int, ...],
+        benchmark: str,
+        forward_predictions: pd.DataFrame | None = None,
+    ) -> str:
+        rec = str(dashboard.get("recommendation", "monitor"))
+        rec_colors = {
+            "push_harder": ("#dc3545", "PUSH HARDER — recent alpha negative, model not working"),
+            "monitor": ("#ffc107", "MONITOR — performance is borderline, watch closely"),
+            "on_track": ("#28a745", "ON TRACK — model is delivering, stay the course"),
+        }
+        rec_color, rec_text = rec_colors.get(rec, rec_colors["monitor"])
+        trend = str(dashboard.get("trend", "unknown"))
+        trend_icons = {"improving": "↑ improving", "worsening": "↓ worsening", "mixed": "→ mixed", "insufficient_data": "? not enough data"}
+        trend_text = trend_icons.get(trend, trend)
+
+        sections: list[str] = []
+
+        # header
+        sections.append(f"""
+        <div style="background:{rec_color};color:#fff;padding:16px 20px;border-radius:6px;margin-bottom:16px;">
+            <h2 style="margin:0 0 4px 0;font-size:18px;">{rec_text}</h2>
+            <p style="margin:0;font-size:13px;opacity:0.9;">trend: {trend_text} | model: {dashboard.get('model_name', 'unknown')} | scope: {dashboard.get('scope', 'all')}</p>
+        </div>
+        """)
+
+        # performance summary cards
+        cards_html = ""
+        for label in ("20d", "3m", "1y"):
+            w = dashboard.get(f"window_{label}")
+            if not w:
+                continue
+            alpha = float(w["mean_alpha"])
+            hit = float(w["hit_rate"])
+            beat = float(w["beat_rate"])
+            alpha_color = "#28a745" if alpha > 0.02 else ("#dc3545" if alpha < 0 else "#6c757d")
+            cards_html += f"""
+            <div style="flex:1;min-width:140px;background:#f8f9fa;border-radius:6px;padding:12px;text-align:center;margin:4px;">
+                <div style="font-size:11px;color:#6c757d;text-transform:uppercase;letter-spacing:0.5px;">{label} window</div>
+                <div style="font-size:24px;font-weight:700;color:{alpha_color};margin:4px 0;">{alpha:+.1%}</div>
+                <div style="font-size:12px;color:#495057;">mean alpha</div>
+                <div style="margin-top:6px;font-size:12px;color:#6c757d;">
+                    hit {hit:.0%} &middot; beat {beat:.0%}
+                </div>
+            </div>
+            """
+        sections.append(f'<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;">{cards_html}</div>')
+
+        # horizon summary table
+        return_col = "fwd_return_20d"
+        alpha_col = f"alpha_vs_{benchmark}_20d"
+        table_rows = ""
+        for h in sorted(horizons):
+            rcol = f"fwd_return_{h}d"
+            acol = f"alpha_vs_{benchmark}_{h}d"
+            if rcol not in enriched.columns:
+                continue
+            data = enriched.dropna(subset=[rcol, acol])
+            if data.empty:
+                continue
+            rets = pd.to_numeric(data[rcol], errors="coerce")
+            alps = pd.to_numeric(data[acol], errors="coerce")
+            table_rows += f"""
+            <tr>
+                <td style="padding:6px 12px;border-bottom:1px solid #dee2e6;font-weight:600;">{h}d</td>
+                <td style="padding:6px 12px;border-bottom:1px solid #dee2e6;">{len(data.index)}</td>
+                <td style="padding:6px 12px;border-bottom:1px solid #dee2e6;color:{'#28a745' if rets.mean() > 0 else '#dc3545'};">{rets.mean():+.1%}</td>
+                <td style="padding:6px 12px;border-bottom:1px solid #dee2e6;">{rets.median():+.1%}</td>
+                <td style="padding:6px 12px;border-bottom:1px solid #dee2e6;">{(rets > 0).mean():.0%}</td>
+                <td style="padding:6px 12px;border-bottom:1px solid #dee2e6;color:{'#28a745' if alps.mean() > 0 else '#dc3545'};">{alps.mean():+.1%}</td>
+                <td style="padding:6px 12px;border-bottom:1px solid #dee2e6;">{(alps > 0).mean():.0%}</td>
+            </tr>
+            """
+        sections.append(f"""
+        <h3 style="font-size:14px;color:#495057;margin-bottom:8px;">Horizon Summary</h3>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px;">
+            <tr style="background:#e9ecef;">
+                <th style="padding:6px 12px;text-align:left;">Horizon</th>
+                <th style="padding:6px 12px;text-align:left;">Picks</th>
+                <th style="padding:6px 12px;text-align:left;">Mean Ret</th>
+                <th style="padding:6px 12px;text-align:left;">Median</th>
+                <th style="padding:6px 12px;text-align:left;">Hit</th>
+                <th style="padding:6px 12px;text-align:left;">Alpha</th>
+                <th style="padding:6px 12px;text-align:left;">Pos Alpha</th>
+            </tr>
+            {table_rows}
+        </table>
+        """)
+
+        # recent picks
+        recent_picks_html = ""
+        scan_dates = sorted(enriched["scan_date"].drop_duplicates().tolist())[-5:]
+        for sd in reversed(scan_dates):
+            day = enriched[enriched["scan_date"] == sd]
+            picks = day[day.get("selected", 0) == 1] if "selected" in day.columns else day.head(6)
+            if picks.empty:
+                picks = day.head(6)
+            tickers = ", ".join(str(t) for t in picks["ticker"].tolist())
+            recent_picks_html += f'<tr><td style="padding:4px 12px;border-bottom:1px solid #dee2e6;">{pd.Timestamp(sd).date()}</td><td style="padding:4px 12px;border-bottom:1px solid #dee2e6;">{tickers}</td></tr>'
+
+        # forward predictions
+        if forward_predictions is not None and not forward_predictions.empty:
+            top_n = forward_predictions.head(6)
+            fp_rows = ""
+            for _, row in top_n.iterrows():
+                alpha = float(row["predicted_alpha"])
+                alpha_color = "#28a745" if alpha > 0 else "#dc3545"
+                fp_rows += f"""
+                <tr>
+                    <td style="padding:4px 10px;font-weight:600;">{row['ticker']}</td>
+                    <td style="padding:4px 10px;">{row.get('sector', '')}</td>
+                    <td style="padding:4px 10px;color:{alpha_color};">{alpha:+.1%}</td>
+                    <td style="padding:4px 10px;">{row.get('model_reason_summary', '')}</td>
+                </tr>
+                """
+            sections.append(f"""
+            <h3 style="font-size:14px;color:#495057;margin-bottom:8px;">Forward Predictions (20d alpha)</h3>
+            <p style="font-size:11px;color:#6c757d;margin:0 0 6px 0;">Top model-ranked candidates and their predicted sector-relative alpha over the next 20 trading days.</p>
+            <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px;">
+                <tr style="background:#e9ecef;">
+                    <th style="padding:4px 10px;text-align:left;">Ticker</th>
+                    <th style="padding:4px 10px;text-align:left;">Sector</th>
+                    <th style="padding:4px 10px;text-align:left;">Pred Alpha</th>
+                    <th style="padding:4px 10px;text-align:left;">Why</th>
+                </tr>
+                {fp_rows}
+            </table>
+            """)
+
+        sections.append(f"""
+        <h3 style="font-size:14px;color:#495057;margin-bottom:8px;">Recent Picks</h3>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px;">
+            <tr style="background:#e9ecef;"><th style="padding:4px 12px;text-align:left;">Date</th><th style="padding:4px 12px;text-align:left;">Picks</th></tr>
+            {recent_picks_html}
+        </table>
+        """)
+
+        # portfolio summary
+        portfolio_lines = self._render_portfolio_performance()
+        portfolio_text = "\n".join(portfolio_lines) if portfolio_lines else ""
+        if portfolio_text.strip():
+            sections.append(f"""
+            <h3 style="font-size:14px;color:#495057;margin-bottom:8px;">Portfolio</h3>
+            <pre style="font-size:11px;color:#495057;background:#f8f9fa;padding:12px;border-radius:4px;line-height:1.4;">{escape(portfolio_text.strip())}</pre>
+            """)
+
+        # full report link
+        sections.append("""
+        <hr style="border:none;border-top:1px solid #dee2e6;margin:16px 0;">
+        <p style="font-size:11px;color:#6c757d;">Full report: reports/scan_performance.md</p>
+        """)
+
+        body = "".join(sections)
+        return f"""<html><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:640px;margin:0 auto;padding:16px;color:#212529;">{body}</body></html>"""

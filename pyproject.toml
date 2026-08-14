@@ -31,4 +31,7 @@ packages = [
   "src.trade",
   "src.scan",
   "src.monitor",
+  "src.positions",
+  "src.schwab",
+  "src.sleeves",
 ]

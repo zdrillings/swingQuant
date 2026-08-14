@@ -20,6 +20,11 @@ MODEL_FEATURE_COLUMNS = [
     "relative_strength_index_vs_qqq",
     "relative_strength_index_vs_xlk",
     "relative_strength_index_vs_subindustry",
+    "rs_vs_spy_5d_change",
+    "rs_vs_qqq_5d_change",
+    "rs_vs_xlk_5d_change",
+    "rs_vs_subindustry_5d_change",
+    "rs_vs_subindustry_10d_change",
     "roc_63",
     "roc_126",
     "vol_alpha",
@@ -47,9 +52,17 @@ MODEL_FEATURE_COLUMNS = [
     "volume_percentile_60",
     "distance_from_52w_high",
     "days_since_52w_high",
+    "rsi_2",
+    "ret_1d",
+    "ret_5d",
+    "close_vs_20d_low",
     "sector_pct_above_50",
     "sector_pct_above_200",
     "sector_median_roc_63",
+    "spy_roc_20",
+    "spy_roc_5",
+    "spy_realized_vol_20",
+    "qqq_roc_20",
 ]
 
 
@@ -211,19 +224,13 @@ class ShortlistBakeoffService:
         recent_dates: int,
     ) -> list[str]:
         lines = ["## Universe Model Bakeoff", ""]
-        lines.append("- policies: equal_weight_eligible, signal_proxy, ridge_model, xgboost_model, ensemble_model")
+        lines.append("- policies: equal_weight_eligible, signal_proxy, lasso_model")
         lines.append("")
 
         scored_frames: dict[str, pd.DataFrame] = {
             "signal_proxy": self._score_signal_proxy(test_frame),
-            "ridge_model": self._score_ridge_model(train_frame, test_frame, target_column=target_column),
+            "lasso_model": self._score_lasso_model(train_frame, test_frame, target_column=target_column),
         }
-        tree_scored = self._score_xgboost_model(train_frame, test_frame, target_column=target_column)
-        if tree_scored is not None:
-            scored_frames["xgboost_model"] = tree_scored
-        ensemble_scored = self._score_ensemble_model(scored_frames)
-        if ensemble_scored is not None:
-            scored_frames["ensemble_model"] = ensemble_scored
 
         summary_rows: list[dict[str, object]] = []
         for policy_name, scored in scored_frames.items():
@@ -363,9 +370,50 @@ class ShortlistBakeoffService:
         working["policy_score"] = working[[f"{component}_rank" for component in components]].mean(axis=1, skipna=True)
         return working
 
-    def _score_ridge_model(self, train_frame: pd.DataFrame, test_frame: pd.DataFrame, *, target_column: str) -> pd.DataFrame:
+    def _score_lasso_model(self, train_frame: pd.DataFrame, test_frame: pd.DataFrame, *, target_column: str) -> pd.DataFrame:
+        is_classification = str(target_column).endswith("_pos")
         train_matrix, test_matrix = self._prepare_model_matrices(train_frame, test_frame)
         train_target = pd.to_numeric(train_frame[target_column], errors="coerce").to_numpy(dtype=float)
+        finite_mask = np.isfinite(train_target)
+        if not finite_mask.all():
+            train_matrix = train_matrix[finite_mask]
+            train_target = train_target[finite_mask]
+        train_matrix = np.nan_to_num(train_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+        test_matrix = np.nan_to_num(test_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+        if is_classification:
+            try:
+                from sklearn.linear_model import LogisticRegression
+            except ModuleNotFoundError:
+                return self._score_ridge_fallback(train_frame, test_frame, target_column=target_column)
+            unique_classes = np.unique(train_target)
+            if len(unique_classes) < 2:
+                scored = test_frame.copy()
+                scored["policy_score"] = float(unique_classes[0]) if len(unique_classes) == 1 else 0.0
+                return scored
+            model = LogisticRegression(penalty="l1", solver="liblinear", C=1.0, max_iter=500, random_state=42)
+            model.fit(train_matrix, train_target)
+            scored = test_frame.copy()
+            scored["policy_score"] = model.predict_proba(test_matrix)[:, 1]
+        else:
+            try:
+                from sklearn.linear_model import Lasso
+            except ModuleNotFoundError:
+                return self._score_ridge_fallback(train_frame, test_frame, target_column=target_column)
+            model = Lasso(alpha=0.001, max_iter=2000, random_state=42, selection="random")
+            model.fit(train_matrix, train_target)
+            scored = test_frame.copy()
+            scored["policy_score"] = test_matrix @ model.coef_
+        return scored
+
+    def _score_ridge_fallback(self, train_frame: pd.DataFrame, test_frame: pd.DataFrame, *, target_column: str) -> pd.DataFrame:
+        train_matrix, test_matrix = self._prepare_model_matrices(train_frame, test_frame)
+        train_target = pd.to_numeric(train_frame[target_column], errors="coerce").to_numpy(dtype=float)
+        finite_mask = np.isfinite(train_target)
+        if not finite_mask.all():
+            train_matrix = train_matrix[finite_mask]
+            train_target = train_target[finite_mask]
+        train_matrix = np.nan_to_num(train_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+        test_matrix = np.nan_to_num(test_matrix, nan=0.0, posinf=0.0, neginf=0.0)
         ridge_penalty = 1.0
         xtx = train_matrix.T @ train_matrix
         identity = np.eye(xtx.shape[0], dtype=float)
@@ -374,73 +422,21 @@ class ShortlistBakeoffService:
         scored["policy_score"] = test_matrix @ weights
         return scored
 
-    def _score_xgboost_model(
-        self,
-        train_frame: pd.DataFrame,
-        test_frame: pd.DataFrame,
-        *,
-        target_column: str,
-    ) -> pd.DataFrame | None:
-        try:
-            from xgboost import XGBRegressor
-        except ModuleNotFoundError:
-            self.logger.warning("xgboost unavailable; skipping xgboost_model in shortlist bakeoff.")
-            return None
-        train_matrix, test_matrix = self._prepare_model_matrices(train_frame, test_frame)
-        train_target = pd.to_numeric(train_frame[target_column], errors="coerce").to_numpy(dtype=float)
-        model = XGBRegressor(
-            n_estimators=100,
-            max_depth=4,
-            learning_rate=0.05,
-            subsample=0.8,
-            colsample_bytree=0.8,
-            random_state=42,
-            objective="reg:squarederror",
-        )
-        model.fit(train_matrix, train_target, verbose=False)
-        scored = test_frame.copy()
-        scored["policy_score"] = model.predict(test_matrix)
-        return scored
-
-    def _score_ensemble_model(self, scored_frames: dict[str, pd.DataFrame]) -> pd.DataFrame | None:
-        usable = {
-            model_name: frame.copy()
-            for model_name, frame in scored_frames.items()
-            if frame is not None and not frame.empty
-        }
-        if len(usable) < 2:
-            return None
-        base_model_name = next(iter(usable))
-        merged = usable[base_model_name].copy()
-        merged = merged.rename(columns={"policy_score": f"{base_model_name}_score"})
-        for model_name, frame in usable.items():
-            if model_name == base_model_name:
-                continue
-            scoped = frame[["snapshot_date", "ticker", "policy_score"]].copy()
-            scoped = scoped.rename(columns={"policy_score": f"{model_name}_score"})
-            merged = merged.merge(scoped, on=["snapshot_date", "ticker"], how="inner")
-        if merged is None or merged.empty:
-            return None
-        rank_columns: list[str] = []
-        for model_name in usable:
-            source_column = f"{model_name}_score"
-            rank_column = f"{model_name}_rank"
-            merged[rank_column] = pd.to_numeric(merged[source_column], errors="coerce").groupby(
-                merged["snapshot_date"]
-            ).rank(method="average", pct=True)
-            rank_columns.append(rank_column)
-        merged["policy_score"] = merged[rank_columns].mean(axis=1, skipna=True)
-        return merged
-
     def _prepare_model_matrices(self, train_frame: pd.DataFrame, test_frame: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+        available_columns = ["snapshot_date", "sector"] + [
+            col for col in MODEL_FEATURE_COLUMNS if col in train_frame.columns
+        ]
         feature_frame = pd.concat(
             [
-                train_frame[["snapshot_date", "sector"] + MODEL_FEATURE_COLUMNS].copy(),
-                test_frame[["snapshot_date", "sector"] + MODEL_FEATURE_COLUMNS].copy(),
+                train_frame[available_columns].copy(),
+                test_frame[available_columns].copy(),
             ],
             axis=0,
             ignore_index=True,
         )
+        for col in MODEL_FEATURE_COLUMNS:
+            if col not in feature_frame.columns:
+                feature_frame[col] = np.nan
         feature_frame, feature_columns = build_rank_augmented_feature_frame(feature_frame)
         feature_frame = feature_frame[feature_columns + ["sector"]].copy()
         feature_frame = pd.get_dummies(feature_frame, columns=["sector"], dummy_na=False)

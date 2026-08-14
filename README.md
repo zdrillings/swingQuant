@@ -12,6 +12,7 @@ Implemented commands:
 - `sq research`
 - `sq alpha-research`
 - `sq sweep`
+- `sq sweep --mode <mode>` — 5 archetype modes: `pullback_technology`, `pullback_real_economy`, `breakout_growth`, `post_earnings_drift`, `trend_continuation`
 - `sq evaluate`
 - `sq sleeve-research`
 - `sq promote --id <ID> [--slot <name>]`
@@ -20,6 +21,10 @@ Implemented commands:
 - `sq positions`
 - `sq quote <ticker>`
 - `sq scan`
+- `sq shortlist-model [--target-type regression|classification] [--model-scope global|sector_specific|regime_specific]`
+- `sq shortlist-bakeoff`
+- `sq shortlist` — render latest persisted model-driven shortlist
+- `sq shortlist-scoreboard`
 - `sq analyst-snapshot`
 - `sq scan-backfill`
 - `sq scan-performance`
@@ -28,7 +33,6 @@ Implemented commands:
 - `sq universe-backfill`
 - `sq universe-analysis`
 - `sq factor-tearsheet`
-- `sq shortlist-*`
 - `sq exit-analysis`
 - `sq rsi-exit-bakeoff`
 - `sq subindustry-attribution`
@@ -39,8 +43,10 @@ Implemented commands:
 
 - DuckDB stores historical OHLCV in `historical_ohlcv`.
 - DuckDB also stores analytical point-in-time history:
-  - `universe_daily_snapshots`
+  - `universe_daily_snapshots` — daily features, forward outcomes, macro context, binary target
   - `analyst_snapshots`
+  - `analyst_revision_snapshots`
+  - `extended_hours_snapshots`
 - SQLite stores:
   - `Universe`
   - `Backtest_Results`
@@ -57,15 +63,15 @@ Key modules:
 - [src/utils/db_manager.py](/home/zdrillings/code/SwingQuant/src/utils/db_manager.py): schema creation and data access
 - [src/sync/service.py](/home/zdrillings/code/SwingQuant/src/sync/service.py): universe bootstrap and OHLCV sync
 - [src/research/service.py](/home/zdrillings/code/SwingQuant/src/research/service.py): feature training and importance reporting
-- [src/sweep/service.py](/home/zdrillings/code/SwingQuant/src/sweep/service.py): parameter grid backtests with Polars
+- [src/research/shortlist_model_service.py](/home/zdrillings/code/SwingQuant/src/research/shortlist_model_service.py): walk-forward shortlist model bakeoff with signal-proxy, ridge, lasso, and optional XGBoost candidates
+- [src/research/universe_snapshot_service.py](/home/zdrillings/code/SwingQuant/src/research/universe_snapshot_service.py): daily snapshot backfill with macro features and binary target
+- [src/sweep/service.py](/home/zdrillings/code/SwingQuant/src/sweep/service.py): parameter grid backtests with Polars, hard stop in exit chain
 - [src/evaluate/service.py](/home/zdrillings/code/SwingQuant/src/evaluate/service.py): result normalization and report generation
-- [src/scan/service.py](/home/zdrillings/code/SwingQuant/src/scan/service.py): daily post-close signal scan
-- [src/scan/analyst_snapshot_service.py](/home/zdrillings/code/SwingQuant/src/scan/analyst_snapshot_service.py): nightly analyst target snapshot capture
-- [src/scan/performance_service.py](/home/zdrillings/code/SwingQuant/src/scan/performance_service.py): realized scan performance summaries
-- [src/scan/portfolio_rotation_service.py](/home/zdrillings/code/SwingQuant/src/scan/portfolio_rotation_service.py): fixed-slot portfolio rotation backtests
-- [src/monitor/service.py](/home/zdrillings/code/SwingQuant/src/monitor/service.py): intraday breakout and exit monitoring
+- [src/scan/service.py](/home/zdrillings/code/SwingQuant/src/scan/service.py): daily post-close signal scan with model-driven selection, quality gate, and confidence-based position sizing
+- [src/utils/shortlist_runtime.py](/home/zdrillings/code/SwingQuant/src/utils/shortlist_runtime.py): live model context loading with confidence metrics
+- [src/monitor/service.py](/home/zdrillings/code/SwingQuant/src/monitor/service.py): intraday breakout and exit monitoring (includes hard stop)
 - [src/quote/service.py](/home/zdrillings/code/SwingQuant/src/quote/service.py): latest quote and holding context
-- [src/research/shortlist_model_service.py](/home/zdrillings/code/SwingQuant/src/research/shortlist_model_service.py): walk-forward shortlist model training
+- [src/utils/strategy.py](/home/zdrillings/code/SwingQuant/src/utils/strategy.py): ExitRules with hard_stop_pct, entry_stop_price, strategy resolution
 
 ## Setup
 
@@ -98,36 +104,39 @@ The launcher in [sq](/home/zdrillings/code/SwingQuant/sq) automatically adds `.v
 ./sq research
 ```
 
-3. Sweep parameter combinations:
+3. Sweep parameter combinations (5 archetype modes):
 
 ```bash
-./sq sweep
-./sq sweep --mode low_drawdown_technology
-./sq sweep --mode promotable_live_technology
-./sq sweep --mode promotable_live_technology_v2
-./sq sweep --mode promotable_live_technology_v3
-./sq sweep --mode promotable_live_technology_v4
-./sq sweep --mode promotable_live_technology_v5
-./sq sweep --mode high_performance_energy
-./sq sweep --mode high_performance_energy_refined
-./sq sweep --mode high_performance_energy_earnings_refined
-./sq sweep --mode high_performance_materials
-./sq sweep --mode high_performance_materials_refined
-./sq sweep --mode high_performance_materials_earnings_refined
-./sq sweep --mode high_performance_industrials
-./sq sweep --mode high_performance_industrials_refined
-./sq sweep --mode high_performance_industrials_earnings_refined
-./sq sweep --mode high_performance_financials
-./sq sweep --mode high_performance_real_economy
-./sq sweep --mode production_sleeves_earnings_refined
-./sq sweep --mode production_sleeves_gap_refined
-./sq sweep --mode breakout_v1_information_technology
-./sq sweep --mode breakout_v1_industrials
-./sq sweep --mode breakout_v1_financials
-./sq sweep --mode breakout_v1_growth_leaders
+./sq sweep --mode pullback_technology       # Tech pullback-with-trend
+./sq sweep --mode pullback_real_economy     # Energy/Materials/Industrials/Financials pullback
+./sq sweep --mode breakout_growth           # Breakout entries (Tech/Industrials/Financials)
+./sq sweep --mode post_earnings_drift       # Post-earnings continuation (Tech/Health Care)
+./sq sweep --mode trend_continuation        # Simple trend-following (broad)
 ```
 
-4. Rank candidates:
+Each mode sweeps entry thresholds, exit parameters, and `hard_stop_pct` (5%–10% entry-anchored stop-loss).
+
+4. Train the shortlist model:
+
+```bash
+# Regression (predicts continuous alpha_vs_sector_20d)
+./sq shortlist-model --eligible-universe-mode passed_or_trend --model-scope sector_specific
+
+# Classification (predicts binary alpha_vs_sector_20d_pos: alpha > 2%)
+./sq shortlist-model --target-type classification --model-scope regime_specific
+
+# Quick bakeoff to compare policies
+./sq shortlist-bakeoff --eligible-universe-mode passed_or_trend
+```
+
+The shortlist model uses an L1-regularized linear model (Lasso for regression, LogisticRegression for classification) trained in walk-forward across ~372 OOS dates with 43 features plus cross-sectional ranks. Features include 4 macro context features (`spy_roc_20`, `spy_roc_5`, `spy_realized_vol_20`, `qqq_roc_20`) computed from SPY/QQQ price history. Zero-coefficient features are purged and the model is re-fit per fold.
+
+Model scopes:
+- `global` — single model across all sectors
+- `sector_specific` — per-sector models with global fallback (production default)
+- `regime_specific` — per-regime models (trending/choppy/correcting) via `spy_roc_20`
+
+5. Rank candidates:
 
 ```bash
 ./sq evaluate --top 10
@@ -168,7 +177,7 @@ When `--walk-forward` is enabled, `sq sleeve-research` also computes a second-pa
 
 It writes [sleeve_research.md](/home/zdrillings/code/SwingQuant/reports/sleeve_research.md).
 
-5. Promote one or more strategies:
+6. Promote one or more strategies (promoted strategies include `hard_stop_pct` in exit rules):
 
 ```bash
 ./sq promote --id 611572 --slot materials
@@ -176,13 +185,24 @@ It writes [sleeve_research.md](/home/zdrillings/code/SwingQuant/reports/sleeve_r
 ./sq promote --id 622015 --slot industrials
 ```
 
-6. Run end-of-day scan:
+7. Run end-of-day scan (model-driven with quality gate):
 
 ```bash
 ./sq scan
 ```
 
-7. Capture analyst target snapshots for future point-in-time research:
+The scan uses the shortlist model's **top-2 predictions** as its product. A rank-calibration analysis (Aug 2026) showed the model's ranks 1-2 carried all the recent alpha (+6.7% mean, 70% beat rate) while ranks 3-10 had inverted to negative — so the model path selects at most 2 candidates.
+
+Quality gate (2 tiers, evaluated on the top-2 basket's recent 20d walk-forward performance):
+- **Full (2 picks)**: beat_rate >= 35% AND mean_target >= -3%
+- **Minimal (1 pick)**: beat_rate < 35% or mean_target < -3%
+- **Heuristic fallback (75% of cap, floor 3)**: model unavailable
+
+Rotation exclusion: when the effective cap is below the configured total, tickers picked in the last 3 scan dates are removed from the selection pool, so picks rotate through the model's top candidates instead of repeating the same name every day.
+
+When the model falls back to heuristic path (model returns empty predictions), the scan uses per-slot signal gates. This prevents the system from silently producing zero candidates when the model is broken.
+
+8. Capture analyst target snapshots for future point-in-time research:
 
 ```bash
 ./sq analyst-snapshot --source research --top 250
@@ -196,19 +216,42 @@ Use `--ticker` to always include specific names outside the default source:
 ./sq analyst-snapshot --ticker SLAB --ticker LITE
 ```
 
-8. Run intraday monitoring:
+9. Run intraday monitoring (includes hard stop checks):
 
 ```bash
 ./sq monitor
 ```
 
-9. Check a current quote and holding context:
+9. Capture extended-hours movement after the close:
+
+```bash
+./sq extended-hours-snapshot --source all
+```
+
+`sq extended-hours-snapshot` stores point-in-time postmarket movement in DuckDB for future analysis. It requests 1-minute intraday data with pre/post-market bars, anchors each ticker to the regular-session close, and persists extended-hours return, sector ETF extended-hours return, relative extended-hours return, postmarket volume, and timestamp metadata. The evening brief reads the current day's persisted snapshot when available, but selection remains close-based until enough history exists to test the signal.
+
+10. Sync the local ledger from Schwab positions:
+
+```bash
+./sq schwab sync-ledger --dry-run
+./sq schwab sync-ledger
+```
+
+`sq schwab sync-ledger` is read-only against Schwab. It pulls broker positions and updates only the local SQLite ledger so `Active_Trades` matches the broker source of truth:
+
+- broker-only ticker -> open a local ledger trade using Schwab average price and share count
+- ledger-only ticker -> warn by default; pass `--close-missing` to close the local ledger trade using the latest available price approximation
+- ticker in both -> update local shares, average price, and max price seen when Schwab differs
+- fund/ETF positions are ignored by default; pass `--include-funds` only if you intentionally want ETF holdings in the trading ledger
+- use `--ignore-ticker TICKER` for a known broker/reporting discrepancy that should not be opened, updated, or closed locally
+
+11. Check a current quote and holding context:
 
 ```bash
 ./sq quote VSH
 ```
 
-10. Record fills manually in the ledger:
+12. Record fills manually in the ledger:
 
 ```bash
 ./sq trade buy DOW 53.25 --slot materials
@@ -225,9 +268,23 @@ Use `--ticker` to always include specific names outside the default source:
   - Default scope is the top 250 active names by `md_volume_30d`.
   - The current provider is yfinance.
   - The command stores target mean, median, low, high, analyst count, recommendation summary, estimate/revision tables, capture timestamp, and details JSON.
-- `sq scan` uses:
-  - a hard relative-strength filter via `relative_strength_index_vs_spy_min`
-  - a confluence score across the promoted score components
+- `sq shortlist-model` trains the prediction engine:
+  - L1-regularized linear model (Lasso for regression, LogisticRegression for classification).
+  - Walk-forward validation with expanding windows (252 min train, 20-day test).
+  - 47 raw features (incl. `rsi_2`, `ret_1d`, `ret_5d`, `close_vs_20d_low` mean-reversion features) plus cross-sectional ranks (`__rank_all`, `__rank_sector`) and sector dummies.
+  - 4 macro context features computed from SPY/QQQ: `spy_roc_20`, `spy_roc_5`, `spy_realized_vol_20`, `qqq_roc_20`.
+  - Binary target (`alpha_vs_sector_20d_pos`) = 1 if `alpha_vs_sector_20d > 2%`, else 0.
+  - Zero-coefficient features are purged and the model is re-fit per fold.
+  - `regime_specific` scope splits by SPY 20d return regime (trending when >1% else choppy).
+- `sq scan` candidate selection:
+  - **Primary**: model-driven — inner-joins snapshot with live model predictions; no signal gate needed.
+  - **Fallback**: heuristic — per-slot signal gate when model returns empty predictions.
+  - **Confidence basket**: quality gate metrics (`recent_20d_beat_rate`, `recent_20d_mean_target`) are computed on the model's **top-2 predictions** — rank calibration showed ranks 3+ inverted recently (see rank analysis in AGENTS.md).
+  - **Quality gate** (model path, 2 tiers): 2 picks when beat_rate >= 35% and mean_target >= -3%; else 1 pick.
+  - **Rotation exclusion**: picks from the last 3 scan dates are removed from the pool when the cap is below the configured total, so the pair rotates through the model's top candidates.
+  - Heuristic fallback: 75% of cap, floor 3.
+  - A hard relative-strength filter via `relative_strength_index_vs_spy_min`
+  - A confluence score across the promoted score components
   - `signal_score_min` as the pass threshold
   - scored components currently include `rsi_14`, `vol_alpha`, `sma_200_dist`, `roc_63`, and sector-specific signals such as `oil_corr_60`
   - `vol_alpha` is currently downweighted relative to the other score components
@@ -253,13 +310,26 @@ Use `--ticker` to always include specific names outside the default source:
 - Non-tech sectors default to the SPY regime; Information Technology and Communication Services use QQQ.
 - `sq monitor` is alert-only.
   - It updates `max_price_seen`.
-  - It evaluates all exit rules every run.
+  - It evaluates all exit rules every run, in priority order:
+    1. **Regime flip** — exit if benchmark below 200 SMA.
+    2. **Hard stop** — exit if `current_price <= entry_price * (1 - hard_stop_pct)`. Must-sell, not demotable by shock guard.
+    3. **Trailing stop** — ATR-based or percent-based from max price seen.
+    4. **Profit target** — ATR-based or percent-based from entry.
+    5. **RSI_2 > 90** — requires minimum unrealized gain.
+    6. **Time limit** — exit after `time_limit_days`.
+    7. **Pre-earnings exit** — exit ahead of upcoming earnings.
+  - Hard stop, profit target, and pre-earnings exit are **must-sell** (not demoted by the portfolio shock guard).
   - It uses the latest available quote for pricing-sensitive checks.
   - Earnings-aware strategies can trigger a `pre_earnings_exit` flag ahead of the next scheduled report.
   - RSI_2 exits can require a minimum unrealized gain before triggering.
   - It sends one consolidated digest.
   - It does not close `Active_Trades`; use `sq trade sell` to close trades in the ledger.
   - Legacy imported holdings without `strategy_slot` now fall back to the best available exact-sector or regime-family strategy and are backfilled into the ledger.
+- `sq schwab sync-ledger` is the broker reconciliation path.
+  - It never submits orders or changes Schwab positions.
+  - It should run before `sq monitor` so monitor alerts evaluate the broker-truth holdings.
+  - Exact historical sell fill prices are not available from the positions endpoint; missing broker positions are warning-only unless `--close-missing` is explicitly passed.
+
 - Multiple active runtime strategies are supported through `production_strategies.json`.
   - `sq promote --slot <name>` updates one named strategy slot without overwriting the others.
   - `sq scan` evaluates each active slot against its own sector scope and thresholds.
@@ -344,94 +414,107 @@ Use `--ticker` to always include specific names outside the default source:
   - live-match and gate diagnostics are cached by sector + indicator signature to reduce repeated evaluation work on large runs
 - `sq promote` enforces promotion quality floors from `config.yaml`.
   - Current defaults require minimum profit factor, expectancy, trade count, and maximum drawdown before a row can be promoted.
+  - Promoted strategies include `hard_stop_pct` in their `exit_rules`.
+- `sq sweep` exit rule priority (in backtest simulation):
+  1. Regime flip → close
+  2. **Hard stop** → `entry_price * (1 - hard_stop_pct)` — entry-anchored, checked before trailing stop
+  3. Trailing stop → ATR-based or percent-based from max price
+  4. Profit target → ATR-based or percent-based from entry
+  5. RSI_2 > 90 → close
+  6. Time limit → close
+  7. Pre-earnings exit → close
+  - All sweep metrics are net of configured execution costs and hard stops.
 
-## Earnings-Aware Next Steps
+## Nightly Pipeline
 
-- Run `./sq sync` before any earnings-aware sweep so `Earnings_Calendar` is fresh.
-- Start with the sleeve-specific modes:
-  - `high_performance_energy_earnings_refined`
-  - `high_performance_materials_earnings_refined`
-  - `high_performance_industrials_earnings_refined`
-- Use `production_sleeves_earnings_refined` after the single-sleeve runs look sane.
-- Use `production_sleeves_gap_refined` when you want to test direct overnight-risk filtering rather than event timing.
-- Current targeted run sizes:
-  - `high_performance_energy_earnings_refined`: `27,648` sector-runs
-  - `high_performance_materials_earnings_refined`: `10,368` sector-runs
-  - `high_performance_industrials_earnings_refined`: `20,736` sector-runs
-  - `production_sleeves_earnings_refined`: `31,104` sector-runs across `3` sectors
-- Try next:
-  - compare alpha and drawdown with `exit_before_earnings_days` on vs off
-  - if live counts collapse too far, loosen `days_to_next_earnings_min` before loosening the core pullback thresholds
-  - if earnings timing helps but does not fix drawdown, run `production_sleeves_gap_refined` next
-  - if gap-risk helps but live counts collapse, widen the gap thresholds before touching the core pullback thresholds
+The nightly pipeline runs via `ops/nightly_pipeline.sh` and executes in order:
+
+1. `./sq sync` — refresh OHLCV and earnings data
+2. `./sq universe-backfill` — compute today's features with macro context and binary target
+3. `./sq shortlist-model` — train walk-forward lasso model
+4. `./sq analyst-snapshot` — capture analyst targets
+5. `./sq extended-hours-snapshot` — capture postmarket movement
+6. `./sq scan` — produce evening brief with quality-gated candidates
+7. `./sq scan-performance --email` — email performance summary
+
+If any step fails, the pipeline sends a failure notification email via the `notify_failure` trap.
+
+## Suggested Trading-Day Schedule
+
+Run Schwab ledger reconciliation once shortly after the market opens. Schwab positions are treated as the morning source of truth, including closing local ledger positions missing from Schwab; intraday fills can still be entered manually when needed.
+
+```cron
+TZ=America/New_York
+
+# Broker-truth ledger sync: 5 minutes after open.
+35 9 * * 1-5 cd /home/zdrillings/code/SwingQuant && ./sq schwab sync-ledger --close-missing >> logs/schwab-ledger-sync.log 2>&1
+
+# Existing hourly monitor runs after the morning ledger sync.
+30 10-15 * * 1-5 cd /home/zdrillings/code/SwingQuant && ./sq monitor >> logs/monitor.log 2>&1
+
+# Postmarket snapshot before the evening brief, then the close-based scan with postmarket context.
+25 19 * * 1-5 cd /home/zdrillings/code/SwingQuant && ./sq extended-hours-snapshot --source all >> logs/extended_hours_snapshot_cron.log 2>&1
+30 19 * * 1-5 cd /home/zdrillings/code/SwingQuant && ./sq scan >> logs/scan_cron.log 2>&1
+```
+
+## Current Model State
+
+The shortlist layer evaluates multiple walk-forward candidate models and persists the selected champion. Current candidates are:
+
+- `signal_proxy`: deterministic rank-average baseline
+- `ridge_model`: closed-form linear baseline
+- `lasso_model`: L1-regularized linear model, or logistic classification when `--target-type classification` is used
+- `xgboost_model`: optional tree model when `xgboost` is installed
+
+Key characteristics:
+
+- **Target**: `alpha_vs_sector_20d` or `alpha_vs_sector_20d_pos`; missing forward alpha remains missing and is not converted into a negative label
+- **Selection**: the champion is selected from model summaries, not hardcoded
+- **Runtime override**: `scan_policy.shortlist_model.production_model_name`, when set, explicitly selects a preferred model; when omitted, runtime uses the persisted champion
+- **Promotion gate**: model-driven scan picks are unavailable unless recent top-2 OOS metrics pass `scan_policy.shortlist_model.promotion_gate`
+- **Quality throttle**: after the model passes the promotion gate, position count can still scale down based on recent model confidence
+- **Hard stops**: entry-anchored stop-loss checked before trailing stops in both backtest and live monitoring
 
 ## Outputs
 
 - Market history: `data/market_data.duckdb`
 - Ledger: `data/ledger.sqlite`
+- Model report: `reports/shortlist_model.md`
+- Model predictions: `reports/shortlist_model_oos_predictions.csv`, `reports/shortlist_model_live_predictions.csv`
+- Scan performance: `reports/scan_performance.md`
 - Ranked evaluation report: `reports/candidates.md`
 - Active runtime strategies: `production_strategies.json`
-- Logs: `logs/swingquant.log`
+- Logs: `logs/swingquant.log`, `logs/nightly_pipeline.log`
 
 ## Try Next
 
-Suggested operator sequence while the new breakout family is being tuned:
-
-1. Run the new Energy / real-economy family:
+1. Run the nightly pipeline to refresh the model and scan:
 
 ```bash
-./sq sweep --mode high_performance_energy
-./sq sweep --mode high_performance_energy_refined
-./sq sweep --mode high_performance_energy_stability_refined
-./sq evaluate --sector "Energy" --top 10
+./sq universe-backfill --date-from $(date +%F)
+./sq shortlist-model --eligible-universe-mode passed_or_trend --model-scope sector_specific
+./sq scan
 ```
 
-Then, for the other active sleeves:
+2. Test with classification target and regime splitting (slower but potentially more adaptive):
 
 ```bash
-./sq sweep --mode high_performance_materials_refined
-./sq evaluate --sector "Materials" --top 10
-
-./sq sweep --mode high_performance_industrials_refined
-./sq evaluate --sector "Industrials" --top 10
+./sq shortlist-model --target-type classification --model-scope regime_specific
 ```
 
-If you want alpha metrics to populate fully first, refresh the benchmark ETF history before the next sweep:
+3. Sweep new strategy parameters:
 
 ```bash
-./sq sync
+./sq sweep --mode pullback_technology
+./sq sweep --mode breakout_growth
+./sq evaluate --top 10
 ```
 
-Then rerun the sweep and evaluate steps. Without synced sector ETFs, `alpha_vs_spy` can populate but `alpha_vs_sector` may still show as `unknown`.
-
-2. Run the breakout v1 family in the three target sectors:
+4. Monitor holdings with hard stops active:
 
 ```bash
-./sq sweep --mode breakout_v1_growth_leaders
-./sq evaluate --top 20
+./sq monitor
 ```
-
-Expected runtime envelope after the breakout grid reduction:
-- `breakout_v1_information_technology`, `breakout_v1_industrials`, `breakout_v1_financials`: small enough for fast single-sector iteration
-- `breakout_v1_growth_leaders`: a compact three-sector pass, no longer a multi-day run
-
-3. If you want to inspect sectors individually:
-
-```bash
-./sq sweep --mode breakout_v1_information_technology
-./sq sweep --mode breakout_v1_industrials
-./sq sweep --mode breakout_v1_financials
-```
-
-4. If breakout v1 gets live matches but weak promotion metrics, the first levers to revisit are:
-   - `breakout_volume_ratio_50_min`
-   - `signal_score_min`
-   - `base_range_pct_20_max`
-   - `trailing_stop_atr_mult`
-
-5. If breakout names are still showing up too late in the move, the next model feature to add is breakout freshness:
-   - distance above prior 20-day high
-   - or days-since-breakout
 
 ## Verification
 

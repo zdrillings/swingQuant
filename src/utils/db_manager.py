@@ -46,6 +46,11 @@ CREATE TABLE IF NOT EXISTS universe_daily_snapshots (
     relative_strength_index_vs_qqq DOUBLE,
     relative_strength_index_vs_xlk DOUBLE,
     relative_strength_index_vs_subindustry DOUBLE,
+    rs_vs_spy_5d_change DOUBLE,
+    rs_vs_qqq_5d_change DOUBLE,
+    rs_vs_xlk_5d_change DOUBLE,
+    rs_vs_subindustry_5d_change DOUBLE,
+    rs_vs_subindustry_10d_change DOUBLE,
     roc_63 DOUBLE,
     roc_126 DOUBLE,
     vol_alpha DOUBLE,
@@ -135,6 +140,28 @@ CREATE TABLE IF NOT EXISTS analyst_revision_snapshots (
 );
 CREATE INDEX IF NOT EXISTS idx_analyst_revision_snapshots_date
 ON analyst_revision_snapshots (snapshot_date);
+"""
+
+EXTENDED_HOURS_SNAPSHOTS_SCHEMA = """
+CREATE TABLE IF NOT EXISTS extended_hours_snapshots (
+    snapshot_date DATE NOT NULL,
+    ticker VARCHAR NOT NULL,
+    captured_at VARCHAR NOT NULL,
+    source VARCHAR,
+    sector VARCHAR,
+    sector_etf VARCHAR,
+    regular_close DOUBLE,
+    extended_price DOUBLE,
+    extended_return DOUBLE,
+    extended_volume BIGINT,
+    last_trade_at VARCHAR,
+    sector_etf_extended_return DOUBLE,
+    relative_extended_return DOUBLE,
+    details_json VARCHAR,
+    PRIMARY KEY (snapshot_date, ticker)
+);
+CREATE INDEX IF NOT EXISTS idx_extended_hours_snapshots_date
+ON extended_hours_snapshots (snapshot_date);
 """
 
 SQLITE_SCHEMA = """
@@ -340,6 +367,7 @@ class DatabaseManager:
             duckdb_conn.execute(UNIVERSE_SNAPSHOTS_SCHEMA)
             duckdb_conn.execute(ANALYST_SNAPSHOTS_SCHEMA)
             duckdb_conn.execute(ANALYST_REVISION_SNAPSHOTS_SCHEMA)
+            duckdb_conn.execute(EXTENDED_HOURS_SNAPSHOTS_SCHEMA)
             self._migrate_duckdb_schema(duckdb_conn)
 
     def sqlite_connection(self) -> sqlite3.Connection:
@@ -465,6 +493,11 @@ class DatabaseManager:
             "ALTER TABLE universe_daily_snapshots ADD COLUMN IF NOT EXISTS relative_strength_index_vs_qqq DOUBLE",
             "ALTER TABLE universe_daily_snapshots ADD COLUMN IF NOT EXISTS relative_strength_index_vs_xlk DOUBLE",
             "ALTER TABLE universe_daily_snapshots ADD COLUMN IF NOT EXISTS relative_strength_index_vs_subindustry DOUBLE",
+            "ALTER TABLE universe_daily_snapshots ADD COLUMN IF NOT EXISTS rs_vs_spy_5d_change DOUBLE",
+            "ALTER TABLE universe_daily_snapshots ADD COLUMN IF NOT EXISTS rs_vs_qqq_5d_change DOUBLE",
+            "ALTER TABLE universe_daily_snapshots ADD COLUMN IF NOT EXISTS rs_vs_xlk_5d_change DOUBLE",
+            "ALTER TABLE universe_daily_snapshots ADD COLUMN IF NOT EXISTS rs_vs_subindustry_5d_change DOUBLE",
+            "ALTER TABLE universe_daily_snapshots ADD COLUMN IF NOT EXISTS rs_vs_subindustry_10d_change DOUBLE",
             "ALTER TABLE universe_daily_snapshots ADD COLUMN IF NOT EXISTS roc_126 DOUBLE",
             "ALTER TABLE universe_daily_snapshots ADD COLUMN IF NOT EXISTS atr_pct_14 DOUBLE",
             "ALTER TABLE universe_daily_snapshots ADD COLUMN IF NOT EXISTS atr_pct_14_percentile_252 DOUBLE",
@@ -497,6 +530,20 @@ class DatabaseManager:
             "ALTER TABLE analyst_revision_snapshots ADD COLUMN IF NOT EXISTS growth_estimates_json VARCHAR",
             "ALTER TABLE analyst_revision_snapshots ADD COLUMN IF NOT EXISTS upgrades_downgrades_json VARCHAR",
             "ALTER TABLE analyst_revision_snapshots ADD COLUMN IF NOT EXISTS details_json VARCHAR",
+            "CREATE TABLE IF NOT EXISTS extended_hours_snapshots (snapshot_date DATE NOT NULL, ticker VARCHAR NOT NULL, captured_at VARCHAR NOT NULL, source VARCHAR, sector VARCHAR, sector_etf VARCHAR, regular_close DOUBLE, extended_price DOUBLE, extended_return DOUBLE, extended_volume BIGINT, last_trade_at VARCHAR, sector_etf_extended_return DOUBLE, relative_extended_return DOUBLE, details_json VARCHAR, PRIMARY KEY (snapshot_date, ticker))",
+            "CREATE INDEX IF NOT EXISTS idx_extended_hours_snapshots_date ON extended_hours_snapshots (snapshot_date)",
+            "ALTER TABLE extended_hours_snapshots ADD COLUMN IF NOT EXISTS captured_at VARCHAR",
+            "ALTER TABLE extended_hours_snapshots ADD COLUMN IF NOT EXISTS source VARCHAR",
+            "ALTER TABLE extended_hours_snapshots ADD COLUMN IF NOT EXISTS sector VARCHAR",
+            "ALTER TABLE extended_hours_snapshots ADD COLUMN IF NOT EXISTS sector_etf VARCHAR",
+            "ALTER TABLE extended_hours_snapshots ADD COLUMN IF NOT EXISTS regular_close DOUBLE",
+            "ALTER TABLE extended_hours_snapshots ADD COLUMN IF NOT EXISTS extended_price DOUBLE",
+            "ALTER TABLE extended_hours_snapshots ADD COLUMN IF NOT EXISTS extended_return DOUBLE",
+            "ALTER TABLE extended_hours_snapshots ADD COLUMN IF NOT EXISTS extended_volume BIGINT",
+            "ALTER TABLE extended_hours_snapshots ADD COLUMN IF NOT EXISTS last_trade_at VARCHAR",
+            "ALTER TABLE extended_hours_snapshots ADD COLUMN IF NOT EXISTS sector_etf_extended_return DOUBLE",
+            "ALTER TABLE extended_hours_snapshots ADD COLUMN IF NOT EXISTS relative_extended_return DOUBLE",
+            "ALTER TABLE extended_hours_snapshots ADD COLUMN IF NOT EXISTS details_json VARCHAR",
         ]:
             connection.execute(statement)
 
@@ -850,7 +897,7 @@ class DatabaseManager:
             return list(
                 connection.execute(
                     """
-                    SELECT ticker, entry_date, entry_price, entry_atr, strategy_id, strategy_slot, shares, max_price_seen, status, exit_date, exit_price
+                    SELECT rowid, ticker, entry_date, entry_price, entry_atr, strategy_id, strategy_slot, shares, max_price_seen, status, exit_date, exit_price
                     FROM Active_Trades
                     WHERE status = 'open'
                     ORDER BY entry_date ASC, ticker ASC
@@ -909,6 +956,24 @@ class DatabaseManager:
             connection.execute(
                 "UPDATE Active_Trades SET strategy_id = ?, strategy_slot = ? WHERE rowid = ?",
                 (strategy_id, strategy_slot, trade_rowid),
+            )
+
+    def update_open_trade_from_broker(
+        self,
+        trade_rowid: int,
+        *,
+        entry_price: float,
+        shares: int,
+        max_price_seen: float,
+    ) -> None:
+        with self.sqlite_connection() as connection:
+            connection.execute(
+                """
+                UPDATE Active_Trades
+                SET entry_price = ?, shares = ?, max_price_seen = ?
+                WHERE rowid = ? AND status = 'open'
+                """,
+                (entry_price, shares, max_price_seen, trade_rowid),
             )
 
     def close_trade(
@@ -1602,6 +1667,11 @@ class DatabaseManager:
             "relative_strength_index_vs_qqq",
             "relative_strength_index_vs_xlk",
             "relative_strength_index_vs_subindustry",
+            "rs_vs_spy_5d_change",
+            "rs_vs_qqq_5d_change",
+            "rs_vs_xlk_5d_change",
+            "rs_vs_subindustry_5d_change",
+            "rs_vs_subindustry_10d_change",
             "roc_63",
             "roc_126",
             "vol_alpha",
@@ -1679,6 +1749,11 @@ class DatabaseManager:
                         row.get("relative_strength_index_vs_qqq"),
                         row.get("relative_strength_index_vs_xlk"),
                         row.get("relative_strength_index_vs_subindustry"),
+                        row.get("rs_vs_spy_5d_change"),
+                        row.get("rs_vs_qqq_5d_change"),
+                        row.get("rs_vs_xlk_5d_change"),
+                        row.get("rs_vs_subindustry_5d_change"),
+                        row.get("rs_vs_subindustry_10d_change"),
                         row.get("roc_63"),
                         row.get("roc_126"),
                         row.get("vol_alpha"),
@@ -1753,6 +1828,8 @@ class DatabaseManager:
             "sub_industry",
             "subindustry_benchmark",
             "relative_strength_index_vs_subindustry",
+            "rs_vs_spy_5d_change",
+            "rs_vs_subindustry_5d_change",
         }
         invalid = [column for column in columns if column not in allowed_columns]
         if invalid:
@@ -1801,6 +1878,11 @@ class DatabaseManager:
                 relative_strength_index_vs_qqq,
                 relative_strength_index_vs_xlk,
                 relative_strength_index_vs_subindustry,
+                rs_vs_spy_5d_change,
+                rs_vs_qqq_5d_change,
+                rs_vs_xlk_5d_change,
+                rs_vs_subindustry_5d_change,
+                rs_vs_subindustry_10d_change,
                 roc_63,
                 roc_126,
                 vol_alpha,
@@ -1879,6 +1961,11 @@ class DatabaseManager:
                     "relative_strength_index_vs_qqq",
                     "relative_strength_index_vs_xlk",
                     "relative_strength_index_vs_subindustry",
+                    "rs_vs_spy_5d_change",
+                    "rs_vs_qqq_5d_change",
+                    "rs_vs_xlk_5d_change",
+                    "rs_vs_subindustry_5d_change",
+                    "rs_vs_subindustry_10d_change",
                     "roc_63",
                     "roc_126",
                     "vol_alpha",
@@ -2016,6 +2103,101 @@ class DatabaseManager:
         if clauses:
             query += " WHERE " + " AND ".join(clauses)
         query += " ORDER BY snapshot_date ASC, ticker ASC, provider ASC"
+        with self.duckdb_connection() as connection:
+            cursor = connection.execute(query, tuple(params))
+            rows = cursor.fetchall()
+            result_columns = [description[0] for description in cursor.description] if rows else columns
+        if not rows:
+            return pd.DataFrame(columns=columns)
+        return pd.DataFrame(rows, columns=result_columns)
+
+    def replace_extended_hours_snapshots(
+        self,
+        *,
+        snapshot_date: str,
+        rows: Iterable[dict],
+    ) -> int:
+        payload = list(rows)
+        columns = [
+            "snapshot_date",
+            "ticker",
+            "captured_at",
+            "source",
+            "sector",
+            "sector_etf",
+            "regular_close",
+            "extended_price",
+            "extended_return",
+            "extended_volume",
+            "last_trade_at",
+            "sector_etf_extended_return",
+            "relative_extended_return",
+            "details_json",
+        ]
+        placeholders = ", ".join(["?"] * len(columns))
+        with self.duckdb_connection() as connection:
+            connection.execute(
+                "DELETE FROM extended_hours_snapshots WHERE snapshot_date = ?",
+                (snapshot_date,),
+            )
+            if not payload:
+                return 0
+            connection.executemany(
+                f"""
+                INSERT INTO extended_hours_snapshots ({", ".join(columns)})
+                VALUES ({placeholders})
+                """,
+                [
+                    (
+                        snapshot_date,
+                        str(row["ticker"]).strip().upper(),
+                        row.get("captured_at"),
+                        row.get("source"),
+                        row.get("sector"),
+                        row.get("sector_etf"),
+                        row.get("regular_close"),
+                        row.get("extended_price"),
+                        row.get("extended_return"),
+                        row.get("extended_volume"),
+                        row.get("last_trade_at"),
+                        row.get("sector_etf_extended_return"),
+                        row.get("relative_extended_return"),
+                        json.dumps(row.get("details", {}), sort_keys=True),
+                    )
+                    for row in payload
+                ],
+            )
+        return len(payload)
+
+    def load_extended_hours_snapshots(
+        self,
+        *,
+        snapshot_date: str | None = None,
+    ):
+        import pandas as pd
+
+        columns = [
+            "snapshot_date",
+            "ticker",
+            "captured_at",
+            "source",
+            "sector",
+            "sector_etf",
+            "regular_close",
+            "extended_price",
+            "extended_return",
+            "extended_volume",
+            "last_trade_at",
+            "sector_etf_extended_return",
+            "relative_extended_return",
+            "details_json",
+        ]
+        query = f"SELECT {', '.join(columns)} FROM extended_hours_snapshots"
+        params: list[object] = []
+        if snapshot_date is not None:
+            query += " WHERE snapshot_date = ?"
+            params.append(snapshot_date)
+        query += " ORDER BY snapshot_date ASC, relative_extended_return DESC NULLS LAST, ticker ASC"
         with self.duckdb_connection() as connection:
             cursor = connection.execute(query, tuple(params))
             rows = cursor.fetchall()

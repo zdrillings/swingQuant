@@ -161,11 +161,13 @@ class ShortlistModelServiceTests(unittest.TestCase):
             report_text = (paths.reports_dir / "shortlist_model.md").read_text(encoding="utf-8")
             self.assertIn("# Shortlist Model", report_text)
             self.assertIn("- eligible_universe_mode: passed_only", report_text)
-            self.assertIn("- xgboost_config: balanced_depth4", report_text)
+            self.assertIn("- candidate_models:", report_text)
+            self.assertIn("- selected_model:", report_text)
+            self.assertIn("## Promotion Gate", report_text)
             self.assertIn("## Full Walk-Forward Evaluation", report_text)
             self.assertIn("## Live Top Candidates", report_text)
             self.assertIn("### signal_proxy", report_text)
-            self.assertIn("### ensemble_model", report_text)
+            self.assertIn("### lasso_model", report_text)
 
             self.assertTrue((paths.reports_dir / "shortlist_model_oos_predictions.csv").exists())
             self.assertTrue((paths.reports_dir / "shortlist_model_live_predictions.csv").exists())
@@ -205,18 +207,17 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertEqual(args.model_scope, "sector_specific")
         self.assertEqual(args.xgboost_config, "balanced_depth4")
 
-    def test_runtime_loader_can_prefer_non_champion_live_model(self) -> None:
+    def test_runtime_loader_returns_lasso_model_context(self) -> None:
         captured: dict[str, object] = {}
 
         class FakeDB:
-            def load_shortlist_model_runs(self, *, horizon_days, eligible_universe_mode=None, model_scope=None, xgboost_config=None, limit=1):
+            def load_shortlist_model_runs(self, *, horizon_days, eligible_universe_mode=None, model_scope=None, limit=1):
                 captured["runs_model_scope"] = model_scope
-                captured["runs_xgboost_config"] = xgboost_config
                 return pd.DataFrame(
                     [
                         {
                             "generated_at": "2026-05-26T17:00:00+00:00",
-                            "champion_model": "ensemble_model",
+                            "champion_model": "lasso_model",
                             "live_snapshot_date": "2026-05-19",
                         }
                     ]
@@ -227,8 +228,39 @@ class ShortlistModelServiceTests(unittest.TestCase):
 
             def load_shortlist_model_predictions(self, *, generated_at, horizon_days, eligible_universe_mode=None, model_scope=None, dataset_split, model_name):
                 captured.setdefault("prediction_model_scopes", []).append(model_scope)
-                rows = {
-                    "xgboost_model": [
+                if model_name != "lasso_model":
+                    return pd.DataFrame()
+                if dataset_split == "oos":
+                    return pd.DataFrame(
+                        [
+                            {
+                                "snapshot_date": "2026-05-18",
+                                "ticker": "AAA",
+                                "sector": "Energy",
+                                "md_volume_30d": 50_000_000.0,
+                                "predicted_alpha": 0.11,
+                                "actual_alpha_vs_sector": 0.04,
+                            },
+                            {
+                                "snapshot_date": "2026-05-18",
+                                "ticker": "BBB",
+                                "sector": "Energy",
+                                "md_volume_30d": 40_000_000.0,
+                                "predicted_alpha": 0.08,
+                                "actual_alpha_vs_sector": 0.01,
+                            },
+                            {
+                                "snapshot_date": "2026-05-18",
+                                "ticker": "CCC",
+                                "sector": "Energy",
+                                "md_volume_30d": 30_000_000.0,
+                                "predicted_alpha": 0.02,
+                                "actual_alpha_vs_sector": -0.04,
+                            },
+                        ]
+                    )
+                return pd.DataFrame(
+                    [
                         {
                             "snapshot_date": "2026-05-19",
                             "ticker": "AAA",
@@ -245,38 +277,57 @@ class ShortlistModelServiceTests(unittest.TestCase):
                             "predicted_alpha": 0.08,
                             "details_json": '{"model_top_reasons": ["strong RS vs SPY"], "model_reason_summary": "strong RS vs SPY"}',
                         }
-                    ],
-                    "ensemble_model": [
-                        {
-                            "snapshot_date": "2026-05-19",
-                            "ticker": "BBB",
-                            "sector": "Materials",
-                            "md_volume_30d": 60_000_000.0,
-                            "predicted_alpha": 0.09,
-                            "details_json": '{"model_top_reasons": ["strong volume confirmation"], "model_reason_summary": "strong volume confirmation"}',
-                        }
-                    ],
-                }
-                return pd.DataFrame(rows.get(model_name, []))
+                    ]
+                )
 
         context = load_live_shortlist_model_context(
             FakeDB(),
             top_n=1,
-            preferred_model_name="xgboost_model",
             refresh_if_stale=False,
             eligible_universe_mode="passed_only",
             model_scope="sector_specific",
-            xgboost_config="balanced_depth4",
         )
 
         self.assertIsNotNone(context)
         assert context is not None
         self.assertEqual(captured["runs_model_scope"], "sector_specific")
-        self.assertEqual(captured["runs_xgboost_config"], "balanced_depth4")
-        self.assertTrue(all(scope == "sector_specific" for scope in captured["prediction_model_scopes"]))
-        self.assertEqual(context.champion_model, "xgboost_model")
+        self.assertEqual(context.champion_model, "lasso_model")
         self.assertEqual(context.live_predictions.iloc[0]["ticker"], "AAA")
         self.assertEqual(
             context.live_predictions.iloc[0]["model_comparison_summary"],
             "BBB in Energy on strong 63d momentum",
         )
+
+    def test_classification_target_preserves_unmatured_alpha_as_missing(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        frame = pd.DataFrame(
+            [
+                {
+                    "snapshot_date": "2026-01-02",
+                    "ticker": "AAA",
+                    "sector": "Energy",
+                    "passed_any_strategy": 1,
+                    "md_volume_30d": 50_000_000.0,
+                    "adj_close": 50.0,
+                    "alpha_vs_sector_20d_pos": 1.0,
+                },
+                {
+                    "snapshot_date": "2026-01-03",
+                    "ticker": "BBB",
+                    "sector": "Energy",
+                    "passed_any_strategy": 1,
+                    "md_volume_30d": 50_000_000.0,
+                    "adj_close": 50.0,
+                    "alpha_vs_sector_20d_pos": float("nan"),
+                },
+            ]
+        )
+
+        prepared = service._prepare_snapshot_frame(frame)
+        matured = service._build_matured_eligible_universe(
+            prepared,
+            target_column="alpha_vs_sector_20d_pos",
+            eligible_universe_mode="passed_only",
+        )
+
+        self.assertEqual(matured["ticker"].tolist(), ["AAA"])

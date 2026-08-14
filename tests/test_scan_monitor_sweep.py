@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
@@ -27,6 +28,68 @@ class EmailCall:
 
 
 class ScanServiceTests(unittest.TestCase):
+    def test_scan_filters_out_in_progress_daily_bar_before_close(self) -> None:
+        service = ScanService(db_manager=None)
+        frame = pd.DataFrame(
+            [
+                {"ticker": "AAA", "date": pd.Timestamp("2026-07-13"), "adj_close": 100.0},
+                {"ticker": "AAA", "date": pd.Timestamp("2026-07-14"), "adj_close": 110.0},
+            ]
+        )
+
+        filtered = service._filter_to_completed_scan_sessions(
+            frame,
+            now=datetime.fromisoformat("2026-07-14T11:30:00-04:00"),
+        )
+
+        self.assertEqual(filtered["date"].max(), pd.Timestamp("2026-07-13"))
+
+    def test_scan_allows_current_daily_bar_after_close_buffer(self) -> None:
+        service = ScanService(db_manager=None)
+        frame = pd.DataFrame(
+            [
+                {"ticker": "AAA", "date": pd.Timestamp("2026-07-13"), "adj_close": 100.0},
+                {"ticker": "AAA", "date": pd.Timestamp("2026-07-14"), "adj_close": 110.0},
+            ]
+        )
+
+        filtered = service._filter_to_completed_scan_sessions(
+            frame,
+            now=datetime.fromisoformat("2026-07-14T16:30:00-04:00"),
+        )
+
+        self.assertEqual(filtered["date"].max(), pd.Timestamp("2026-07-14"))
+
+    def test_scan_model_strategy_map_excludes_scan_disabled_slots(self) -> None:
+        service = ScanService(db_manager=None)
+        technology = ProductionStrategy(
+            strategy_id=1,
+            promoted_at="2026-06-01T17:00:00",
+            indicators={},
+            exit_rules=ExitRules(0.05, 0.12, 20),
+            slot="technology",
+            sector="Information Technology",
+        )
+        healthcare = ProductionStrategy(
+            strategy_id=2,
+            promoted_at="2026-06-29T10:00:00",
+            indicators={},
+            exit_rules=ExitRules(0.05, 0.12, 20),
+            slot="healthcare",
+            sector="Health Care",
+            scan_enabled=False,
+        )
+
+        strategy_map = service._build_model_strategy_map(
+            {
+                slot: strategy
+                for slot, strategy in {"technology": technology, "healthcare": healthcare}.items()
+                if strategy.scan_enabled
+            }
+        )
+
+        self.assertEqual(strategy_map, {"Information Technology": ("technology", "Information Technology")})
+
     def test_scan_policy_supports_slot_specific_learned_ranker_weights(self) -> None:
         policy = ScanPolicy.from_config(
             {
@@ -90,11 +153,150 @@ class ScanServiceTests(unittest.TestCase):
         self.assertEqual(policy.recent_swap_max_opportunity_gap, 0.10)
         self.assertTrue(policy.slot_selection_overlay_enabled)
         self.assertEqual(policy.slot_selection_overlay_weights["energy"]["distance_above_20d_high"], -0.08)
+        self.assertFalse(policy.candidate_quality_throttle_enabled)
+        self.assertIsNone(policy.candidate_quality_min_pool_median_opportunity)
+        self.assertEqual(policy.candidate_quality_reduced_max_candidates, 6)
+        self.assertEqual(policy.candidate_quality_min_pool_size, 6)
         self.assertTrue(policy.shortlist_model.use_as_candidate_source)
         self.assertEqual(policy.shortlist_model.production_eligible_universe_mode, "passed_or_trend")
         self.assertEqual(policy.shortlist_model.production_model_scope, "sector_specific")
         self.assertEqual(policy.shortlist_model.production_xgboost_config, "balanced_depth4")
         self.assertEqual(policy.shortlist_model.min_opportunity_score, 0.31)
+
+    def test_scan_policy_supports_candidate_quality_throttle(self) -> None:
+        policy = ScanPolicy.from_config(
+            {
+                "scan_policy": {
+                    "max_candidates_total": 6,
+                    "candidate_quality_throttle": {
+                        "enabled": True,
+                        "min_pool_median_opportunity": 0.40,
+                        "reduced_max_candidates": 0,
+                        "min_pool_size": 8,
+                    },
+                }
+            }
+        )
+
+        self.assertTrue(policy.candidate_quality_throttle_enabled)
+        self.assertEqual(policy.candidate_quality_min_pool_median_opportunity, 0.40)
+        self.assertEqual(policy.candidate_quality_reduced_max_candidates, 0)
+        self.assertEqual(policy.candidate_quality_min_pool_size, 8)
+
+    def test_candidate_quality_throttle_reduces_effective_selection_count(self) -> None:
+        policy = ScanPolicy.from_config(
+            {
+                "scan_policy": {
+                    "max_candidates_total": 6,
+                    "max_candidates_per_slot": 6,
+                    "max_candidates_per_sector": 6,
+                    "candidate_quality_throttle": {
+                        "enabled": True,
+                        "min_pool_median_opportunity": 0.40,
+                        "reduced_max_candidates": 0,
+                        "min_pool_size": 3,
+                    },
+                }
+            }
+        )
+
+        service = ScanService(db_manager=None)
+        candidates = pd.DataFrame(
+            [
+                {
+                    "ticker": "AAA",
+                    "strategy_slot": "technology",
+                    "strategy_sector": "Information Technology",
+                    "sector": "Information Technology",
+                    "selection_score": 0.50,
+                    "signal_score": 0.0,
+                    "opportunity_score": 0.34,
+                    "md_volume_30d": 10_000_000,
+                    "already_owned": False,
+                },
+                {
+                    "ticker": "BBB",
+                    "strategy_slot": "technology",
+                    "strategy_sector": "Information Technology",
+                    "sector": "Information Technology",
+                    "selection_score": 0.49,
+                    "signal_score": 0.0,
+                    "opportunity_score": 0.38,
+                    "md_volume_30d": 10_000_000,
+                    "already_owned": False,
+                },
+                {
+                    "ticker": "CCC",
+                    "strategy_slot": "technology",
+                    "strategy_sector": "Information Technology",
+                    "sector": "Information Technology",
+                    "selection_score": 0.48,
+                    "signal_score": 0.0,
+                    "opportunity_score": 0.39,
+                    "md_volume_30d": 10_000_000,
+                    "already_owned": False,
+                },
+            ]
+        )
+
+        diagnostics = service._candidate_quality_throttle_diagnostics(
+            candidates,
+            scan_policy=policy,
+            selection_opportunity_floor=0.30,
+        )
+        selected = service._apply_portfolio_caps(
+            candidates,
+            policy,
+            max_candidates_total=diagnostics["effective_max_candidates"],
+        )
+
+        self.assertTrue(diagnostics["triggered"])
+        self.assertEqual(diagnostics["reason"], "pool_median_below_threshold")
+        self.assertEqual(diagnostics["effective_max_candidates"], 0)
+        self.assertTrue(selected.empty)
+
+    def test_candidate_quality_throttle_metadata_is_persisted(self) -> None:
+        service = ScanService(db_manager=None)
+        candidates = pd.DataFrame(
+            [
+                {
+                    "ticker": "AAA",
+                    "strategy_slot": "technology",
+                    "strategy_sector": "Information Technology",
+                    "sector": "Information Technology",
+                    "md_volume_30d": 10_000_000,
+                    "adj_close": 100.0,
+                    "regime_etf": "XLK",
+                    "signal_score": 0.0,
+                    "setup_quality_score": 0.0,
+                    "expected_alpha_score": 0.2,
+                    "breadth_score": 0.3,
+                    "freshness_score": 0.4,
+                    "overlap_penalty": 0.0,
+                    "opportunity_score": 0.38,
+                    "shares": 10,
+                    "selection_score": 0.50,
+                    "selection_source": "shortlist_model",
+                    "model_predicted_alpha": 0.12,
+                    "model_rank": 1,
+                    "model_generated_at": "2026-07-15T23:25:10+00:00",
+                    "model_name": "xgboost_model",
+                    "already_owned": False,
+                    "overlap_components": {},
+                    "candidate_quality_throttle": {
+                        "enabled": True,
+                        "triggered": True,
+                        "reason": "pool_median_below_threshold",
+                        "effective_max_candidates": 0,
+                    },
+                }
+            ]
+        )
+
+        rows = service._build_persisted_scan_rows(candidates, selected=candidates.iloc[0:0].copy())
+
+        self.assertEqual(rows[0]["details"]["candidate_quality_throttle"]["reason"], "pool_median_below_threshold")
+        self.assertEqual(rows[0]["details"]["candidate_quality_throttle"]["effective_max_candidates"], 0)
 
     def test_scan_recent_selection_memory_penalizes_drags_and_boosts_missed_winners(self) -> None:
         policy = ScanPolicy.from_config({"scan_policy": {"recent_selection_memory": {"enabled": True}}})
@@ -252,8 +454,8 @@ class ScanServiceTests(unittest.TestCase):
         service = ScanService(FakeDB(), email_sender=lambda subject, html_body, settings: email_calls.append(EmailCall(subject, html_body)))
         snapshot = pd.DataFrame(
             [
-                {"ticker": "AAA", "sector": "Energy", "regime_green": True, "regime_etf": "SPY", "adj_close": 50.0, "atr_14": 2.0, "md_volume_30d": 40_000_000, "roc_63": 0.12, "relative_strength_index_vs_spy": 85.0, "vol_alpha": 1.2, "sma_200_dist": 0.12, "sma_50_dist": 0.08, "rsi_14": 50.0, "sector_pct_above_50": 0.8, "sector_pct_above_200": 0.8, "sector_median_roc_63": 0.08},
-                {"ticker": "BBB", "sector": "Energy", "regime_green": True, "regime_etf": "SPY", "adj_close": 48.0, "atr_14": 2.0, "md_volume_30d": 38_000_000, "roc_63": 0.11, "relative_strength_index_vs_spy": 84.0, "vol_alpha": 1.2, "sma_200_dist": 0.12, "sma_50_dist": 0.08, "rsi_14": 49.0, "sector_pct_above_50": 0.8, "sector_pct_above_200": 0.8, "sector_median_roc_63": 0.08},
+                {"ticker": "AAA", "date": pd.Timestamp("2026-05-19"), "sector": "Energy", "regime_green": True, "regime_etf": "SPY", "adj_close": 50.0, "atr_14": 2.0, "md_volume_30d": 40_000_000, "roc_63": 0.12, "relative_strength_index_vs_spy": 85.0, "vol_alpha": 1.2, "sma_200_dist": 0.12, "sma_50_dist": 0.08, "rsi_14": 50.0, "sector_pct_above_50": 0.8, "sector_pct_above_200": 0.8, "sector_median_roc_63": 0.08},
+                {"ticker": "BBB", "date": pd.Timestamp("2026-05-19"), "sector": "Energy", "regime_green": True, "regime_etf": "SPY", "adj_close": 48.0, "atr_14": 2.0, "md_volume_30d": 38_000_000, "roc_63": 0.11, "relative_strength_index_vs_spy": 84.0, "vol_alpha": 1.2, "sma_200_dist": 0.12, "sma_50_dist": 0.08, "rsi_14": 49.0, "sector_pct_above_50": 0.8, "sector_pct_above_200": 0.8, "sector_median_roc_63": 0.08},
             ]
         )
         settings = RuntimeSettings(
@@ -326,9 +528,113 @@ class ScanServiceTests(unittest.TestCase):
         self.assertIn("BBB", html)
         self.assertIn("Strategy sector scope: Energy | Candidates: 1", html)
         self.assertIn("Legacy Signal", html)
-        self.assertIn("<td>n/a</td>", html)
+        self.assertIn("<td>+20.00%</td>", html)
         self.assertIn("model +0.200 rank #1 (xgboost_model)", html)
         self.assertIn("won over AAA in Energy on strong 63d momentum", html)
+
+    def test_scan_ignores_stale_shortlist_model_candidates(self) -> None:
+        class FakeDB:
+            def initialize(self): return None
+            def list_universe_rows(self, active_only=True):
+                return [
+                    {"ticker": "AAA", "sector": "Energy", "md_volume_30d": 40_000_000},
+                    {"ticker": "BBB", "sector": "Energy", "md_volume_30d": 38_000_000},
+                ]
+            def load_price_history(self, tickers): return pd.DataFrame()
+            def list_open_trades(self): return []
+
+        email_calls: list[EmailCall] = []
+        service = ScanService(FakeDB(), email_sender=lambda subject, html_body, settings: email_calls.append(EmailCall(subject, html_body)))
+        snapshot = pd.DataFrame(
+            [
+                {"ticker": "AAA", "date": pd.Timestamp("2026-07-13"), "sector": "Energy", "regime_green": True, "regime_etf": "SPY", "adj_close": 50.0, "atr_14": 2.0, "md_volume_30d": 40_000_000, "roc_63": 0.12, "relative_strength_index_vs_spy": 85.0, "vol_alpha": 1.2, "sma_200_dist": 0.12, "sma_50_dist": 0.08, "rsi_14": 50.0, "sector_pct_above_50": 0.8, "sector_pct_above_200": 0.8, "sector_median_roc_63": 0.08},
+                {"ticker": "BBB", "date": pd.Timestamp("2026-07-13"), "sector": "Energy", "regime_green": True, "regime_etf": "SPY", "adj_close": 48.0, "atr_14": 2.0, "md_volume_30d": 38_000_000, "roc_63": 0.11, "relative_strength_index_vs_spy": 84.0, "vol_alpha": 1.2, "sma_200_dist": 0.12, "sma_50_dist": 0.08, "rsi_14": 49.0, "sector_pct_above_50": 0.8, "sector_pct_above_200": 0.8, "sector_median_roc_63": 0.08},
+            ]
+        )
+        settings = RuntimeSettings(
+            paths=AppPaths(
+                root_dir=Path("."),
+                data_dir=Path("data"),
+                duckdb_path=Path("data/market_data.duckdb"),
+                sqlite_path=Path("data/ledger.sqlite"),
+                reports_dir=Path("reports"),
+                logs_dir=Path("logs"),
+                config_path=Path("config.yaml"),
+                env_path=Path(".env"),
+                production_strategy_path=Path("production_strategy.json"),
+            ),
+            env={},
+            total_capital=50_000.0,
+            risk_per_trade=0.02,
+        )
+        strategy = ProductionStrategy(
+            strategy_id=1,
+            promoted_at="2026-05-05T17:00:00",
+            indicators={"rsi_14_max": 55.0},
+            exit_rules=ExitRules(0.05, 0.12, 20),
+            slot="energy",
+            sector="Energy",
+        )
+        model_context = type(
+            "ModelContext",
+            (),
+            {
+                "generated_at": "2026-06-24T00:35:43+00:00",
+                "champion_model": "xgboost_model",
+                "live_snapshot_date": "2026-06-05",
+                "top_n": 10,
+                "live_predictions": pd.DataFrame(
+                    [
+                        {"ticker": "BBB", "predicted_alpha": 0.80, "model_rank": 1, "md_volume_30d": 38_000_000},
+                        {"ticker": "AAA", "predicted_alpha": 0.10, "model_rank": 2, "md_volume_30d": 40_000_000},
+                    ]
+                ),
+            },
+        )()
+
+        with patch.object(service, "_download_recent_daily_history", return_value=pd.DataFrame()), \
+             patch("src.scan.service.build_analysis_frame", return_value=(pd.DataFrame(), [])), \
+             patch("src.scan.service.latest_snapshot", return_value=snapshot), \
+             patch("src.scan.service.filter_signal_candidates", return_value=snapshot[snapshot["ticker"] == "AAA"].copy()), \
+             patch("src.scan.service.get_settings", return_value=settings), \
+             patch("src.scan.service.load_feature_config", return_value={"scan_policy": {"max_candidates_total": 1, "max_candidates_per_slot": 1, "max_candidates_per_sector": 1, "min_opportunity_score": 0.0}}), \
+             patch("src.scan.service.load_active_strategies", return_value={"energy": strategy}), \
+             patch("src.scan.service.load_live_shortlist_model_context", return_value=model_context):
+            report = service.run()
+
+        self.assertTrue(report.emailed)
+        self.assertEqual(report.candidate_count, 1)
+        html = email_calls[0].html_body
+        self.assertIn("AAA", html)
+        self.assertNotIn("BBB</td>", html)
+        self.assertNotIn("model +0.800 rank #1", html)
+        self.assertIn("<h2>Data Freshness</h2>", html)
+        self.assertIn("Shortlist model</td><td>2026-06-05</td><td>WARN</td>", html)
+        self.assertIn("Model snapshot is stale and was ignored", html)
+
+    def test_data_freshness_html_summarizes_warnings(self) -> None:
+        service = ScanService(db_manager=None, email_sender=lambda subject, html_body, settings: None)
+
+        html = service._build_data_freshness_html(
+            [
+                {
+                    "component": "Stored OHLCV",
+                    "latest_date": "2026-06-22",
+                    "status": "WARN",
+                    "note": "Stored history is older than the scan snapshot.",
+                },
+                {
+                    "component": "Scan snapshot",
+                    "latest_date": "2026-07-13",
+                    "status": "OK",
+                    "note": "Most recent completed session used for this email.",
+                },
+            ]
+        )
+
+        self.assertIn("<h2>Data Freshness</h2>", html)
+        self.assertIn("1 freshness warning(s)", html)
+        self.assertIn("<td>Stored OHLCV</td><td>2026-06-22</td><td>WARN</td>", html)
 
     def test_scan_refuses_stale_snapshot_when_freshness_gate_enabled(self) -> None:
         class FakeDB:
@@ -503,6 +809,7 @@ class ScanServiceTests(unittest.TestCase):
                     "strategy_slot": "energy",
                     "strategy_sector": "Energy",
                     "sector": "Energy",
+                    "sub_industry": "Oil & Gas Exploration & Production",
                     "regime_etf": "SPY",
                     "selection_score": 0.90,
                     "opportunity_score": 0.85,
@@ -551,6 +858,10 @@ class ScanServiceTests(unittest.TestCase):
         self.assertIn("<td>AAA</td><td>yes (", html)
         self.assertIn("<td>BBB</td><td>no</td><td>yes</td>", html)
         self.assertIn("<h2>Portfolio Strength Coverage</h2>", html)
+        self.assertIn("<h2>Diversification Lens</h2>", html)
+        self.assertIn("Main selection is unchanged.", html)
+        self.assertIn("<h3>Best Low AI-Buildout Targets</h3>", html)
+        self.assertIn("<td>BBB</td><td>Energy</td><td>Oil & Gas Exploration & Production</td><td>low</td>", html)
         self.assertIn("Top 6 already held: 1/6", html)
         self.assertIn("Strongest held: AAA", html)
         self.assertIn("Strongest unheld: BBB", html)
@@ -895,7 +1206,7 @@ class ScanServiceTests(unittest.TestCase):
         html = email_calls[0].html_body
         self.assertIn("Slot: materials", html)
         self.assertIn("Slot: technology", html)
-        self.assertIn("Selector caps used for detailed shortlist: total=3, per_slot=2, per_sector=2", html)
+        self.assertIn("Caps: total=3, per_slot=2, per_sector=2", html)
         self.assertIn("Strategy sector scope: Materials | Candidates: 2", html)
         self.assertIn("Strategy sector scope: Information Technology | Candidates: 1", html)
         self.assertIn("MAT1", html)
@@ -1101,13 +1412,40 @@ class ScanServiceTests(unittest.TestCase):
         self.assertIn("Next Earnings", html)
         self.assertIn("Last Earnings", html)
         self.assertIn("Earnings Note", html)
+        self.assertIn("Earnings Confirmation", html)
         self.assertIn("Earnings Status", html)
         self.assertIn("2026-05-15 (3bd)", html)
         self.assertIn("2026-05-08 (2bd ago)", html)
         self.assertIn("gap +4.5%, hold +1.8%", html)
+        self.assertIn("confirmed recent earnings reaction; shadow track 5d", html)
         self.assertIn("before earnings (3bd)", html)
         self.assertIn("<th>Stop</th>", html)
         self.assertNotIn("<th>Target</th>", html)
+
+    def test_extended_hours_table_handles_missing_volume(self) -> None:
+        service = ScanService(db_manager=None, email_sender=lambda subject, html_body, settings: None)
+        html = service._extended_hours_table_html(
+            "Held Positions After Hours",
+            pd.DataFrame(
+                [
+                    {
+                        "ticker": "AAA",
+                        "sector": "Information Technology",
+                        "sector_etf": "QQQ",
+                        "regular_close": 100.0,
+                        "extended_price": 101.0,
+                        "extended_return": 0.01,
+                        "sector_etf_extended_return": 0.002,
+                        "relative_extended_return": 0.008,
+                        "extended_volume": float("nan"),
+                    }
+                ]
+            ),
+            max_rows=10,
+        )
+
+        self.assertIn("AAA", html)
+        self.assertIn("<td>n/a</td>", html)
 
     def test_scan_email_falls_back_to_relative_earnings_timing_when_calendar_dates_missing(self) -> None:
         class FakeDB:
@@ -1218,6 +1556,9 @@ class ScanServiceTests(unittest.TestCase):
                     "sma_200_dist": 0.01,
                     "roc_63": 0.01,
                     "relative_strength_index_vs_spy": 60.0,
+                    "days_since_last_earnings": 3.0,
+                    "last_earnings_gap_pct": 0.032,
+                    "close_vs_last_earnings_close": 0.011,
                     "sector_pct_above_50": 0.2,
                     "sector_pct_above_200": 0.2,
                     "sector_median_roc_63": -0.02,
@@ -1262,6 +1603,14 @@ class ScanServiceTests(unittest.TestCase):
         self.assertEqual(report.candidate_count, 0)
         self.assertEqual(len(service.db_manager.persisted), 1)
         self.assertFalse(service.db_manager.persisted[0]["selected"])
+        self.assertEqual(
+            service.db_manager.persisted[0]["details"]["earnings_confirmation_shadow"],
+            {
+                "track_scan_days": 5,
+                "note": "confirmed recent earnings reaction; shadow track 5d",
+                "active": True,
+            },
+        )
 
     def test_scan_penalizes_overlap_with_existing_positions(self) -> None:
         class FakeDB:
@@ -2100,6 +2449,121 @@ class ScanServiceTests(unittest.TestCase):
 
 
 class MonitorServiceTests(unittest.TestCase):
+    def test_monitor_classifies_hard_capital_floor_as_sell(self) -> None:
+        service = MonitorService(db_manager=None, email_sender=lambda subject, html_body, settings: None)
+
+        result = service._classify_sell_signal(
+            exit_flags={
+                "hard_stop": False,
+                "trailing_stop": False,
+                "profit_target": False,
+                "rsi_2": False,
+                "time_limit": False,
+                "regime_flip": False,
+                "pre_earnings_exit": False,
+            },
+            unrealized_pct=-0.16,
+            relative_alpha_since_entry=0.02,
+            buy_setup_status="yes",
+            policy={
+                "max_loss_pct": 0.15,
+                "relative_underperformance_pct": 0.05,
+                "portfolio_shock_trigger_pct": 0.50,
+                "portfolio_shock_min_triggered": 3,
+            },
+        )
+
+        self.assertEqual(result["recommended_action"], "sell")
+        self.assertEqual(result["action_tier"], "must-sell")
+        self.assertIn("capital floor", result["action_basis"])
+
+    def test_monitor_classifies_stop_without_relative_confirmation_as_review(self) -> None:
+        service = MonitorService(db_manager=None, email_sender=lambda subject, html_body, settings: None)
+
+        result = service._classify_sell_signal(
+            exit_flags={
+                "hard_stop": False,
+                "trailing_stop": True,
+                "profit_target": False,
+                "rsi_2": False,
+                "time_limit": False,
+                "regime_flip": False,
+                "pre_earnings_exit": False,
+            },
+            unrealized_pct=-0.06,
+            relative_alpha_since_entry=0.01,
+            buy_setup_status="yes",
+            policy={
+                "max_loss_pct": 0.15,
+                "relative_underperformance_pct": 0.05,
+                "portfolio_shock_trigger_pct": 0.50,
+                "portfolio_shock_min_triggered": 3,
+            },
+        )
+
+        self.assertEqual(result["recommended_action"], "review")
+        self.assertIn("benchmark-relative", result["action_basis"])
+
+    def test_monitor_classifies_stop_with_relative_damage_as_sell(self) -> None:
+        service = MonitorService(db_manager=None, email_sender=lambda subject, html_body, settings: None)
+
+        result = service._classify_sell_signal(
+            exit_flags={
+                "hard_stop": False,
+                "trailing_stop": True,
+                "profit_target": False,
+                "rsi_2": False,
+                "time_limit": False,
+                "regime_flip": False,
+                "pre_earnings_exit": False,
+            },
+            unrealized_pct=-0.08,
+            relative_alpha_since_entry=-0.07,
+            buy_setup_status="yes",
+            policy={
+                "max_loss_pct": 0.15,
+                "relative_underperformance_pct": 0.05,
+                "portfolio_shock_trigger_pct": 0.50,
+                "portfolio_shock_min_triggered": 3,
+            },
+        )
+
+        self.assertEqual(result["recommended_action"], "sell")
+        self.assertEqual(result["action_tier"], "sell")
+        self.assertIn("relative alpha", result["action_basis"])
+
+    def test_monitor_counts_actual_trading_sessions_for_time_limit(self) -> None:
+        service = MonitorService(db_manager=None, email_sender=lambda subject, html_body, settings: None)
+        price_history = pd.DataFrame(
+            [
+                {"ticker": "ANET", "date": day.date(), "adj_close": 100.0}
+                for day in pd.to_datetime(
+                    [
+                        "2026-06-16",
+                        "2026-06-17",
+                        "2026-06-18",
+                        "2026-06-22",
+                        "2026-06-23",
+                        "2026-06-24",
+                        "2026-06-25",
+                        "2026-06-26",
+                        "2026-06-29",
+                        "2026-06-30",
+                        "2026-07-01",
+                    ]
+                )
+            ]
+        )
+
+        sessions = service._trading_sessions_held(
+            price_history=price_history,
+            ticker="ANET",
+            entry_date="2026-06-16",
+            as_of=pd.Timestamp("2026-07-01").date(),
+        )
+
+        self.assertEqual(sessions, 10)
+
     def test_monitor_backfills_legacy_trade_strategy_using_regime_family_fallback(self) -> None:
         class FakeDB:
             def __init__(self):
@@ -2373,8 +2837,10 @@ class MonitorServiceTests(unittest.TestCase):
         self.assertTrue(report.emailed)
         self.assertEqual(report.triggered_count, 1)
         self.assertIn("MRVL</td>", email_calls[0].html_body)
+        self.assertIn("<td>100.00</td><td>latest close</td><td>+0.0%</td>", email_calls[0].html_body)
         self.assertIn("profit target, time limit", email_calls[0].html_body)
-        self.assertIn("target already touched; current price unavailable", email_calls[0].html_body)
+        self.assertIn("target already touched; no intraday price", email_calls[0].html_body)
+        self.assertIn("time limit exceeded", email_calls[0].html_body)
 
     def test_monitor_resolves_inactive_legacy_strategy_from_backtest_results(self) -> None:
         class FakeDB:
@@ -2461,6 +2927,97 @@ class MonitorServiceTests(unittest.TestCase):
 
         self.assertTrue(report.emailed)
         self.assertEqual(report.watchlist_size, 1)
+
+    def test_monitor_includes_unresolved_strategy_positions_for_manual_review(self) -> None:
+        class FakeDB:
+            def initialize(self): return None
+            def list_open_trades(self):
+                return [
+                    {
+                        "ticker": "ASTS",
+                        "entry_date": "2026-06-15",
+                        "entry_price": 50.0,
+                        "shares": 10,
+                        "max_price_seen": 55.0,
+                        "status": "open",
+                        "entry_atr": None,
+                        "strategy_id": 9999,
+                        "strategy_slot": "space",
+                    }
+                ]
+            def load_price_history(self, tickers):
+                rows = []
+                for ticker in ("ASTS", "SPY", "QQQ"):
+                    for day in pd.bdate_range("2025-06-01", periods=220):
+                        rows.append(
+                            {
+                                "ticker": ticker,
+                                "date": day.date(),
+                                "open": 60.0,
+                                "high": 61.0,
+                                "low": 59.0,
+                                "close": 60.0,
+                                "volume": 1000,
+                                "adj_close": 60.0,
+                            }
+                        )
+                return pd.DataFrame(rows)
+            def list_universe_rows(self, active_only=False):
+                return []
+            def get_latest_open_trade(self, ticker):
+                return {"rowid": 1, "entry_price": 50.0, "shares": 10, "strategy_id": 9999, "strategy_slot": "space"}
+            def get_backtest_result_by_strategy_id(self, strategy_id):
+                return None
+            def update_trade_max_price(self, trade_rowid, max_price_seen): return None
+            def load_recent_highs(self, ticker, limit=2):
+                return pd.DataFrame([{"date": "2026-06-15", "high": 55.0}])
+
+        email_calls: list[EmailCall] = []
+        service = MonitorService(FakeDB(), email_sender=lambda subject, html_body, settings: email_calls.append(EmailCall(subject, html_body)))
+        settings = RuntimeSettings(
+            paths=AppPaths(
+                root_dir=Path("."),
+                data_dir=Path("data"),
+                duckdb_path=Path("data/market_data.duckdb"),
+                sqlite_path=Path("data/ledger.sqlite"),
+                reports_dir=Path("reports"),
+                logs_dir=Path("logs"),
+                config_path=Path("config.yaml"),
+                env_path=Path(".env"),
+                production_strategy_path=Path("production_strategy.json"),
+            ),
+            env={},
+            total_capital=50_000.0,
+            risk_per_trade=0.02,
+        )
+        materials = ProductionStrategy(
+            strategy_id=1,
+            promoted_at="2026-05-05T17:00:00",
+            indicators={"rsi_14_max": 35.0},
+            exit_rules=ExitRules(0.05, 0.12, 20),
+            slot="materials",
+            sector="Materials",
+        )
+        industrials = ProductionStrategy(
+            strategy_id=2,
+            promoted_at="2026-05-05T17:00:00",
+            indicators={"rsi_14_max": 35.0},
+            exit_rules=ExitRules(0.05, 0.12, 20),
+            slot="industrials",
+            sector="Industrials",
+        )
+
+        with patch.object(service, "_load_intraday_last_prices", return_value={"ASTS": 60.0, "SPY": 105.0, "QQQ": 110.0}), \
+             patch.object(service, "_download_recent_daily_history", return_value=pd.DataFrame()), \
+             patch("src.monitor.service.get_settings", return_value=settings), \
+             patch("src.monitor.service.load_active_strategies", return_value={"materials": materials, "industrials": industrials}):
+            report = service.run()
+
+        self.assertTrue(report.emailed)
+        self.assertEqual(report.triggered_count, 0)
+        self.assertIn("ASTS</td>", email_calls[0].html_body)
+        self.assertIn("<td>60.00</td><td>intraday</td><td>+20.0%</td>", email_calls[0].html_body)
+        self.assertIn("manual review: strategy unresolved", email_calls[0].html_body)
 
     def test_monitor_sends_single_consolidated_digest_and_evaluates_exit_paths_without_closing_trades(self) -> None:
         class FakeDB:
@@ -2558,12 +3115,15 @@ class MonitorServiceTests(unittest.TestCase):
             report = service.run()
 
         self.assertTrue(report.emailed)
-        self.assertEqual(report.triggered_count, 5)
+        self.assertEqual(report.triggered_count, 1)
         self.assertEqual(len(email_calls), 1)
         self.assertEqual(len(service.db_manager.closed), 0)
         self.assertIn("All Holdings", email_calls[0].html_body)
         self.assertIn("Sell Now", email_calls[0].html_body)
+        self.assertIn("Review Before Selling", email_calls[0].html_body)
         self.assertIn("Trade Action", email_calls[0].html_body)
+        self.assertIn("Action Basis", email_calls[0].html_body)
+        self.assertIn("Alpha Since Entry", email_calls[0].html_body)
         self.assertIn("Fresh Setup", email_calls[0].html_body)
         self.assertIn("How to read this:", email_calls[0].html_body)
         self.assertIn("Main Risk", email_calls[0].html_body)

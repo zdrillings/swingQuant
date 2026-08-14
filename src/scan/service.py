@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
+from html import escape
 import json
 import math
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -103,6 +105,10 @@ class ScanPolicy:
     recent_missed_winner_min_gap: float
     recent_swap_feedback_gap: float
     recent_swap_max_opportunity_gap: float
+    candidate_quality_throttle_enabled: bool
+    candidate_quality_min_pool_median_opportunity: float | None
+    candidate_quality_reduced_max_candidates: int
+    candidate_quality_min_pool_size: int
     slot_selection_overlay_enabled: bool
     slot_selection_overlay_weights: dict[str, dict[str, float]]
     shortlist_model: ShortlistModelPolicy
@@ -116,6 +122,7 @@ class ScanPolicy:
         validation_gate = learned_ranker.get("validation_gate", {})
         raw_slot_weights = learned_ranker.get("slot_weights", {})
         selection_memory = policy.get("recent_selection_memory", {})
+        candidate_quality_throttle = policy.get("candidate_quality_throttle", {})
         slot_selection_overlay = policy.get("slot_selection_overlay", {})
         raw_overlay_weights = slot_selection_overlay.get("slot_weights", {})
         shortlist_model = policy.get("shortlist_model", {})
@@ -161,6 +168,14 @@ class ScanPolicy:
             recent_missed_winner_min_gap=float(selection_memory.get("missed_winner_min_gap", 0.05)),
             recent_swap_feedback_gap=float(selection_memory.get("swap_feedback_gap", 0.03)),
             recent_swap_max_opportunity_gap=float(selection_memory.get("swap_max_opportunity_gap", 0.10)),
+            candidate_quality_throttle_enabled=bool(candidate_quality_throttle.get("enabled", False)),
+            candidate_quality_min_pool_median_opportunity=(
+                float(candidate_quality_throttle["min_pool_median_opportunity"])
+                if candidate_quality_throttle.get("min_pool_median_opportunity") not in (None, "")
+                else None
+            ),
+            candidate_quality_reduced_max_candidates=int(candidate_quality_throttle.get("reduced_max_candidates", policy.get("max_candidates_total", 6))),
+            candidate_quality_min_pool_size=int(candidate_quality_throttle.get("min_pool_size", 6)),
             slot_selection_overlay_enabled=bool(slot_selection_overlay.get("enabled", False)),
             slot_selection_overlay_weights={
                 str(slot): {
@@ -191,7 +206,7 @@ class ScanPolicy:
                 production_model_name=(
                     str(shortlist_model.get("production_model_name")).strip()
                     if shortlist_model.get("production_model_name") not in (None, "")
-                    else "xgboost_model"
+                    else None
                 ),
                 production_xgboost_config=str(shortlist_model.get("production_xgboost_config", "baseline") or "baseline"),
             ),
@@ -216,6 +231,11 @@ class ScanService:
     def run(self, *, dry_run: bool = False) -> ScanReport:
         self.db_manager.initialize()
         strategies = load_active_strategies()
+        scan_strategies = {
+            slot: strategy
+            for slot, strategy in strategies.items()
+            if getattr(strategy, "scan_enabled", True)
+        }
         settings = get_settings()
         config = load_feature_config()
         scan_policy = ScanPolicy.from_config(config)
@@ -238,6 +258,7 @@ class ScanService:
             universe_rows,
             earnings_calendar=earnings_calendar,
         )
+        analysis_frame = self._filter_to_completed_scan_sessions(analysis_frame)
         snapshot = latest_snapshot(analysis_frame)
         self._validate_snapshot_freshness(snapshot=snapshot, scan_policy=scan_policy)
         snapshot = snapshot[
@@ -250,7 +271,17 @@ class ScanService:
             strategies=strategies,
             sector_map=sector_map,
         )
-        shortlist_model_context = self._load_shortlist_model_context(scan_policy)
+        raw_shortlist_model_context = self._load_shortlist_model_context(scan_policy)
+        shortlist_model_context = self._drop_stale_shortlist_model_context(
+            raw_shortlist_model_context,
+            snapshot=snapshot,
+        )
+        data_freshness_rows = self._build_data_freshness_rows(
+            base_history=base_history,
+            snapshot=snapshot,
+            raw_shortlist_model_context=raw_shortlist_model_context,
+            active_shortlist_model_context=shortlist_model_context,
+        )
         use_model_candidate_source = (
             shortlist_model_context is not None
             and scan_policy.shortlist_model.use_as_candidate_source
@@ -258,26 +289,33 @@ class ScanService:
         if use_model_candidate_source:
             candidates = self._build_shortlist_model_candidates(
                 snapshot=snapshot,
-                strategies=strategies,
+                strategies=scan_strategies,
                 shortlist_model_context=shortlist_model_context,
                 scan_policy=scan_policy,
                 overlap_context=overlap_context,
                 settings=settings,
             )
-            persisted_candidates = candidates.copy()
-            slot_gate_diagnostics = self._build_shortlist_model_slot_diagnostics(
-                candidates=candidates,
-                strategies=strategies,
-            )
-        else:
+            if candidates.empty:
+                self.logger.warning(
+                    "Shortlist model context loaded but produced zero candidates; falling back to heuristic path."
+                )
+                use_model_candidate_source = False
+                shortlist_model_context = None
+            else:
+                persisted_candidates = candidates.copy()
+                slot_gate_diagnostics = self._build_shortlist_model_slot_diagnostics(
+                    candidates=candidates,
+                    strategies=scan_strategies,
+                )
+        if not use_model_candidate_source:
             slot_gate_diagnostics = self._build_slot_gate_diagnostics(
                 full_snapshot=snapshot,
                 regime_snapshot=snapshot,
-                strategies=strategies,
+                strategies=scan_strategies,
             )
             candidate_frames: list[pd.DataFrame] = []
             persisted_candidate_frames: list[pd.DataFrame] = []
-            for slot, strategy in strategies.items():
+            for slot, strategy in scan_strategies.items():
                 scoped_snapshot = self._scope_snapshot(snapshot, strategy)
                 if scoped_snapshot.empty:
                     continue
@@ -365,7 +403,7 @@ class ScanService:
         )
         slot_post_gate_dropoff = self._build_slot_post_gate_dropoff(
             candidates,
-            strategies=strategies,
+            strategies=scan_strategies,
             min_opportunity_score=selection_opportunity_floor,
         )
         if "selection_source" not in candidates.columns:
@@ -389,7 +427,32 @@ class ScanService:
         eligible_candidates = candidates[
             pd.to_numeric(candidates["opportunity_score"], errors="coerce") >= selection_opportunity_floor
         ].copy()
-        selected = self._apply_portfolio_caps(eligible_candidates, scan_policy)
+        throttle_diagnostics = self._candidate_quality_throttle_diagnostics(
+            eligible_candidates,
+            scan_policy=scan_policy,
+            selection_opportunity_floor=selection_opportunity_floor,
+        )
+        candidates = self._annotate_candidate_quality_throttle(candidates, throttle_diagnostics)
+        persisted_candidates = self._annotate_candidate_quality_throttle(persisted_candidates, throttle_diagnostics)
+        confidence_max_candidates = self._confidence_adjusted_max_candidates(
+            base_max=int(throttle_diagnostics["effective_max_candidates"]),
+            scan_policy=scan_policy,
+            shortlist_model_context=shortlist_model_context,
+        )
+        effective_cap = max(1, confidence_max_candidates)
+        if shortlist_model_context is not None:
+            effective_cap = min(effective_cap, 2)
+        selection_pool = self._apply_rotation_exclusion(
+            eligible_candidates,
+            historical_scan_candidates=historical_scan_candidates,
+            effective_cap=effective_cap,
+            configured_cap=int(scan_policy.max_candidates_total),
+        )
+        selected = self._apply_portfolio_caps(
+            selection_pool,
+            scan_policy,
+            max_candidates_total=effective_cap,
+        )
         persisted_rows = self._build_persisted_scan_rows(persisted_candidates, selected)
         if callable(scan_candidate_writer):
             scan_candidate_writer(scan_date=date.today().isoformat(), rows=persisted_rows)
@@ -449,12 +512,15 @@ class ScanService:
         html = self._build_email_html(
             selected,
             scan_policy,
-            strategies,
+            scan_strategies,
             earnings_lookup=earnings_lookup,
             analyst_contexts=self._load_analyst_contexts(selected=selected, all_candidates=candidates),
             all_candidates=candidates,
             open_trade_tickers=self._open_trade_tickers(open_trades),
             open_trades=open_trades,
+            extended_hours=self._load_extended_hours_snapshot(),
+            data_freshness_rows=data_freshness_rows,
+            shortlist_model_context=shortlist_model_context,
         )
         self.email_sender(
             subject="Evening Brief",
@@ -493,10 +559,26 @@ class ScanService:
         predictions = shortlist_model_context.live_predictions.copy()
         if predictions.empty:
             return snapshot.iloc[0:0].copy()
-        predictions = predictions[["ticker", "predicted_alpha", "model_rank"]].copy()
+        prediction_columns = ["ticker", "predicted_alpha", "model_rank"]
+        if "model_reason_summary" in predictions.columns:
+            prediction_columns.append("model_reason_summary")
+        if "model_comparison_summary" in predictions.columns:
+            prediction_columns.append("model_comparison_summary")
+        predictions = predictions[prediction_columns].copy().rename(
+            columns={"predicted_alpha": "model_predicted_alpha"}
+        )
+        if "model_reason_summary" not in predictions.columns:
+            predictions["model_reason_summary"] = pd.NA
+        if "model_comparison_summary" not in predictions.columns:
+            predictions["model_comparison_summary"] = pd.NA
         merged = snapshot.merge(predictions, on="ticker", how="inner")
         if merged.empty:
             return merged
+        merged["model_predicted_alpha"] = pd.to_numeric(merged["model_predicted_alpha"], errors="coerce")
+        merged["selection_score"] = merged["model_predicted_alpha"]
+        merged["selection_source"] = "shortlist_model"
+        merged["model_generated_at"] = shortlist_model_context.generated_at
+        merged["model_name"] = shortlist_model_context.champion_model
         if "signal_score" not in merged.columns:
             merged["signal_score"] = 0.0
         fallback_strategy = strategy_map.get("__fallback__")
@@ -595,6 +677,32 @@ class ScanService:
         except Exception as exc:
             self.logger.warning("Falling back to DuckDB-only daily history in scan: %s", exc)
         return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+    def _filter_to_completed_scan_sessions(self, frame: pd.DataFrame, *, now: datetime | None = None) -> pd.DataFrame:
+        if frame.empty or "date" not in frame.columns:
+            return frame
+        cutoff = self._latest_completed_scan_session_cutoff(now=now)
+        working = frame.copy()
+        dates = pd.to_datetime(working["date"], errors="coerce")
+        filtered = working.loc[dates.dt.date <= cutoff].copy()
+        if filtered.empty:
+            raise ValueError(
+                "No completed-session scan data is available; refusing to run nightly scan "
+                f"with only in-progress daily bars. cutoff={cutoff.isoformat()}"
+            )
+        return filtered
+
+    @staticmethod
+    def _latest_completed_scan_session_cutoff(*, now: datetime | None = None) -> date:
+        eastern = ZoneInfo("America/New_York")
+        current = now or datetime.now(tz=eastern)
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=eastern)
+        current = current.astimezone(eastern)
+        close_buffer = time(16, 15)
+        if current.time() >= close_buffer:
+            return current.date()
+        return current.date() - timedelta(days=1)
 
     def _load_analyst_contexts(
         self,
@@ -771,7 +879,138 @@ class ScanService:
             return float(scan_policy.shortlist_model.min_opportunity_score)
         return float(scan_policy.min_opportunity_score)
 
-    def _apply_portfolio_caps(self, candidates: pd.DataFrame, scan_policy: ScanPolicy) -> pd.DataFrame:
+    def _candidate_quality_throttle_diagnostics(
+        self,
+        candidates: pd.DataFrame,
+        *,
+        scan_policy: ScanPolicy,
+        selection_opportunity_floor: float,
+    ) -> dict[str, object]:
+        configured_max = int(scan_policy.max_candidates_total)
+        diagnostics: dict[str, object] = {
+            "enabled": bool(scan_policy.candidate_quality_throttle_enabled),
+            "triggered": False,
+            "reason": "disabled",
+            "candidate_count": int(len(candidates.index)),
+            "selection_opportunity_floor": float(selection_opportunity_floor),
+            "pool_median_opportunity": None,
+            "min_pool_median_opportunity": scan_policy.candidate_quality_min_pool_median_opportunity,
+            "configured_max_candidates": configured_max,
+            "effective_max_candidates": configured_max,
+        }
+        if not scan_policy.candidate_quality_throttle_enabled:
+            return diagnostics
+        if candidates.empty:
+            diagnostics["reason"] = "empty_pool"
+            diagnostics["effective_max_candidates"] = 0
+            return diagnostics
+        if len(candidates.index) < int(scan_policy.candidate_quality_min_pool_size):
+            diagnostics["reason"] = "small_pool"
+            return diagnostics
+        threshold = scan_policy.candidate_quality_min_pool_median_opportunity
+        if threshold is None:
+            diagnostics["reason"] = "no_median_threshold"
+            return diagnostics
+        opportunity = pd.to_numeric(candidates["opportunity_score"], errors="coerce").dropna()
+        if opportunity.empty:
+            diagnostics["reason"] = "missing_opportunity"
+            diagnostics["effective_max_candidates"] = 0
+            return diagnostics
+        pool_median = float(opportunity.median())
+        diagnostics["pool_median_opportunity"] = pool_median
+        if pool_median < float(threshold):
+            effective_max = max(0, min(configured_max, int(scan_policy.candidate_quality_reduced_max_candidates)))
+            diagnostics["triggered"] = True
+            diagnostics["reason"] = "pool_median_below_threshold"
+            diagnostics["effective_max_candidates"] = effective_max
+        else:
+            diagnostics["reason"] = "healthy_pool"
+        return diagnostics
+
+    def _confidence_adjusted_max_candidates(
+        self,
+        *,
+        base_max: int,
+        scan_policy: ScanPolicy,
+        shortlist_model_context,
+    ) -> int:
+        if base_max <= 0:
+            return 0
+        if shortlist_model_context is None:
+            return max(3, base_max * 3 // 4)
+        beat_rate = getattr(shortlist_model_context, "recent_20d_beat_rate", None)
+        mean_target = getattr(shortlist_model_context, "recent_20d_mean_target", None)
+        if beat_rate is None or mean_target is None:
+            return base_max
+        if beat_rate < 0.35 or (mean_target is not None and mean_target < -0.03):
+            return 1
+        return 2
+
+    def _annotate_candidate_quality_throttle(
+        self,
+        candidates: pd.DataFrame,
+        diagnostics: dict[str, object],
+    ) -> pd.DataFrame:
+        if candidates.empty:
+            return candidates
+        annotated = candidates.copy()
+        annotated["candidate_quality_throttle"] = [dict(diagnostics) for _ in range(len(annotated.index))]
+        return annotated
+
+    def _apply_rotation_exclusion(
+        self,
+        candidates: pd.DataFrame,
+        *,
+        historical_scan_candidates: pd.DataFrame,
+        effective_cap: int,
+        configured_cap: int,
+    ) -> pd.DataFrame:
+        if candidates.empty or effective_cap >= configured_cap:
+            return candidates
+        if historical_scan_candidates is None or historical_scan_candidates.empty:
+            return candidates
+        if "scan_date" not in historical_scan_candidates.columns or "selected" not in historical_scan_candidates.columns:
+            return candidates
+        recent = historical_scan_candidates.copy()
+        recent["scan_date"] = pd.to_datetime(recent["scan_date"]).dt.normalize()
+        latest_dates = sorted(recent["scan_date"].drop_duplicates().tolist())[-3:]
+        if not latest_dates:
+            return candidates
+        recent_picks = recent[
+            recent["scan_date"].isin(latest_dates) & (recent["selected"].astype(int) == 1)
+        ]
+        if recent_picks.empty:
+            return candidates
+        recent_tickers = set(recent_picks["ticker"].astype(str))
+        kept = candidates[~candidates["ticker"].astype(str).isin(recent_tickers)].copy()
+        if kept.empty:
+            self.logger.info(
+                "Rotation exclusion removed all candidates (recent picks: %s); keeping full pool.",
+                ", ".join(sorted(recent_tickers)),
+            )
+            return candidates
+        self.logger.info(
+            "Rotation exclusion applied: removed %d recent pick(s) from selection pool (cap=%d < configured=%d).",
+            len(recent_tickers),
+            effective_cap,
+            configured_cap,
+        )
+        return kept
+
+    def _apply_portfolio_caps(
+        self,
+        candidates: pd.DataFrame,
+        scan_policy: ScanPolicy,
+        *,
+        max_candidates_total: int | None = None,
+    ) -> pd.DataFrame:
+        effective_max_candidates = (
+            int(scan_policy.max_candidates_total)
+            if max_candidates_total is None
+            else max(0, int(max_candidates_total))
+        )
+        if effective_max_candidates <= 0:
+            return candidates.iloc[0:0].copy()
         ranked_candidates = candidates.copy()
         if "selection_score" not in ranked_candidates.columns:
             ranked_candidates["selection_score"] = ranked_candidates["signal_score"]
@@ -785,7 +1024,7 @@ class ScanService:
         slot_counts: dict[str, int] = {}
         sector_counts: dict[str, int] = {}
         for candidate in ranked.itertuples():
-            if len(selected_indices) >= scan_policy.max_candidates_total:
+            if len(selected_indices) >= effective_max_candidates:
                 break
             if bool(candidate.already_owned):
                 continue
@@ -824,9 +1063,179 @@ class ScanService:
             self.logger.warning("Unable to load shortlist model context; falling back to heuristic selector: %s", exc)
             return None
 
+    def _drop_stale_shortlist_model_context(self, shortlist_model_context, *, snapshot: pd.DataFrame):
+        if shortlist_model_context is None or snapshot.empty or "date" not in snapshot.columns:
+            return shortlist_model_context
+        scan_date = pd.to_datetime(snapshot["date"], errors="coerce").max()
+        model_snapshot_date = pd.to_datetime(
+            getattr(shortlist_model_context, "live_snapshot_date", None),
+            errors="coerce",
+        )
+        if pd.isna(scan_date) or pd.isna(model_snapshot_date):
+            return shortlist_model_context
+        scan_date = scan_date.normalize()
+        model_snapshot_date = model_snapshot_date.normalize()
+        if model_snapshot_date >= scan_date:
+            return shortlist_model_context
+        self.logger.warning(
+            "Shortlist model live snapshot is stale; falling back to heuristic selector "
+            "(model_snapshot_date=%s, scan_snapshot_date=%s, model_generated_at=%s).",
+            model_snapshot_date.date().isoformat(),
+            scan_date.date().isoformat(),
+            getattr(shortlist_model_context, "generated_at", None),
+        )
+        return None
+
+    def _build_data_freshness_rows(
+        self,
+        *,
+        base_history: pd.DataFrame,
+        snapshot: pd.DataFrame,
+        raw_shortlist_model_context,
+        active_shortlist_model_context,
+    ) -> list[dict[str, str]]:
+        scan_date = self._max_frame_date(snapshot)
+        stored_ohlcv_date = self._max_frame_date(base_history)
+        universe_snapshot_date = self._latest_universe_snapshot_date()
+        raw_model_date = self._parse_date(getattr(raw_shortlist_model_context, "live_snapshot_date", None))
+        model_generated_at = getattr(raw_shortlist_model_context, "generated_at", None)
+
+        rows: list[dict[str, str]] = [
+            {
+                "component": "Scan snapshot",
+                "latest_date": self._format_freshness_date(scan_date),
+                "status": "OK" if scan_date is not None else "WARN",
+                "note": "Most recent completed session used for this email." if scan_date is not None else "No dated scan snapshot was available.",
+            }
+        ]
+        rows.append(
+            {
+                "component": "Stored OHLCV",
+                "latest_date": self._format_freshness_date(stored_ohlcv_date),
+                "status": self._freshness_status(stored_ohlcv_date, scan_date),
+                "note": self._freshness_note(
+                    stored_ohlcv_date,
+                    scan_date,
+                    current_note="Stored history is current with the scan snapshot.",
+                    stale_note="Stored history is older than the scan snapshot; live price overlay is carrying the scan.",
+                    missing_note="Stored price history date could not be verified.",
+                ),
+            }
+        )
+        rows.append(
+            {
+                "component": "Universe snapshots",
+                "latest_date": self._format_freshness_date(universe_snapshot_date),
+                "status": self._freshness_status(universe_snapshot_date, scan_date),
+                "note": self._freshness_note(
+                    universe_snapshot_date,
+                    scan_date,
+                    current_note="Research/model feature snapshots are current with the scan snapshot.",
+                    stale_note="Research/model feature snapshots are older than the scan snapshot.",
+                    missing_note="No persisted universe snapshot date was found.",
+                ),
+            }
+        )
+        if raw_shortlist_model_context is None:
+            rows.append(
+                {
+                    "component": "Shortlist model",
+                    "latest_date": "n/a",
+                    "status": "INFO",
+                    "note": "No shortlist model context loaded; using heuristic selector.",
+                }
+            )
+        else:
+            active = active_shortlist_model_context is not None
+            rows.append(
+                {
+                    "component": "Shortlist model",
+                    "latest_date": self._format_freshness_date(raw_model_date),
+                    "status": "OK" if active else "WARN",
+                    "note": (
+                        f"Model snapshot is current and active; generated_at={model_generated_at}."
+                        if active
+                        else f"Model snapshot is stale and was ignored; generated_at={model_generated_at}."
+                    ),
+                }
+            )
+        rows.append(
+            {
+                "component": "Broker portfolio sync",
+                "latest_date": "not tracked",
+                "status": "INFO",
+                "note": "The ledger sync currently does not persist last successful Schwab sync time.",
+            }
+        )
+        return rows
+
+    def _latest_universe_snapshot_date(self):
+        loader = getattr(self.db_manager, "list_universe_daily_snapshot_dates", None)
+        if not callable(loader):
+            return None
+        try:
+            dates = loader()
+        except Exception as exc:
+            self.logger.warning("Unable to inspect universe snapshot freshness: %s", exc)
+            return None
+        if not dates:
+            return None
+        return self._parse_date(dates[-1])
+
+    @staticmethod
+    def _max_frame_date(frame: pd.DataFrame):
+        if frame is None or frame.empty or "date" not in frame.columns:
+            return None
+        value = pd.to_datetime(frame["date"], errors="coerce").max()
+        if pd.isna(value):
+            return None
+        return value.date()
+
+    @staticmethod
+    def _parse_date(value):
+        parsed = pd.to_datetime(value, errors="coerce")
+        if pd.isna(parsed):
+            return None
+        return parsed.date()
+
+    @staticmethod
+    def _format_freshness_date(value) -> str:
+        if value is None:
+            return "unknown"
+        return value.isoformat() if hasattr(value, "isoformat") else str(value)
+
+    def _freshness_status(self, observed_date, expected_date) -> str:
+        if observed_date is None or expected_date is None:
+            return "WARN"
+        return "OK" if observed_date >= expected_date else "WARN"
+
+    def _freshness_note(
+        self,
+        observed_date,
+        expected_date,
+        *,
+        current_note: str,
+        stale_note: str,
+        missing_note: str,
+    ) -> str:
+        if observed_date is None or expected_date is None:
+            return missing_note
+        if observed_date >= expected_date:
+            return current_note
+        return stale_note
+
     def _apply_shortlist_model_selection(self, candidates: pd.DataFrame, shortlist_model_context) -> pd.DataFrame:
         scored = candidates.copy()
-        scored = scored.drop(columns=["predicted_alpha", "model_predicted_alpha", "model_rank"], errors="ignore")
+        scored = scored.drop(
+            columns=[
+                "predicted_alpha",
+                "model_predicted_alpha",
+                "model_rank",
+                "model_reason_summary",
+                "model_comparison_summary",
+            ],
+            errors="ignore",
+        )
         prediction_columns = ["ticker", "predicted_alpha", "model_rank"]
         if "model_reason_summary" in shortlist_model_context.live_predictions.columns:
             prediction_columns.append("model_reason_summary")
@@ -876,34 +1285,33 @@ class ScanService:
     ) -> pd.DataFrame:
         if persisted_candidates.empty or candidates.empty:
             return persisted_candidates.copy()
-        return persisted_candidates.merge(
+        metadata_columns = [
+            "selection_source",
+            "model_predicted_alpha",
+            "model_rank",
+            "model_generated_at",
+            "model_name",
+            "model_reason_summary",
+            "model_comparison_summary",
+            "ranker_score",
+            "selection_score",
+            "ranker_enabled",
+            "recent_drag_penalty",
+            "recent_missed_winner_boost",
+            "recent_feedback_adjustment",
+            "slot_overlay_adjustment",
+            "slot_overlay_components",
+            "recent_drag_picks",
+            "recent_drag_mean_target",
+            "recent_missed_winner_count",
+            "recent_missed_winner_mean_gap",
+            "ranker_top_positive_reasons",
+            "ranker_top_negative_reasons",
+        ]
+        persisted = persisted_candidates.drop(columns=metadata_columns, errors="ignore")
+        return persisted.merge(
             candidates[
-                [
-                    "ticker",
-                    "strategy_slot",
-                    "strategy_sector",
-                    "selection_source",
-                    "model_predicted_alpha",
-                    "model_rank",
-                    "model_generated_at",
-                    "model_name",
-                    "model_reason_summary",
-                    "model_comparison_summary",
-                    "ranker_score",
-                    "selection_score",
-                    "ranker_enabled",
-                    "recent_drag_penalty",
-                    "recent_missed_winner_boost",
-                    "recent_feedback_adjustment",
-                    "slot_overlay_adjustment",
-                    "slot_overlay_components",
-                    "recent_drag_picks",
-                    "recent_drag_mean_target",
-                    "recent_missed_winner_count",
-                    "recent_missed_winner_mean_gap",
-                    "ranker_top_positive_reasons",
-                    "ranker_top_negative_reasons",
-                ]
+                ["ticker", "strategy_slot", "strategy_sector", *metadata_columns]
             ],
             on=["ticker", "strategy_slot", "strategy_sector"],
             how="left",
@@ -924,6 +1332,7 @@ class ScanService:
         }
         persisted_rows: list[dict] = []
         for row in persisted_candidates.to_dict(orient="records"):
+            earnings_confirmation_note = self._candidate_earnings_confirmation_note(row)
             persisted_rows.append(
                 {
                     "ticker": row["ticker"],
@@ -986,6 +1395,12 @@ class ScanService:
                             "recent_feedback_adjustment": float(row.get("recent_feedback_adjustment", 0.0)),
                             "slot_overlay_adjustment": float(row.get("slot_overlay_adjustment", 0.0)),
                         },
+                        "candidate_quality_throttle": row.get("candidate_quality_throttle", {}),
+                        "earnings_confirmation_shadow": {
+                            "track_scan_days": 5,
+                            "note": earnings_confirmation_note,
+                            "active": earnings_confirmation_note != "n/a",
+                        },
                         "slot_overlay_components": row.get("slot_overlay_components", {}),
                         "recent_selection_memory": {
                             "drag_picks": int(row.get("recent_drag_picks", 0) or 0),
@@ -1011,6 +1426,9 @@ class ScanService:
         all_candidates: pd.DataFrame | None = None,
         open_trade_tickers: set[str] | None = None,
         open_trades: list | None = None,
+        extended_hours: pd.DataFrame | None = None,
+        data_freshness_rows: list[dict[str, str]] | None = None,
+        shortlist_model_context=None,
     ) -> str:
         sections: list[str] = []
         analyst_contexts = analyst_contexts or {}
@@ -1049,6 +1467,7 @@ class ScanService:
                     past=True,
                 )
                 earnings_note = self._candidate_earnings_note(candidate)
+                earnings_confirmation = self._candidate_earnings_confirmation_note(candidate)
                 earnings_status = self._candidate_earnings_status(candidate)
                 analyst_note = self._candidate_analyst_note(
                     candidate,
@@ -1079,6 +1498,7 @@ class ScanService:
                         f"<td>{next_earnings}</td>",
                         f"<td>{last_earnings}</td>",
                         f"<td>{earnings_note}</td>",
+                        f"<td>{earnings_confirmation}</td>",
                         f"<td>{analyst_note}</td>",
                         f"<td>{why}</td>",
                         f"<td>{selector_note}</td>",
@@ -1111,6 +1531,7 @@ class ScanService:
                     "<th>Next Earnings</th>",
                     "<th>Last Earnings</th>",
                     "<th>Earnings Note</th>",
+                    "<th>Earnings Confirmation</th>",
                     "<th>Analyst Target</th>",
                     "<th>Signal Evidence</th>",
                     "<th>Selector Note</th>",
@@ -1127,16 +1548,345 @@ class ScanService:
                 "</table>"
                 "</section>"
             )
+        status_header = self._build_scan_status_header(
+            candidates=candidates,
+            scan_policy=scan_policy,
+            shortlist_model_context=shortlist_model_context,
+        )
         return (
-            "<html><body>"
-            "<h1>Evening Brief</h1>"
-            "<p>Portfolio view: strongest current bets, existing exposure, and best new targets.</p>"
+            "<html><body style=\"font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:720px;margin:0 auto;padding:16px;color:#212529;\">"
+            f"{status_header}"
+            "<h1 style=\"font-size:16px;\">Evening Brief</h1>"
+            f"{self._build_candidate_summary_table(candidates)}"
+            f"{self._build_data_freshness_html(data_freshness_rows)}"
             f"{self._build_target_dashboard_html(all_candidates, open_trades=open_trades, analyst_contexts=analyst_contexts)}"
+            f"{self._build_extended_hours_html(extended_hours, selected=candidates, all_candidates=all_candidates, open_trade_tickers=open_trade_tickers or set())}"
+            f"{self._build_theme_diversification_html(all_candidates, open_trades=open_trades)}"
             f"{self._build_portfolio_strength_coverage_html(all_candidates, open_trade_tickers=open_trade_tickers)}"
-            f"<p>Selector caps used for detailed shortlist: total={scan_policy.max_candidates_total}, per_slot={scan_policy.max_candidates_per_slot}, per_sector={scan_policy.max_candidates_per_sector} | min_opportunity_score={scan_policy.min_opportunity_score:.2f} | shortlist_model_min_opportunity_score={scan_policy.shortlist_model.min_opportunity_score:.2f}</p>"
+            f"<p style=\"font-size:11px;color:#6c757d;\">Caps: total={scan_policy.max_candidates_total}, per_slot={scan_policy.max_candidates_per_slot}, per_sector={scan_policy.max_candidates_per_sector} | min_opportunity_score={scan_policy.min_opportunity_score:.2f} | shortlist_model_min_opportunity_score={scan_policy.shortlist_model.min_opportunity_score:.2f}</p>"
             f"{''.join(sections)}"
             "</body></html>"
         )
+
+    def _build_scan_status_header(
+        self,
+        *,
+        candidates: pd.DataFrame,
+        scan_policy: ScanPolicy,
+        shortlist_model_context=None,
+    ) -> str:
+        pick_count = len(candidates.index)
+        model_active = shortlist_model_context is not None
+        if model_active:
+            beat_rate = getattr(shortlist_model_context, "recent_20d_beat_rate", None)
+            mean_target = getattr(shortlist_model_context, "recent_20d_mean_target", None)
+            if beat_rate is not None and mean_target is not None:
+                if beat_rate < 0.35 or mean_target < -0.03:
+                    gate_level = "MINIMAL (1)"
+                    gate_color = "#dc3545"
+                    gate_note = "top-2 basket performance is poor — single pick with rotation"
+                else:
+                    gate_level = "FULL (2)"
+                    gate_color = "#28a745"
+                    gate_note = f"top-2 basket working (beat {beat_rate:.0%}, mean {mean_target:+.1%})"
+            else:
+                gate_level = "FULL (2)"
+                gate_color = "#6c757d"
+                gate_note = "confidence metrics unavailable"
+            model_line = f"model: {getattr(shortlist_model_context, 'champion_model', 'unknown')} | gate: <span style=\"color:{gate_color};font-weight:700;\">{gate_level}</span> | {gate_note}"
+        else:
+            model_line = "model: heuristic fallback (no model context available)"
+            gate_color = "#6c757d"
+            gate_level = "FALLBACK"
+            gate_note = "using per-slot signal gates"
+        return f"""
+        <div style="background:#f8f9fa;border-radius:6px;padding:12px 16px;margin-bottom:12px;font-size:12px;line-height:1.5;">
+            <strong style="font-size:13px;">Scan Status</strong><br>
+            picks: {pick_count} | {model_line}
+        </div>
+        """
+
+    def _build_candidate_summary_table(self, candidates: pd.DataFrame) -> str:
+        if candidates.empty:
+            return ""
+        rows = ""
+        for c in candidates.itertuples(index=False):
+            ticker = getattr(c, "ticker", "")
+            sector = getattr(c, "sector", "")
+            alpha = getattr(c, "model_predicted_alpha", None)
+            opp = getattr(c, "opportunity_score", 0)
+            alpha_str = f"{float(alpha):+.2%}" if alpha is not None and pd.notna(alpha) else "n/a"
+            rows += f"""
+            <tr>
+                <td style="padding:6px 10px;font-weight:600;">{ticker}</td>
+                <td style="padding:6px 10px;">{sector}</td>
+                <td style="padding:6px 10px;color:{'#28a745' if float(opp) > 0.45 else '#6c757d'};">{float(opp):.3f}</td>
+                <td style="padding:6px 10px;">{alpha_str}</td>
+            </tr>
+            """
+        return f"""
+        <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:12px;">
+            <tr style="background:#e9ecef;">
+                <th style="padding:6px 10px;text-align:left;">Ticker</th>
+                <th style="padding:6px 10px;text-align:left;">Sector</th>
+                <th style="padding:6px 10px;text-align:left;">Opp Score</th>
+                <th style="padding:6px 10px;text-align:left;">Pred Alpha</th>
+            </tr>
+            {rows}
+        </table>
+        """
+
+    def _build_data_freshness_html(self, rows: list[dict[str, str]] | None) -> str:
+        if not rows:
+            return ""
+        status_order = {"WARN": 0, "INFO": 1, "OK": 2}
+        ordered = sorted(rows, key=lambda row: (status_order.get(str(row.get("status", "")), 3), str(row.get("component", ""))))
+        table_rows = []
+        for row in ordered:
+            status = str(row.get("status", "INFO")).upper()
+            table_rows.append(
+                "<tr>"
+                f"<td>{escape(str(row.get('component', '')))}</td>"
+                f"<td>{escape(str(row.get('latest_date', 'unknown')))}</td>"
+                f"<td>{escape(status)}</td>"
+                f"<td>{escape(str(row.get('note', '')))}</td>"
+                "</tr>"
+            )
+        warning_count = sum(1 for row in rows if str(row.get("status", "")).upper() == "WARN")
+        summary = (
+            f"{warning_count} freshness warning(s). Treat model-driven sections as degraded when warnings are present."
+            if warning_count
+            else "All tracked scan dependencies are current."
+        )
+        return (
+            "<section>"
+            "<h2>Data Freshness</h2>"
+            f"<p>{escape(summary)}</p>"
+            "<table border='1' cellpadding='6' cellspacing='0'>"
+            "<tr><th>Dependency</th><th>Latest Date</th><th>Status</th><th>Note</th></tr>"
+            f"{''.join(table_rows)}"
+            "</table>"
+            "</section>"
+        )
+
+    def _load_extended_hours_snapshot(self) -> pd.DataFrame:
+        loader = getattr(self.db_manager, "load_extended_hours_snapshots", None)
+        if not callable(loader):
+            return pd.DataFrame()
+        try:
+            return loader(snapshot_date=date.today().isoformat())
+        except Exception as exc:
+            self.logger.warning("Unable to load extended-hours snapshot for scan email: %s", exc)
+            return pd.DataFrame()
+
+    def _build_extended_hours_html(
+        self,
+        extended_hours: pd.DataFrame | None,
+        *,
+        selected: pd.DataFrame,
+        all_candidates: pd.DataFrame | None,
+        open_trade_tickers: set[str],
+    ) -> str:
+        if extended_hours is None or extended_hours.empty:
+            return (
+                "<section>"
+                "<h2>Postmarket Tape</h2>"
+                "<p>No persisted extended-hours snapshot is available for today. Run <code>./sq extended-hours-snapshot</code> before the evening scan to populate this section.</p>"
+                "</section>"
+            )
+        frame = extended_hours.copy()
+        for column in ("extended_return", "sector_etf_extended_return", "relative_extended_return"):
+            frame[column] = pd.to_numeric(frame.get(column), errors="coerce")
+        frame["ticker"] = frame["ticker"].astype(str)
+        selected_tickers = set(selected["ticker"].astype(str)) if selected is not None and not selected.empty else set()
+        candidate_tickers = (
+            set(all_candidates["ticker"].astype(str))
+            if all_candidates is not None and not all_candidates.empty and "ticker" in all_candidates.columns
+            else set()
+        )
+        selected_moves = frame[frame["ticker"].isin(selected_tickers)].copy()
+        held_moves = frame[frame["ticker"].isin(open_trade_tickers)].copy()
+        candidate_moves = frame[frame["ticker"].isin(candidate_tickers)].copy()
+        top_relative = candidate_moves.dropna(subset=["relative_extended_return"]).sort_values(
+            ["relative_extended_return", "extended_return", "ticker"],
+            ascending=[False, False, True],
+        ).head(8)
+        negative_relative = candidate_moves.dropna(subset=["relative_extended_return"]).sort_values(
+            ["relative_extended_return", "extended_return", "ticker"],
+            ascending=[True, True, True],
+        ).head(5)
+        snapshot_date = str(frame["snapshot_date"].iloc[0]) if "snapshot_date" in frame.columns and not frame.empty else date.today().isoformat()
+        captured_at = str(frame["captured_at"].iloc[0]) if "captured_at" in frame.columns and not frame.empty else "unknown"
+        return (
+            "<section>"
+            "<h2>Postmarket Tape</h2>"
+            f"<p>Snapshot date: {snapshot_date}; captured_at: {captured_at}. This section is informational only and does not change selection.</p>"
+            f"{self._extended_hours_table_html('Selected Picks After Hours', selected_moves, max_rows=10)}"
+            f"{self._extended_hours_table_html('Candidate Relative Strength After Hours', top_relative, max_rows=8)}"
+            f"{self._extended_hours_table_html('Candidate Relative Weakness After Hours', negative_relative, max_rows=5)}"
+            f"{self._extended_hours_table_html('Held Positions After Hours', held_moves, max_rows=10)}"
+            "</section>"
+        )
+
+    def _extended_hours_table_html(self, title: str, frame: pd.DataFrame, *, max_rows: int) -> str:
+        if frame.empty:
+            return f"<h3>{title}</h3><p>None.</p>"
+        working = frame.copy().head(int(max_rows))
+        rows = []
+        for row in working.itertuples(index=False):
+            rows.append(
+                "<tr>"
+                f"<td>{getattr(row, 'ticker', '')}</td>"
+                f"<td>{getattr(row, 'sector', '')}</td>"
+                f"<td>{getattr(row, 'sector_etf', '')}</td>"
+                f"<td>{self._format_price_cell(getattr(row, 'regular_close', None))}</td>"
+                f"<td>{self._format_price_cell(getattr(row, 'extended_price', None))}</td>"
+                f"<td>{self._format_pct_cell(getattr(row, 'extended_return', None))}</td>"
+                f"<td>{self._format_pct_cell(getattr(row, 'sector_etf_extended_return', None))}</td>"
+                f"<td>{self._format_pct_cell(getattr(row, 'relative_extended_return', None))}</td>"
+                f"<td>{self._format_int_cell(getattr(row, 'extended_volume', None))}</td>"
+                "</tr>"
+            )
+        return (
+            f"<h3>{title}</h3>"
+            "<table border='1' cellpadding='6' cellspacing='0'>"
+            "<tr><th>Ticker</th><th>Sector</th><th>ETF</th><th>Close</th><th>Ext Price</th><th>Ext Move</th><th>ETF Move</th><th>Relative</th><th>Ext Volume</th></tr>"
+            f"{''.join(rows)}"
+            "</table>"
+        )
+
+    def _build_theme_diversification_html(
+        self,
+        candidates: pd.DataFrame | None,
+        *,
+        open_trades: list | None,
+        top_n: int = 5,
+    ) -> str:
+        if candidates is None or candidates.empty:
+            return ""
+        working = candidates.copy()
+        for column, default in (
+            ("already_owned", False),
+            ("selection_score", 0.0),
+            ("model_predicted_alpha", pd.NA),
+            ("sub_industry", ""),
+        ):
+            if column not in working.columns:
+                working[column] = default
+        working["pre_penalty_opportunity_score"] = (
+            pd.to_numeric(working["opportunity_score"], errors="coerce").fillna(float("-inf"))
+            + pd.to_numeric(working.get("overlap_penalty", 0.0), errors="coerce").fillna(0.0)
+        )
+        working["selection_score"] = pd.to_numeric(working["selection_score"], errors="coerce")
+        working["model_predicted_alpha"] = pd.to_numeric(working["model_predicted_alpha"], errors="coerce")
+        working["model_predicted_alpha"] = working["model_predicted_alpha"].where(
+            working["model_predicted_alpha"].notna(),
+            working["selection_score"],
+        )
+        working["theme_exposure"] = working.apply(lambda row: self._ai_buildout_exposure(row), axis=1)
+        trade_lookup = self._open_trade_lookup(open_trades or [])
+        held_tickers = set(trade_lookup)
+        working["theme_held"] = (
+            working["already_owned"].astype(bool)
+            | working["ticker"].astype(str).isin(held_tickers)
+        )
+
+        held_frame = working[working["theme_held"].astype(bool)].copy()
+        held_counts = held_frame["theme_exposure"].value_counts().to_dict()
+        held_summary = ", ".join(
+            f"{label}={int(held_counts.get(label, 0))}"
+            for label in ("high", "medium", "low", "unknown")
+            if int(held_counts.get(label, 0)) > 0
+        ) or "none"
+
+        targetable = working[
+            (working["pre_penalty_opportunity_score"].astype(float) >= 0.40)
+            & (working["model_predicted_alpha"].fillna(float("-inf")) > 0.0)
+            & (~working["theme_held"].astype(bool))
+        ].copy()
+        low_exposure = targetable[targetable["theme_exposure"] == "low"].copy()
+        medium_exposure = targetable[targetable["theme_exposure"] == "medium"].copy()
+        high_exposure = targetable[targetable["theme_exposure"] == "high"].copy()
+        sort_columns = ["model_predicted_alpha", "pre_penalty_opportunity_score", "selection_score", "ticker"]
+        low_exposure = low_exposure.sort_values(sort_columns, ascending=[False, False, False, True]).head(int(top_n))
+        medium_exposure = medium_exposure.sort_values(sort_columns, ascending=[False, False, False, True]).head(3)
+        high_count = len(high_exposure.index)
+
+        return (
+            "<section>"
+            "<h2>Diversification Lens</h2>"
+            f"<p>Open holdings in scan universe by AI-buildout exposure: {held_summary}. "
+            f"High-exposure unheld targets still available: {high_count}. Main selection is unchanged.</p>"
+            f"{self._theme_candidate_table_html('Best Low AI-Buildout Targets', low_exposure)}"
+            f"{self._theme_candidate_table_html('Medium Exposure Watchlist', medium_exposure)}"
+            "</section>"
+        )
+
+    def _theme_candidate_table_html(self, title: str, frame: pd.DataFrame) -> str:
+        if frame.empty:
+            return f"<h3>{title}</h3><p>None currently clearing the diversifier filter.</p>"
+        rows = []
+        for index, row in enumerate(frame.itertuples(index=False), start=1):
+            rows.append(
+                "<tr>"
+                f"<td>{index}</td>"
+                f"<td>{row.ticker}</td>"
+                f"<td>{getattr(row, 'sector', '')}</td>"
+                f"<td>{getattr(row, 'sub_industry', '')}</td>"
+                f"<td>{getattr(row, 'theme_exposure', 'unknown')}</td>"
+                f"<td>{float(row.pre_penalty_opportunity_score):.2f}</td>"
+                f"<td>{float(row.opportunity_score):.2f}</td>"
+                f"<td>{self._format_pct_cell(getattr(row, 'model_predicted_alpha', None))}</td>"
+                f"<td>{self._target_reason_text(row)}</td>"
+                "</tr>"
+            )
+        return (
+            f"<h3>{title}</h3>"
+            "<table border='1' cellpadding='6' cellspacing='0'>"
+            "<tr><th>Rank</th><th>Ticker</th><th>Sector</th><th>Group</th><th>Exposure</th><th>Pre-Opp</th><th>Post-Opp</th><th>Model Alpha</th><th>Why</th></tr>"
+            f"{''.join(rows)}"
+            "</table>"
+        )
+
+    def _ai_buildout_exposure(self, row) -> str:
+        sector = str(row.get("sector") if isinstance(row, pd.Series) else getattr(row, "sector", "") or "").lower()
+        sub_industry = str(row.get("sub_industry") if isinstance(row, pd.Series) else getattr(row, "sub_industry", "") or "").lower()
+        ticker = str(row.get("ticker") if isinstance(row, pd.Series) else getattr(row, "ticker", "") or "").upper()
+        text = f"{sector} {sub_industry}"
+        high_terms = (
+            "semiconductor",
+            "semiconductor equipment",
+            "communications equipment",
+            "technology hardware",
+            "electronic components",
+            "electrical components",
+            "heavy electrical",
+            "data center",
+        )
+        medium_terms = (
+            "copper",
+            "aluminum",
+            "steel",
+            "construction machinery",
+            "industrial machinery",
+            "building products",
+            "application software",
+            "systems software",
+            "internet services",
+        )
+        if any(term in text for term in high_terms):
+            return "high"
+        if sector == "information technology":
+            return "medium"
+        if any(term in text for term in medium_terms):
+            return "medium"
+        if ticker in {"RKLB", "LUNR", "ASTS", "RDW", "PL"}:
+            return "low"
+        if sector in {"health care", "financials", "consumer staples", "consumer discretionary", "real estate", "communication services", "energy", "utilities"}:
+            return "low"
+        if sector in {"materials", "industrials"}:
+            return "medium"
+        return "unknown"
 
     def _build_target_dashboard_html(
         self,
@@ -1238,6 +1988,7 @@ class ScanService:
                 row,
                 analyst_contexts.get(ticker.upper()),
             )
+            earnings_confirmation = self._candidate_earnings_confirmation_note(row)
             rows.append(
                 "<tr>"
                 f"<td>{index}</td>"
@@ -1252,13 +2003,14 @@ class ScanService:
                 f"<td>{self._format_price_cell(entry_price)}</td>"
                 f"<td>{pnl_text}</td>"
                 f"<td>{analyst_note}</td>"
+                f"<td>{earnings_confirmation}</td>"
                 f"<td>{self._target_reason_text(row)}</td>"
                 "</tr>"
             )
         return (
             f"<h3>{title}</h3>"
             "<table border='1' cellpadding='6' cellspacing='0'>"
-            "<tr><th>Rank</th><th>Ticker</th><th>Held</th><th>Selected</th><th>Sector</th><th>Pre-Opp</th><th>Post-Opp</th><th>Model Alpha</th><th>Price</th><th>Basis</th><th>PnL</th><th>Analyst Target</th><th>Why</th></tr>"
+            "<tr><th>Rank</th><th>Ticker</th><th>Held</th><th>Selected</th><th>Sector</th><th>Pre-Opp</th><th>Post-Opp</th><th>Model Alpha</th><th>Price</th><th>Basis</th><th>PnL</th><th>Analyst Target</th><th>Earnings Confirmation</th><th>Why</th></tr>"
             f"{''.join(rows)}"
             "</table>"
         )
@@ -1277,6 +2029,11 @@ class ScanService:
         if not self._is_finite(value):
             return "n/a"
         return f"{float(value):.2f}"
+
+    def _format_int_cell(self, value) -> str:
+        if not self._is_finite(value):
+            return "n/a"
+        return str(int(float(value)))
 
     def _optional_text_cell(self, value) -> str:
         if value is None or pd.isna(value) or value == "":
@@ -1971,6 +2728,45 @@ class ScanService:
             parts.append(f"open {'+' if open_value >= 0 else ''}{open_value:.1f}% vs 20d high")
         return ", ".join(parts) if parts else "n/a"
 
+    def _candidate_earnings_confirmation_note(self, candidate) -> str:
+        days_since_last = self._candidate_attr(candidate, "days_since_last_earnings")
+        if not self._is_finite(days_since_last):
+            return "n/a"
+        days_since = float(days_since_last)
+        if days_since < 0.0:
+            return "n/a"
+
+        gap_pct = self._candidate_attr(candidate, "last_earnings_gap_pct")
+        hold_pct = self._candidate_attr(candidate, "close_vs_last_earnings_close")
+        volume_ratio = self._candidate_attr(candidate, "last_earnings_volume_ratio_20")
+        open_vs_high = self._candidate_attr(candidate, "last_earnings_open_vs_20d_high")
+        has_reaction_data = any(
+            self._is_finite(value)
+            for value in (gap_pct, hold_pct, volume_ratio, open_vs_high)
+        )
+        if not has_reaction_data:
+            if days_since <= 30.0:
+                return f"recent earnings ({int(days_since)}bd), reaction unavailable; shadow track 5d"
+            return "n/a"
+
+        positive_gap = self._is_finite(gap_pct) and float(gap_pct) > 0.0
+        positive_hold = self._is_finite(hold_pct) and float(hold_pct) > 0.0
+        strong_volume = self._is_finite(volume_ratio) and float(volume_ratio) >= 1.5
+        breakout_open = self._is_finite(open_vs_high) and float(open_vs_high) >= 0.0
+        if days_since <= 30.0 and positive_gap and positive_hold:
+            qualifiers = []
+            if strong_volume:
+                qualifiers.append("volume")
+            if breakout_open:
+                qualifiers.append("breakout open")
+            suffix = f" ({', '.join(qualifiers)})" if qualifiers else ""
+            return f"confirmed recent earnings reaction{suffix}; shadow track 5d"
+        if days_since <= 30.0:
+            return "weak/no recent earnings confirmation; shadow track 5d"
+        if positive_gap and positive_hold:
+            return f"stale confirmed earnings reaction ({int(days_since)}bd ago)"
+        return "n/a"
+
     def _candidate_earnings_status(self, candidate) -> str:
         days_to_next = getattr(candidate, "days_to_next_earnings", pd.NA)
         days_since_last = getattr(candidate, "days_since_last_earnings", pd.NA)
@@ -2178,6 +2974,11 @@ class ScanService:
             "relative_strength_index_vs_qqq",
             "relative_strength_index_vs_xlk",
             "relative_strength_index_vs_subindustry",
+            "rs_vs_spy_5d_change",
+            "rs_vs_qqq_5d_change",
+            "rs_vs_xlk_5d_change",
+            "rs_vs_subindustry_5d_change",
+            "rs_vs_subindustry_10d_change",
             "roc_63",
             "roc_126",
             "vol_alpha",

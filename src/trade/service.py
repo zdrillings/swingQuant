@@ -133,4 +133,7 @@ class TradeService:
             raise ValueError(f"Ticker {ticker} requires an explicit strategy slot. Available ALL-strategy slots: {slots}.")
 
         available = ", ".join(f"{slot}:{strategy.sector}" for slot, strategy in sorted(strategies.items()))
-        raise ValueError(f"No active strategy slot matches ticker {ticker} (sector={ticker_sector}). Available slots: {available}")
+        raise ValueError(
+            f"No active strategy slot matches ticker {ticker} (sector={ticker_sector}). "
+            f"If this is an off-universe ticker, pass --slot explicitly. Available slots: {available}"
+        )

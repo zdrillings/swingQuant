@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This file is for coding agents and contributors making changes in this repository. It defines the project’s operational rules, architecture boundaries, and non-negotiable implementation constraints.
+This file is for coding agents and contributors making changes in this repository. It defines the project's operational rules, architecture boundaries, and non-negotiable implementation constraints.
 
 ## Project Summary
 
@@ -26,19 +26,23 @@ The authoritative product spec is [Spec.md](/home/zdrillings/code/SwingQuant/Spe
 - [src/cli.py](/home/zdrillings/code/SwingQuant/src/cli.py): top-level CLI routing
 - [src/settings.py](/home/zdrillings/code/SwingQuant/src/settings.py): paths, `.env`, config loading
 - [src/utils/db_manager.py](/home/zdrillings/code/SwingQuant/src/utils/db_manager.py): database initialization and persistence helpers
-- [src/utils/feature_engineering.py](/home/zdrillings/code/SwingQuant/src/utils/feature_engineering.py): reusable feature calculations
+- [src/utils/feature_engineering.py](/home/zdrillings/code/SwingQuant/src/utils/feature_engineering.py): reusable feature calculations (macro features, trend, momentum, volume, price structure, gap risk, earnings events, regime context)
 - [src/utils/signal_engine.py](/home/zdrillings/code/SwingQuant/src/utils/signal_engine.py): analysis frame construction, latest snapshot, signal filtering
-- [src/utils/strategy.py](/home/zdrillings/code/SwingQuant/src/utils/strategy.py): promoted strategy loading and indicator gate evaluation
+- [src/utils/strategy.py](/home/zdrillings/code/SwingQuant/src/utils/strategy.py): promoted strategy loading, ExitRules (including hard stops), indicator gate evaluation, entry_stop_price
 - [src/utils/regime.py](/home/zdrillings/code/SwingQuant/src/utils/regime.py): sector-to-regime mapping
 - [src/utils/sizing.py](/home/zdrillings/code/SwingQuant/src/utils/sizing.py): position sizing
+- [src/utils/shortlist_runtime.py](/home/zdrillings/code/SwingQuant/src/utils/shortlist_runtime.py): live model context loading, confidence metrics, prediction annotations
 - [src/sync](/home/zdrillings/code/SwingQuant/src/sync): universe scraping and OHLCV sync
-- [src/research](/home/zdrillings/code/SwingQuant/src/research): supervised feature research
-- [src/sweep](/home/zdrillings/code/SwingQuant/src/sweep): parameter sweep backtesting
+- [src/research](/home/zdrillings/code/SwingQuant/src/research): supervised feature research and shortlist modeling
+- [src/research/shortlist_model_service.py](/home/zdrillings/code/SwingQuant/src/research/shortlist_model_service.py): walk-forward shortlist model bakeoff and champion selection
+- [src/research/shortlist_bakeoff_service.py](/home/zdrillings/code/SwingQuant/src/research/shortlist_bakeoff_service.py): model policy comparison
+- [src/research/universe_snapshot_service.py](/home/zdrillings/code/SwingQuant/src/research/universe_snapshot_service.py): daily snapshot backfill with features and outcomes including binary target
+- [src/sweep](/home/zdrillings/code/SwingQuant/src/sweep): parameter sweep backtesting (5 archetype modes, hard stop in exit chain)
 - [src/evaluate](/home/zdrillings/code/SwingQuant/src/evaluate): normalization and report ranking
 - [src/promote](/home/zdrillings/code/SwingQuant/src/promote): runtime strategy generation
 - [src/trade](/home/zdrillings/code/SwingQuant/src/trade): manual ledger updates for fills
-- [src/scan](/home/zdrillings/code/SwingQuant/src/scan): end-of-day signal scanning
-- [src/monitor](/home/zdrillings/code/SwingQuant/src/monitor): intraday alert digest generation
+- [src/scan](/home/zdrillings/code/SwingQuant/src/scan): end-of-day signal scanning with model-driven selection, quality gate, confidence-based position sizing
+- [src/monitor](/home/zdrillings/code/SwingQuant/src/monitor): intraday alert digest generation (includes hard stop monitoring)
 
 ## Non-Negotiable Rules
 
@@ -54,6 +58,63 @@ The authoritative product spec is [Spec.md](/home/zdrillings/code/SwingQuant/Spe
    - Keep breakout and pullback families separate; do not silently merge them into a single hybrid score model.
 7. Do not hardcode current strategy thresholds; read `production_strategy.json`.
    - When multiple slots are active, use `production_strategies.json` and preserve slot isolation.
+8. Do not remove hard stop from ExitRules, backtest, or monitor.
+   - Hard stop (`hard_stop_pct`) anchors to entry price and triggers must-sell.
+   - Hard stop is checked BEFORE trailing stop in the backtest exit chain.
+   - Hard stop is a must-sell in monitor classification; the portfolio shock guard does not demote it.
+9. Do not bypass the quality gate or rotation exclusion in scan candidate selection.
+   - The model's confidence metrics are computed on the **top-2 basket** (`CONFIDENCE_BASKET_SIZE = 2` in `shortlist_runtime.py`), NOT the top-10.
+     - Rationale: rank-calibration analysis (2026-08-13) showed ranks 3-10 inverted in recent months (negative alpha), dragging the top-10 basket to -1.0% while the top-2 basket was +6.7% with a 70% beat rate.
+   - `_confidence_adjusted_max_candidates` is a 2-tier gate for the model path:
+     - beat_rate < 0.35 or mean_target < -0.03 → 1 pick
+     - otherwise → 2 picks
+   - The model path is hard-capped at 2 picks (`min(effective_cap, 2)` in scan run()).
+   - `_apply_rotation_exclusion` removes tickers selected in the last 3 scan dates when the effective cap is below the configured cap, so picks rotate through the model's top candidates instead of repeating the same name.
+   - Gate floors at 1 (never produces zero candidates silently).
+10. Do not add new sweep modes without explicit justification.
+    - Keep the 5 archetype modes: `pullback_technology`, `pullback_real_economy`, `breakout_growth`, `post_earnings_drift`, `trend_continuation`.
+    - Do not add `_v2`, `_v3`, `_refined`, or subindustry-specific variants.
+11. Do not hardcode the live shortlist model.
+    - `sq shortlist-model` must evaluate candidate models and persist the selected champion.
+    - Runtime must use `production_model_name` only when it is explicitly configured; otherwise use the persisted `champion_model`.
+    - Model-driven scan sections must fail closed when the recent promotion gate is not met.
+    - Missing forward alpha must remain missing; do not convert immature labels into negative examples.
+
+## Shortlist Model Architecture
+
+The shortlist model is the core prediction engine. It evaluates multiple candidate models in chronological walk-forward windows and persists the selected champion for runtime use.
+
+### Model Training (`sq shortlist-model`)
+
+- **Models**: `signal_proxy`, `ridge_model`, `lasso_model`, and optional `xgboost_model`
+- **Target**: `alpha_vs_sector_20d` (regression) or `alpha_vs_sector_20d_pos` (classification: 1 if alpha > 2%, else 0)
+- **Features**: 47 raw features from `universe_daily_snapshots` (including `rsi_2`, `ret_1d`, `ret_5d`, `close_vs_20d_low` mean-reversion features), each with `__rank_all` and `__rank_sector` cross-sectional rank variants, plus sector one-hot dummies (~150 total features)
+- **Macro features**: `spy_roc_20`, `spy_roc_5`, `spy_realized_vol_20`, `qqq_roc_20` — computed from SPY/QQQ price history, populated across all snapshot dates via DuckDB SQL
+- **Binary target**: `alpha_vs_sector_20d_pos` — computed on-the-fly from matured `alpha_vs_sector_20d` if not yet backfilled, or stored in DuckDB; missing alpha stays missing
+- **Validation**: Expanding-window walk-forward, 252 min train dates, 20-day test windows, chronological split only
+- **Model scopes**: `global` (single model), `sector_specific` (per-sector with fallback), `regime_specific` (2 regimes: trending when `spy_roc_20 > 1%` else choppy; uses `regime_green` when macro features unavailable)
+- **Champion selection**: selected from model summaries and recent acceptance windows; it must not be hardcoded to the latest experiment
+- **Feature purging**: For L1 models, zero-coefficient features are dropped and the model is re-fit on the reduced set (per-fold, honest)
+- **Solver**: `liblinear` for classification, default coordinate descent for regression
+- **Output**: Report at `reports/shortlist_model.md`, OOS predictions CSV, live predictions CSV
+
+### Confidence Basket (top-2)
+
+The model's evaluation product is its **top-2 predictions**, not the full top-10:
+
+- **Rank calibration finding (2026-08-13)**: over the recent 60 walk-forward dates, rank 1 averaged +10.6% alpha, rank 2 +2.9%, but ranks 3+ were negative. The top-10 basket was -1.0% while the top-2 basket was +6.7% with a 70% beat rate. Ranks 3-10 have inverted — including them dilutes the model's real signal.
+- `CONFIDENCE_BASKET_SIZE = 2` in `src/utils/shortlist_runtime.py` controls the basket used for `recent_20d_beat_rate` and `recent_20d_mean_target`.
+- Do not widen the confidence basket back to 5 or 10 without re-running the rank-calibration analysis and documenting the finding.
+
+### Model Runtime (`sq scan`)
+
+- Loaded via `load_live_shortlist_model_context()` in `shortlist_runtime.py`
+- Auto-refreshes when stale (live snapshot date < latest universe snapshot date)
+- Uses explicit `production_model_name` only when configured; otherwise uses the persisted `champion_model`
+- Returns no model context when the selected model fails `scan_policy.shortlist_model.promotion_gate`
+- Falls back to heuristic path (signal gate per strategy slot) when model produces zero candidates or context is unavailable
+- Confidence metrics (`recent_20d_beat_rate`, `recent_20d_mean_target`) are computed from the top-2 OOS basket and threaded into the quality gate
+- Model path selects at most 2 candidates; rotation exclusion removes the previous 3 scan dates' picks when the cap is below the configured total
 
 ## Command Behavior Expectations
 
@@ -67,6 +128,23 @@ The authoritative product spec is [Spec.md](/home/zdrillings/code/SwingQuant/Spe
 - Applies the median 30-day dollar-volume liquidity filter.
 - Must remain idempotent for historical upserts.
 
+### `sq universe-backfill`
+
+- Recomputes all feature columns including macro features (`spy_roc_20`, `spy_roc_5`, `spy_realized_vol_20`, `qqq_roc_20`) and binary target (`alpha_vs_sector_20d_pos`) for each date.
+- Macro features are also populated historically via direct DuckDB SQL from `historical_ohlcv` (SPY/QQQ price data).
+- Use `--skip-existing` to only process new dates; omit to overwrite.
+
+### `sq shortlist-model`
+
+- Trains walk-forward shortlist model.
+- Key flags:
+  - `--target-type regression|classification` (default: regression)
+  - `--model-scope global|sector_specific|regime_specific` (default: sector_specific for production)
+  - `--eligible-universe-mode passed_only|passed_or_trend`
+- Classification mode predicts `alpha_vs_sector_20d_pos` (binary: >2% alpha).
+- Feature purging logs the number and names of zeroed features per fold.
+- Macro features that are NaN (pre-backfill) are filled with 0; the L1 model purges them until enough backfill history accumulates.
+
 ### `sq research`
 
 - Operates on the top 250 names by `md_volume_30d`.
@@ -75,20 +153,19 @@ The authoritative product spec is [Spec.md](/home/zdrillings/code/SwingQuant/Spe
 
 ### `sq sweep`
 
-- Uses Polars as the backtest engine in the current implementation.
-- Sweeps dynamic exit rules from config; do not silently fall back to fixed stop/target values when the grid provides them.
+- Uses Polars as the backtest engine.
+- Sweeps dynamic exit rules from config including `hard_stop_pct`.
+- Hard stop is checked BEFORE trailing stop in the exit priority chain (entry-price-anchored, more protective).
 - Supports ATR-based exits; keep sweep and runtime exit semantics aligned.
-- Supports earnings-aware entry filters and pre-earnings exits; keep sweep and runtime event semantics aligned.
+- Supports earnings-aware entry filters and pre-earnings exits.
 - Applies configurable execution costs from `config.yaml` to every simulated trade.
-- Stores sector scope inside `params_json` so `sq evaluate --sector` can filter without changing the SQLite schema.
-- Supports multiple model families through `sweep_modes`.
-  - Pullback family uses shallow/deep pullback-with-trend logic.
-  - Breakout v1 family uses explicit base / breakout / volume-confirmation features.
-  - Breakout modes must replace the base sweep grid instead of inheriting pullback axes.
-- The current trade simulation still contains row iteration inside ticker partitions.
-  - This is acceptable at current scope.
-  - Future optimization should target vectorized exits or a more specialized engine path.
-- Keep progress logging intact or improve it; do not remove visibility for long runs.
+- Stores sector scope inside `params_json`.
+- 5 archetype sweep modes only:
+  - `pullback_technology` — tech pullback-with-trend
+  - `pullback_real_economy` — Energy/Materials/Industrials/Financials pullback
+  - `breakout_growth` — breakout entries across Tech/Industrials/Financials
+  - `post_earnings_drift` — post-earnings continuation
+  - `trend_continuation` — simple trend-following with minimal filters
 
 ### `sq evaluate`
 
@@ -97,7 +174,7 @@ The authoritative product spec is [Spec.md](/home/zdrillings/code/SwingQuant/Spe
 
 ### `sq promote`
 
-- Must emit a fully formed `production_strategy.json`.
+- Must emit a fully formed `production_strategy.json` including `hard_stop_pct` in exit rules.
 - Must include `promoted_at`.
 - When `--slot` is used, update only that slot inside `production_strategies.json`.
 
@@ -110,34 +187,24 @@ The authoritative product spec is [Spec.md](/home/zdrillings/code/SwingQuant/Spe
 
 ### `sq scan`
 
-- Uses the most recent completed session’s adjusted close.
-- Applies regime filter before signal evaluation.
-- Uses the promoted strategy’s thresholds, relative-strength hard filter, and confluence score.
-- Current score components include `rsi_14`, `vol_alpha`, `sma_200_dist`, and `roc_63`.
-- Earnings-aware pullback strategies can also use:
-  - `days_to_next_earnings`
-  - `days_since_last_earnings`
-- Gap-aware pullback strategies can also use:
-  - `avg_abs_gap_pct_20`
-  - `max_gap_down_pct_60`
-- Breakout v1 strategies additionally rely on:
-  - `sma_50_dist`
-  - `ma_alignment_50_200`
-  - `ma_slope_50_20`
-  - `ma_slope_200_20`
-  - `breakout_above_20d_high`
-  - `distance_above_20d_high`
-  - `base_range_pct_20`
-  - `base_atr_contraction_20`
-  - `base_volume_dryup_ratio_20`
-  - `breakout_volume_ratio_50`
-- Position sizing must respect the promoted stop model, including ATR-based stops.
-- Sends one evening brief containing the top five signals.
+- Uses the most recent completed session's adjusted close.
+- Two candidate sources (auto-selected):
+  - **Model path**: inner-joins snapshot with live model predictions; no signal gate (model output IS the selection signal). Falls back to heuristic if model produces zero candidates.
+  - **Heuristic path**: per-slot signal gate via `filter_signal_candidates`, then scored via `_score_candidate`.
+- Quality gate: `_confidence_adjusted_max_candidates` scales position count based on model's recent 20d beat rate and mean target.
+  - Model active + confident (beat_rate >= 0.45, mean_target >= 0): full cap (6)
+  - Model active + borderline: reduced to 2
+  - Model active + poor (beat_rate < 0.40 or mean_target < -0.02): reduced to 1
+  - Heuristic fallback: reduced to 75% of cap (floor 3)
+- Portfolio caps: per-slot (3), per-sector (3), total (6, or quality-gate-adjusted).
+- Sends one evening brief containing the selected candidates.
 
 ### `sq monitor`
 
 - Uses intraday 1-minute data for last-trade price.
+- Computes hard stop price via `entry_stop_price()` (anchored to entry price).
 - Evaluates:
+  - hard stop (must-sell, not demotable by shock guard)
   - breakout alert
   - trailing stop
   - profit target
@@ -150,13 +217,31 @@ The authoritative product spec is [Spec.md](/home/zdrillings/code/SwingQuant/Spe
 - Recommends `sell` in the digest when exit conditions are met.
 - Does not close the trade in SQLite.
 
+## Exit Rule Priority
+
+In both backtest (`sq sweep`) and live monitoring (`sq monitor`), exits are evaluated in this priority order:
+
+1. **Regime flip** — exit at close
+2. **Hard stop** — exit at `entry_price * (1 - hard_stop_pct)`. Anchored to entry price (not trailing). Must-sell in monitor.
+3. **Trailing stop** — exit at `max_price_seen - (entry_atr * mult)` (ATR) or `max_price_seen * (1 - pct)` (percent)
+4. **Profit target** — exit at `entry_price + (entry_atr * mult)` (ATR) or `entry_price * (1 + pct)` (percent)
+5. **RSI_2 > 90** — exit at close
+6. **Time limit** — exit at close after `time_limit_days`
+7. **Pre-earnings exit** — exit at close when `days_to_next_earnings <= exit_before_earnings_days`
+
+Hard stop, profit target, and pre-earnings exit are **must-sell** (not demoted by the portfolio shock guard).
+
 ## Database Guidance
 
 ### DuckDB
 
-Table:
+Tables:
 
-- `historical_ohlcv`
+- `historical_ohlcv` — daily OHLCV for all universe + reference tickers
+- `universe_daily_snapshots` — point-in-time feature snapshots with forward outcomes and macro features
+- `analyst_snapshots` — analyst target captures
+- `analyst_revision_snapshots` — analyst estimate/revision captures
+- `extended_hours_snapshots` — postmarket movement captures
 
 Primary use:
 
@@ -171,6 +256,10 @@ Tables:
 - `Universe`
 - `Backtest_Results`
 - `Active_Trades`
+- `Earnings_Calendar`
+- `Scan_Candidates`
+- `Shortlist_Model_Runs`
+- `Shortlist_Model_Predictions`
 
 Primary use:
 
@@ -199,26 +288,33 @@ python3 -m unittest discover -s tests -v
 python3 -m compileall src
 ```
 
-3. If you change a command’s behavior, add or update a command-specific test under [tests](/home/zdrillings/code/SwingQuant/tests).
+3. If you change a command's behavior, add or update a command-specific test under [tests](/home/zdrillings/code/SwingQuant/tests).
 
 4. If you touch regime logic, add a regression test proving the helper path is used.
 
 5. If you touch monitor behavior, verify:
    - one digest only
-   - all exit rules still evaluated
+   - all exit rules still evaluated (including hard stop)
+   - hard stop is must-sell
    - no implicit trade closure
+
+6. If you touch scan behavior, verify:
+   - model path produces candidates
+   - heuristic fallback engages when model returns empty
+   - quality gate respects confidence metrics
+   - candidate count is >= 1
 
 ## Current Known Tradeoffs
 
+- The shortlist model is a single L1 linear model. It cannot capture non-linear interactions that XGBoost could, but is more stable, more interpretable, and faster.
+- `regime_specific` model scope trains 3 models per fold and is ~15x slower than `sector_specific`. Use `sector_specific` for production.
+- Macro features (`spy_roc_*`, `spy_realized_vol_*`, `qqq_roc_20`) are consistently purged by the L1 model — they show zero predictive value for individual stock selection.
+- Binary classification target (`alpha_vs_sector_20d_pos`) uses a 2% threshold; this is arbitrary and could be tuned.
+- The quality gate reduces positions when the model is wrong, but cannot fix the underlying feature set problem.
 - `sq evaluate --sector` filters using sector metadata stored in `params_json`, not a dedicated database column.
 - `sq sweep` is compliant but not fully vectorized internally.
 - The launcher supports `.vendor/` automatically for local dependency installs.
 - Runtime validations in development may use synthetic data and mocked email delivery.
-- Breakout v1 currently uses only price/volume structure.
-  - No fundamental overlay yet.
-  - No 52-week-high feature yet.
-  - No breadth or institutional-ownership overlay yet.
-  - No breakout freshness feature yet, so some live matches may still be detected later in the move than desired.
 
 ## Safe Change Patterns
 
@@ -226,3 +322,5 @@ python3 -m compileall src
 - Keep services thin and push shared logic into `src/utils`.
 - Extend tests whenever you fix a bug, especially for spec compliance.
 - Prefer explicit policy decisions over hidden automation in operational commands.
+- When adding features to `MODEL_FEATURE_COLUMNS`, always handle missing columns in `_prepare_model_matrices` (fill with NaN) and add the column to `SNAPSHOT_FEATURE_COLUMNS` for backfill support.
+- When adding fields to `ExitRules`, thread through all three serializers (`_production_strategy_from_payload`, `build_production_strategy_payload`, `production_strategy_from_backtest_result`), the sweep exit chain, and the monitor exit flags.

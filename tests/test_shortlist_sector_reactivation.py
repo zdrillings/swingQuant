@@ -92,6 +92,7 @@ class ShortlistSectorReactivationServiceTests(unittest.TestCase):
                 "energy": ProductionStrategy(1, "2026-05-01T00:00:00", {}, ExitRules(0.05, 0.12, 20), slot="energy", sector="Energy"),
                 "materials": ProductionStrategy(2, "2026-05-01T00:00:00", {}, ExitRules(0.05, 0.12, 20), slot="materials", sector="Materials"),
                 "industrials": ProductionStrategy(3, "2026-05-01T00:00:00", {}, ExitRules(0.05, 0.12, 20), slot="industrials", sector="Industrials"),
+                "healthcare": ProductionStrategy(4, "2026-05-01T00:00:00", {}, ExitRules(0.05, 0.12, 20), slot="healthcare", sector="Health Care", scan_enabled=False),
             }
 
             with patch("src.research.shortlist_sector_reactivation_service.load_feature_config", return_value=config), \
@@ -106,6 +107,10 @@ class ShortlistSectorReactivationServiceTests(unittest.TestCase):
             self.assertIn("Information Technology", text)
             self.assertIn("## Step 2: Expanded Set Allocation Balance", text)
             self.assertIn("## Step 3: Expanded Set Top-N Sensitivity", text)
+            self.assertIn("full_hit_rate", text)
+            self.assertIn("recent_hit_rate", text)
+            self.assertIn("- active_sectors: Energy, Industrials, Materials", text)
+            self.assertNotIn("- active_sectors: Energy, Health Care, Industrials, Materials", text)
 
     def test_shortlist_sector_reactivation_parser_accepts_args(self) -> None:
         parser = build_parser()
@@ -124,5 +129,10 @@ class ShortlistSectorReactivationServiceTests(unittest.TestCase):
         )
         self.assertEqual(args.command, "shortlist-sector-reactivation")
         self.assertEqual(args.top, 8)
-        self.assertEqual(args.candidate_sector, ["Information Technology", "Information Technology", "Communication Services"])
+        self.assertEqual(args.candidate_sector, ["Information Technology", "Communication Services"])
         self.assertEqual(args.xgboost_config, "balanced_depth4")
+
+    def test_default_candidate_sector_is_applied_at_execution(self) -> None:
+        parser = build_parser()
+        args = parser.parse_args(["shortlist-sector-reactivation"])
+        self.assertIsNone(args.candidate_sector)

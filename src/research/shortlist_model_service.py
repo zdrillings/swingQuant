@@ -18,6 +18,7 @@ from src.research.shortlist_universe import (
     normalize_eligible_universe_mode,
     normalize_model_scope,
 )
+from src.settings import load_feature_config
 from src.utils.db_manager import DatabaseManager
 from src.utils.logging import get_logger
 
@@ -62,16 +63,28 @@ class ShortlistModelService:
         eligible_universe_mode: str = "passed_only",
         model_scope: str = "global",
         xgboost_config: str = "baseline",
+        target_type: str = "regression",
     ) -> ShortlistModelReport:
         self.db_manager.initialize()
-        target_column = f"alpha_vs_sector_{int(horizon_days)}d"
+        if target_type == "classification":
+            target_column = f"alpha_vs_sector_{int(horizon_days)}d_pos"
+        else:
+            target_column = f"alpha_vs_sector_{int(horizon_days)}d"
         eligible_universe_mode = normalize_eligible_universe_mode(eligible_universe_mode)
         model_scope = normalize_model_scope(model_scope)
-        xgboost_config = self._normalize_xgboost_config(xgboost_config)
-        xgboost_params = self._xgboost_params_for_config(xgboost_config)
         frame = self.db_manager.load_universe_daily_snapshots()
         if frame.empty:
             raise ValueError("No universe snapshots found. Run `sq universe-backfill` first.")
+        if target_column not in frame.columns and target_type == "classification":
+            source_col = f"alpha_vs_sector_{int(horizon_days)}d"
+            if source_col in frame.columns:
+                alpha_vals = pd.to_numeric(frame[source_col], errors="coerce")
+                frame[target_column] = np.where(
+                    alpha_vals.notna(),
+                    (alpha_vals > 0.02).astype(float),
+                    np.nan,
+                )
+                self.logger.info("Derived %s from %s on-the-fly (column not yet backfilled).", target_column, source_col)
         if target_column not in frame.columns:
             raise ValueError(f"Universe snapshots do not include horizon_days={horizon_days}.")
 
@@ -88,8 +101,12 @@ class ShortlistModelService:
         if len(unique_dates) <= int(min_train_dates):
             raise ValueError("Not enough eligible snapshot dates for walk-forward shortlist modeling.")
 
+        xgboost_config = self._normalize_xgboost_config(xgboost_config)
+        xgboost_params = self._xgboost_params_for_config(xgboost_config)
+        candidate_models = ("signal_proxy", "ridge_model", "lasso_model", "xgboost_model")
+
         model_predictions: dict[str, pd.DataFrame] = {}
-        for model_name in ("signal_proxy", "ridge_model", "xgboost_model"):
+        for model_name in candidate_models:
             predicted = self._walk_forward_predictions(
                 matured,
                 target_column=target_column,
@@ -97,7 +114,7 @@ class ShortlistModelService:
                 min_train_dates=int(min_train_dates),
                 test_window_dates=int(test_window_dates),
                 model_scope=model_scope,
-                xgboost_params=xgboost_params,
+                xgboost_params=xgboost_params if model_name == "xgboost_model" else None,
             )
             if predicted is not None and not predicted.empty:
                 model_predictions[model_name] = predicted
@@ -119,8 +136,6 @@ class ShortlistModelService:
                 for model_name, predictions in model_predictions.items()
             ]
         )
-        champion_model = self._choose_champion_model(full_summaries)
-
         recent_summary_rows: list[dict[str, object]] = []
         for model_name, predictions in model_predictions.items():
             recent_prediction_dates = sorted(predictions["snapshot_date"].drop_duplicates().tolist())[-max(int(recent_dates), 1):]
@@ -134,9 +149,28 @@ class ShortlistModelService:
                 )
             )
         recent_summaries = pd.DataFrame(recent_summary_rows)
+        promotion_gate = self._load_promotion_gate()
+        acceptance_summaries = pd.DataFrame(
+            [
+                row
+                for model_name, predictions in model_predictions.items()
+                for row in self._rolling_window_summaries(
+                    predictions=predictions,
+                    target_column=target_column,
+                    model_name=model_name,
+                    top_n=int(top_n),
+                    windows=(20, 60),
+                ).to_dict(orient="records")
+            ]
+        )
+        champion_model, champion_gate_passed = self._choose_champion_model(
+            full_summaries=full_summaries,
+            acceptance_summaries=acceptance_summaries,
+            promotion_gate=promotion_gate,
+        )
 
         live_base_predictions: dict[str, pd.DataFrame] = {}
-        for model_name in ("signal_proxy", "ridge_model", "xgboost_model"):
+        for model_name in candidate_models:
             if model_name not in model_predictions:
                 continue
             scored = self._score_live_snapshot(
@@ -146,7 +180,7 @@ class ShortlistModelService:
                 target_column=target_column,
                 eligible_universe_mode=eligible_universe_mode,
                 model_scope=model_scope,
-                xgboost_params=xgboost_params,
+                xgboost_params=xgboost_params if model_name == "xgboost_model" else None,
             )
             if scored is not None and not scored.empty:
                 live_base_predictions[model_name] = scored
@@ -184,6 +218,9 @@ class ShortlistModelService:
             f"- top_n: {int(top_n)}",
             f"- eligible_universe_mode: {eligible_universe_mode}",
             f"- model_scope: {model_scope}",
+            f"- candidate_models: {', '.join(model_predictions.keys())}",
+            f"- selected_model: {champion_model}",
+            f"- selected_model_gate_passed: {str(bool(champion_gate_passed)).lower()}",
             f"- xgboost_config: {xgboost_config}",
             f"- min_train_dates: {int(min_train_dates)}",
             f"- test_window_dates: {int(test_window_dates)}",
@@ -202,6 +239,7 @@ class ShortlistModelService:
         ]
         lines.extend(self._render_summary_table(full_summaries, heading="## Full Walk-Forward Evaluation"))
         lines.extend(self._render_summary_table(recent_summaries, heading=f"## Recent {min(int(recent_dates), int(combined_predictions['snapshot_date'].nunique()))} Walk-Forward Dates"))
+        lines.extend(self._render_promotion_gate(promotion_gate=promotion_gate, summaries=acceptance_summaries))
         lines.extend(
             self._render_summary_table(
                 self._rolling_window_summaries(
@@ -414,9 +452,12 @@ class ShortlistModelService:
         )
         if live_snapshot.empty:
             return live_snapshot.assign(predicted_alpha=pd.Series(dtype=float))
+        safe_train = matured[matured["snapshot_date"] < latest_date].copy()
+        if safe_train.empty:
+            safe_train = matured
         scored = self._score_model(
             model_name=model_name,
-            train_frame=matured,
+            train_frame=safe_train,
             test_frame=live_snapshot,
             target_column=target_column,
             model_scope=model_scope,
@@ -440,8 +481,17 @@ class ShortlistModelService:
     ) -> pd.DataFrame | None:
         if train_frame.empty or test_frame.empty:
             return None
-        if model_scope == "sector_specific" and model_name in {"ridge_model", "xgboost_model"}:
+        if model_scope == "sector_specific" and model_name not in {"signal_proxy"}:
             return self._score_model_by_sector(
+                model_name=model_name,
+                train_frame=train_frame,
+                test_frame=test_frame,
+                target_column=target_column,
+                xgboost_params=xgboost_params,
+                feature_columns_override=feature_columns_override,
+            )
+        if model_scope == "regime_specific" and model_name not in {"signal_proxy"}:
+            return self._score_model_by_regime(
                 model_name=model_name,
                 train_frame=train_frame,
                 test_frame=test_frame,
@@ -452,7 +502,14 @@ class ShortlistModelService:
         if model_name == "signal_proxy":
             return self._score_signal_proxy(test_frame)
         if model_name == "ridge_model":
-            return self._score_ridge_model(
+            return self._score_ridge_closed_form(
+                train_frame,
+                test_frame,
+                target_column=target_column,
+                feature_columns_override=feature_columns_override,
+            )
+        if model_name == "lasso_model":
+            return self._score_lasso_model(
                 train_frame,
                 test_frame,
                 target_column=target_column,
@@ -499,6 +556,59 @@ class ShortlistModelService:
             return None
         return pd.concat(frames, axis=0, ignore_index=True)
 
+    def _classify_regime(self, frame: pd.DataFrame) -> pd.Series:
+        if "spy_roc_20" in frame.columns and frame["spy_roc_20"].notna().any():
+            spy_roc = pd.to_numeric(frame["spy_roc_20"], errors="coerce")
+            regimes = pd.Series("choppy", index=frame.index)
+            regimes[spy_roc > 0.01] = "trending"
+            return regimes
+        if "regime_green" in frame.columns:
+            green = frame["regime_green"].astype(bool)
+            return green.map({True: "trending", False: "choppy"})
+        return pd.Series("choppy", index=frame.index)
+
+    def _score_model_by_regime(
+        self,
+        *,
+        model_name: str,
+        train_frame: pd.DataFrame,
+        test_frame: pd.DataFrame,
+        target_column: str,
+        xgboost_params: dict[str, float | int] | None = None,
+        feature_columns_override: list[str] | None = None,
+    ) -> pd.DataFrame | None:
+        train_regimes = self._classify_regime(train_frame)
+        frames: list[pd.DataFrame] = []
+        for regime_label in ("trending", "choppy"):
+            regime_train = train_frame[train_regimes == regime_label].copy()
+            regime_test = test_frame[self._classify_regime(test_frame) == regime_label].copy()
+            if regime_train.empty or regime_test.empty:
+                continue
+            if regime_train["snapshot_date"].nunique() < 40:
+                regime_train = train_frame
+            scored = self._score_model(
+                model_name=model_name,
+                train_frame=regime_train,
+                test_frame=regime_test,
+                target_column=target_column,
+                model_scope="global",
+                xgboost_params=xgboost_params,
+                feature_columns_override=feature_columns_override,
+            )
+            if scored is not None and not scored.empty:
+                frames.append(scored)
+        if not frames:
+            return self._score_model(
+                model_name=model_name,
+                train_frame=train_frame,
+                test_frame=test_frame,
+                target_column=target_column,
+                model_scope="global",
+                xgboost_params=xgboost_params,
+                feature_columns_override=feature_columns_override,
+            )
+        return pd.concat(frames, axis=0, ignore_index=True)
+
     def _score_signal_proxy(self, frame: pd.DataFrame) -> pd.DataFrame:
         working = frame.copy()
         components = [
@@ -526,7 +636,99 @@ class ShortlistModelService:
         working["model_reason_summary"] = working["model_top_reasons"].apply(self._format_reason_summary)
         return working
 
-    def _score_ridge_model(
+    def _score_lasso_model(
+        self,
+        train_frame: pd.DataFrame,
+        test_frame: pd.DataFrame,
+        *,
+        target_column: str,
+        feature_columns_override: list[str] | None = None,
+    ) -> pd.DataFrame:
+        is_classification = str(target_column).endswith("_pos")
+        train_matrix, test_matrix, feature_names, standardized_test = self._prepare_model_matrices(
+            train_frame,
+            test_frame,
+            feature_columns_override=feature_columns_override,
+        )
+        train_target = pd.to_numeric(train_frame[target_column], errors="coerce").to_numpy(dtype=float)
+        finite_mask = np.isfinite(train_target)
+        if not finite_mask.all():
+            train_matrix = train_matrix[finite_mask]
+            train_target = train_target[finite_mask]
+        train_matrix = np.nan_to_num(train_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+        test_matrix = np.nan_to_num(test_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+
+        if is_classification:
+            try:
+                from sklearn.linear_model import LogisticRegression
+            except ModuleNotFoundError:
+                self.logger.warning("scikit-learn unavailable for classification; falling back.")
+                return test_frame.assign(predicted_alpha=0.0)
+            unique_classes = np.unique(train_target)
+            if len(unique_classes) < 2:
+                scored = test_frame.copy()
+                scored["predicted_alpha"] = float(unique_classes[0]) if len(unique_classes) == 1 else 0.0
+                scored["model_top_reasons"] = [[] for _ in range(len(scored.index))]
+                scored["model_reason_summary"] = None
+                return scored
+            model = LogisticRegression(penalty="l1", solver="liblinear", C=1.0, max_iter=500, random_state=42)
+            model.fit(train_matrix, train_target)
+            nonzero = np.abs(model.coef_[0]) > 1e-8
+            if not nonzero.all():
+                dropped = [str(feature_names[i]) for i in range(len(feature_names)) if not nonzero[i]]
+                self.logger.info("Purging %d zero-coef features: %s", len(dropped), ", ".join(dropped[:10]))
+                model = LogisticRegression(penalty="l1", solver="liblinear", C=1.0, max_iter=500, random_state=42)
+                model.fit(train_matrix[:, nonzero], train_target)
+                full_weights = np.zeros(len(feature_names))
+                full_weights[nonzero] = model.coef_[0]
+                test_matrix_used = test_matrix[:, nonzero]
+            else:
+                full_weights = model.coef_[0]
+                test_matrix_used = test_matrix
+            weights = full_weights
+            scored = test_frame.copy()
+            scored["predicted_alpha"] = model.predict_proba(test_matrix_used)[:, 1]
+            contribution_frame = standardized_test.mul(weights, axis=1)
+        else:
+            try:
+                from sklearn.linear_model import Lasso
+            except ModuleNotFoundError:
+                self.logger.warning("scikit-learn unavailable; falling back to closed-form ridge.")
+                return self._score_ridge_closed_form(
+                    train_frame, test_frame,
+                    target_column=target_column,
+                    feature_columns_override=feature_columns_override,
+                )
+            model = Lasso(alpha=0.001, max_iter=2000, random_state=42, selection="cyclic")
+            model.fit(train_matrix, train_target)
+            weights = model.coef_
+            nonzero = np.abs(weights) > 1e-8
+            if not nonzero.all():
+                dropped = [str(feature_names[i]) for i in range(len(feature_names)) if not nonzero[i]]
+                self.logger.info("Purging %d zero-coef features: %s", len(dropped), ", ".join(dropped[:10]))
+                model = Lasso(alpha=0.001, max_iter=2000, random_state=42, selection="cyclic")
+                model.fit(train_matrix[:, nonzero], train_target)
+                full_weights = np.zeros(len(feature_names))
+                full_weights[nonzero] = model.coef_
+                test_matrix_used = test_matrix[:, nonzero]
+                weights = full_weights
+            else:
+                test_matrix_used = test_matrix
+            scored = test_frame.copy()
+            if not nonzero.all():
+                scored["predicted_alpha"] = test_matrix_used @ model.coef_
+            else:
+                scored["predicted_alpha"] = test_matrix @ weights
+            contribution_frame = standardized_test.mul(weights, axis=1)
+
+        scored["model_top_reasons"] = [
+            self._top_reason_names(contribution_frame.iloc[index].to_dict())
+            for index in range(len(contribution_frame.index))
+        ]
+        scored["model_reason_summary"] = scored["model_top_reasons"].apply(self._format_reason_summary)
+        return scored
+
+    def _score_ridge_closed_form(
         self,
         train_frame: pd.DataFrame,
         test_frame: pd.DataFrame,
@@ -540,6 +742,12 @@ class ShortlistModelService:
             feature_columns_override=feature_columns_override,
         )
         train_target = pd.to_numeric(train_frame[target_column], errors="coerce").to_numpy(dtype=float)
+        finite_mask = np.isfinite(train_target)
+        if not finite_mask.all():
+            train_matrix = train_matrix[finite_mask]
+            train_target = train_target[finite_mask]
+        train_matrix = np.nan_to_num(train_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+        test_matrix = np.nan_to_num(test_matrix, nan=0.0, posinf=0.0, neginf=0.0)
         ridge_penalty = 1.0
         xtx = train_matrix.T @ train_matrix
         identity = np.eye(xtx.shape[0], dtype=float)
@@ -671,14 +879,20 @@ class ShortlistModelService:
         *,
         feature_columns_override: list[str] | None = None,
     ) -> tuple[np.ndarray, np.ndarray, list[str], pd.DataFrame]:
+        available_columns = ["snapshot_date", "sector"] + [
+            col for col in MODEL_FEATURE_COLUMNS if col in train_frame.columns
+        ]
         feature_frame = pd.concat(
             [
-                train_frame[["snapshot_date", "sector"] + MODEL_FEATURE_COLUMNS].copy(),
-                test_frame[["snapshot_date", "sector"] + MODEL_FEATURE_COLUMNS].copy(),
+                train_frame[available_columns].copy(),
+                test_frame[available_columns].copy(),
             ],
             axis=0,
             ignore_index=True,
         )
+        for col in MODEL_FEATURE_COLUMNS:
+            if col not in feature_frame.columns:
+                feature_frame[col] = np.nan
         feature_frame, feature_columns = build_rank_augmented_feature_frame(feature_frame)
         if feature_columns_override is not None:
             feature_columns = [column for column in feature_columns_override if column in feature_frame.columns]
@@ -870,6 +1084,11 @@ class ShortlistModelService:
             "relative_strength_index_vs_qqq": "strong RS vs QQQ",
             "relative_strength_index_vs_xlk": "strong RS vs XLK",
             "relative_strength_index_vs_subindustry": "strong RS vs group ETF",
+            "rs_vs_spy_5d_change": "improving RS vs SPY",
+            "rs_vs_qqq_5d_change": "improving RS vs QQQ",
+            "rs_vs_xlk_5d_change": "improving RS vs XLK",
+            "rs_vs_subindustry_5d_change": "improving RS vs group ETF",
+            "rs_vs_subindustry_10d_change": "improving 10d RS vs group ETF",
             "roc_63": "strong 63d momentum",
             "roc_126": "strong 126d momentum",
             "vol_alpha": "strong volume confirmation",
@@ -922,6 +1141,11 @@ class ShortlistModelService:
             "relative_strength_index_vs_qqq": "RS vs QQQ",
             "relative_strength_index_vs_xlk": "RS vs XLK",
             "relative_strength_index_vs_subindustry": "RS vs group ETF",
+            "rs_vs_spy_5d_change": "5d RS change vs SPY",
+            "rs_vs_qqq_5d_change": "5d RS change vs QQQ",
+            "rs_vs_xlk_5d_change": "5d RS change vs XLK",
+            "rs_vs_subindustry_5d_change": "5d RS change vs group ETF",
+            "rs_vs_subindustry_10d_change": "10d RS change vs group ETF",
             "roc_63": "63d momentum",
             "roc_126": "126d momentum",
             "vol_alpha": "volume confirmation",
@@ -948,12 +1172,116 @@ class ShortlistModelService:
         }
         return f"{labels.get(base, base.replace('_', ' '))}{suffix}"
 
-    def _choose_champion_model(self, summaries: pd.DataFrame) -> str:
-        ordered = summaries.sort_values(
+    def _load_promotion_gate(self) -> dict[str, float | int]:
+        config = load_feature_config()
+        payload = (
+            config.get("scan_policy", {})
+            .get("shortlist_model", {})
+            .get("promotion_gate", {})
+            if isinstance(config, dict)
+            else {}
+        )
+        return {
+            "enabled": bool(payload.get("enabled", True)),
+            "min_recent_20d_hit_rate": float(payload.get("min_recent_20d_hit_rate", 0.50)),
+            "min_recent_20d_beat_universe_rate": float(payload.get("min_recent_20d_beat_universe_rate", 0.50)),
+            "min_recent_20d_mean_target": float(payload.get("min_recent_20d_mean_target", 0.0)),
+            "min_recent_60d_hit_rate": float(payload.get("min_recent_60d_hit_rate", 0.50)),
+            "min_recent_60d_beat_universe_rate": float(payload.get("min_recent_60d_beat_universe_rate", 0.50)),
+            "min_recent_60d_mean_target": float(payload.get("min_recent_60d_mean_target", 0.0)),
+        }
+
+    def _choose_champion_model(
+        self,
+        *,
+        full_summaries: pd.DataFrame,
+        acceptance_summaries: pd.DataFrame,
+        promotion_gate: dict[str, float | int],
+    ) -> tuple[str, bool]:
+        ranked = self._rank_model_summaries(full_summaries)
+        if ranked.empty:
+            raise ValueError("No shortlist model summaries are available for champion selection.")
+        if not bool(promotion_gate.get("enabled", True)):
+            return str(ranked.iloc[0]["model"]), True
+
+        passing_models = {
+            str(model)
+            for model in ranked["model"].astype(str).tolist()
+            if self._model_passes_promotion_gate(
+                model_name=str(model),
+                acceptance_summaries=acceptance_summaries,
+                promotion_gate=promotion_gate,
+            )
+        }
+        if passing_models:
+            passing_ranked = ranked[ranked["model"].astype(str).isin(passing_models)].copy()
+            return str(passing_ranked.iloc[0]["model"]), True
+        return str(ranked.iloc[0]["model"]), False
+
+    def _rank_model_summaries(self, summaries: pd.DataFrame) -> pd.DataFrame:
+        if summaries.empty:
+            return summaries.copy()
+        return summaries.sort_values(
             ["mean_target", "beat_universe_rate", "positive_date_rate", "model"],
             ascending=[False, False, False, True],
         ).reset_index(drop=True)
-        return str(ordered.iloc[0]["model"])
+
+    def _model_passes_promotion_gate(
+        self,
+        *,
+        model_name: str,
+        acceptance_summaries: pd.DataFrame,
+        promotion_gate: dict[str, float | int],
+    ) -> bool:
+        if acceptance_summaries.empty:
+            return False
+        for window in (20, 60):
+            row = acceptance_summaries[
+                acceptance_summaries["model"].astype(str) == f"{model_name}_{window}d"
+            ]
+            if row.empty:
+                return False
+            summary = row.iloc[0]
+            if not self._finite_at_least(summary.get("hit_rate"), promotion_gate[f"min_recent_{window}d_hit_rate"]):
+                return False
+            if not self._finite_at_least(
+                summary.get("beat_universe_rate"),
+                promotion_gate[f"min_recent_{window}d_beat_universe_rate"],
+            ):
+                return False
+            if not self._finite_at_least(summary.get("mean_target"), promotion_gate[f"min_recent_{window}d_mean_target"]):
+                return False
+        return True
+
+    def _finite_at_least(self, value, threshold) -> bool:
+        try:
+            numeric = float(value)
+            required = float(threshold)
+        except (TypeError, ValueError):
+            return False
+        return math.isfinite(numeric) and numeric >= required
+
+    def _render_promotion_gate(self, *, promotion_gate: dict[str, float | int], summaries: pd.DataFrame) -> list[str]:
+        lines = ["## Promotion Gate", ""]
+        if not bool(promotion_gate.get("enabled", True)):
+            lines.append("- enabled: false")
+            lines.append("- note: model selection uses full walk-forward ranking only.")
+            lines.append("")
+            return lines
+        lines.extend(
+            [
+                "- enabled: true",
+                f"- min_recent_20d_hit_rate: {float(promotion_gate['min_recent_20d_hit_rate']):.2f}",
+                f"- min_recent_20d_beat_universe_rate: {float(promotion_gate['min_recent_20d_beat_universe_rate']):.2f}",
+                f"- min_recent_20d_mean_target: {float(promotion_gate['min_recent_20d_mean_target']):.4f}",
+                f"- min_recent_60d_hit_rate: {float(promotion_gate['min_recent_60d_hit_rate']):.2f}",
+                f"- min_recent_60d_beat_universe_rate: {float(promotion_gate['min_recent_60d_beat_universe_rate']):.2f}",
+                f"- min_recent_60d_mean_target: {float(promotion_gate['min_recent_60d_mean_target']):.4f}",
+                "",
+            ]
+        )
+        lines.extend(self._render_summary_table(summaries, heading="### Recent Acceptance Windows"))
+        return lines
 
     def _empty_summary(self, model_name: str) -> dict[str, object]:
         return {
