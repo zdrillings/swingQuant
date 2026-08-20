@@ -5,6 +5,15 @@ cd /home/zdrillings/code/SwingQuant
 
 run_date="$(date +%F)"
 
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  guarded_paths=(src tests ops config.yaml production_strategies.json pyproject.toml README.md AGENTS.md)
+  if ! git diff --quiet -- "${guarded_paths[@]}" || ! git diff --cached --quiet -- "${guarded_paths[@]}"; then
+    echo "Refusing to run nightly pipeline with uncommitted code/config changes." >&2
+    echo "Commit or stash changes under: ${guarded_paths[*]}" >&2
+    exit 2
+  fi
+fi
+
 notify_failure() {
   local exit_code="$?"
   local failed_command="${BASH_COMMAND}"
@@ -63,6 +72,6 @@ echo "[$(date --iso-8601=seconds)] scan"
 ./sq scan
 
 echo "[$(date --iso-8601=seconds)] scan-performance"
-./sq scan-performance --email
+./sq scan-performance --all-sources --email
 
 echo "[$(date --iso-8601=seconds)] nightly pipeline complete"

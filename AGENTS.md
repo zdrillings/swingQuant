@@ -109,10 +109,11 @@ The model's evaluation product is its **top-2 predictions**, not the full top-10
 ### Model Runtime (`sq scan`)
 
 - Loaded via `load_live_shortlist_model_context()` in `shortlist_runtime.py`
-- Auto-refreshes when stale (live snapshot date < latest universe snapshot date)
+- Runtime loading is read-only by default; `sq scan` must not retrain or refresh the shortlist model.
+- Stale or missing model context makes model-driven production scans fail closed unless `scan_policy.shortlist_model.allow_heuristic_fallback` is explicitly enabled.
 - Uses explicit `production_model_name` only when configured; otherwise uses the persisted `champion_model`
 - Returns no model context when the selected model fails `scan_policy.shortlist_model.promotion_gate`
-- Falls back to heuristic path (signal gate per strategy slot) when model produces zero candidates or context is unavailable
+- Heuristic fallback is a diagnostic escape hatch, not the production default.
 - Confidence metrics (`recent_20d_beat_rate`, `recent_20d_mean_target`) are computed from the top-2 OOS basket and threaded into the quality gate
 - Model path selects at most 2 candidates; rotation exclusion removes the previous 3 scan dates' picks when the cap is below the configured total
 
@@ -137,6 +138,7 @@ The model's evaluation product is its **top-2 predictions**, not the full top-10
 ### `sq shortlist-model`
 
 - Trains walk-forward shortlist model.
+- Refuses to persist a champion when no candidate passes the configured promotion gate.
 - Key flags:
   - `--target-type regression|classification` (default: regression)
   - `--model-scope global|sector_specific|regime_specific` (default: sector_specific for production)
@@ -189,13 +191,13 @@ The model's evaluation product is its **top-2 predictions**, not the full top-10
 
 - Uses the most recent completed session's adjusted close.
 - Two candidate sources (auto-selected):
-  - **Model path**: inner-joins snapshot with live model predictions; no signal gate (model output IS the selection signal). Falls back to heuristic if model produces zero candidates.
-  - **Heuristic path**: per-slot signal gate via `filter_signal_candidates`, then scored via `_score_candidate`.
+  - **Model path**: inner-joins snapshot with live model predictions; no signal gate (model output IS the selection signal). Production scans fail closed if model context is missing, stale, failing promotion, or maps to zero active-slot candidates.
+  - **Heuristic path**: per-slot signal gate via `filter_signal_candidates`, then scored via `_score_candidate`; use only when shortlist model source is disabled or `allow_heuristic_fallback` is explicitly enabled for diagnostics.
 - Quality gate: `_confidence_adjusted_max_candidates` scales position count based on model's recent 20d beat rate and mean target.
   - Model active + confident (beat_rate >= 0.45, mean_target >= 0): full cap (6)
   - Model active + borderline: reduced to 2
   - Model active + poor (beat_rate < 0.40 or mean_target < -0.02): reduced to 1
-  - Heuristic fallback: reduced to 75% of cap (floor 3)
+  - Heuristic fallback: diagnostic only; reduced to 75% of cap (floor 3) when explicitly enabled.
 - Portfolio caps: per-slot (3), per-sector (3), total (6, or quality-gate-adjusted).
 - Sends one evening brief containing the selected candidates.
 
@@ -300,7 +302,7 @@ python3 -m compileall src
 
 6. If you touch scan behavior, verify:
    - model path produces candidates
-   - heuristic fallback engages when model returns empty
+   - production model path fails closed when model context is unavailable or empty
    - quality gate respects confidence metrics
    - candidate count is >= 1
 

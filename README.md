@@ -196,11 +196,11 @@ The scan uses the shortlist model's **top-2 predictions** as its product. A rank
 Quality gate (2 tiers, evaluated on the top-2 basket's recent 20d walk-forward performance):
 - **Full (2 picks)**: beat_rate >= 35% AND mean_target >= -3%
 - **Minimal (1 pick)**: beat_rate < 35% or mean_target < -3%
-- **Heuristic fallback (75% of cap, floor 3)**: model unavailable
+- **Heuristic fallback (75% of cap, floor 3)**: diagnostic only; production model scans fail closed unless `allow_heuristic_fallback: true` is explicitly configured
 
 Rotation exclusion: when the effective cap is below the configured total, tickers picked in the last 3 scan dates are removed from the selection pool, so picks rotate through the model's top candidates instead of repeating the same name every day.
 
-When the model falls back to heuristic path (model returns empty predictions), the scan uses per-slot signal gates. This prevents the system from silently producing zero candidates when the model is broken.
+When the model context is stale, failing promotion, unavailable, or produces zero mapped candidates, production `sq scan` aborts instead of silently emitting heuristic picks. That makes nightly failures noisy and keeps the evening brief from presenting non-model picks as model-driven output.
 
 8. Capture analyst target snapshots for future point-in-time research:
 
@@ -431,13 +431,13 @@ The nightly pipeline runs via `ops/nightly_pipeline.sh` and executes in order:
 
 1. `./sq sync` — refresh OHLCV and earnings data
 2. `./sq universe-backfill` — compute today's features with macro context and binary target
-3. `./sq shortlist-model` — train walk-forward lasso model
+3. `./sq shortlist-model` — train the walk-forward shortlist model and persist only a champion that passes the promotion gate
 4. `./sq analyst-snapshot` — capture analyst targets
 5. `./sq extended-hours-snapshot` — capture postmarket movement
 6. `./sq scan` — produce evening brief with quality-gated candidates
-7. `./sq scan-performance --email` — email performance summary
+7. `./sq scan-performance --all-sources --email` — email performance summary across currently persisted selection sources
 
-If any step fails, the pipeline sends a failure notification email via the `notify_failure` trap.
+If any step fails, the pipeline sends a failure notification email via the `notify_failure` trap. The pipeline also refuses to run when code/config paths have uncommitted changes, so nightly results can be tied back to committed logic.
 
 ## Suggested Trading-Day Schedule
 
@@ -471,7 +471,9 @@ Key characteristics:
 - **Target**: `alpha_vs_sector_20d` or `alpha_vs_sector_20d_pos`; missing forward alpha remains missing and is not converted into a negative label
 - **Selection**: the champion is selected from model summaries, not hardcoded
 - **Runtime override**: `scan_policy.shortlist_model.production_model_name`, when set, explicitly selects a preferred model; when omitted, runtime uses the persisted champion
+- **No runtime retraining**: `sq scan` loads persisted model runs and predictions; model training belongs in `sq shortlist-model`
 - **Promotion gate**: model-driven scan picks are unavailable unless recent top-2 OOS metrics pass `scan_policy.shortlist_model.promotion_gate`
+- **Fail-closed production scan**: when `scan_policy.shortlist_model.use_as_candidate_source` is enabled, missing/stale/failing model context aborts the scan unless `allow_heuristic_fallback: true` is explicitly configured
 - **Quality throttle**: after the model passes the promotion gate, position count can still scale down based on recent model confidence
 - **Hard stops**: entry-anchored stop-loss checked before trailing stops in both backtest and live monitoring
 

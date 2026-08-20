@@ -298,6 +298,77 @@ class ShortlistModelServiceTests(unittest.TestCase):
             "BBB in Energy on strong 63d momentum",
         )
 
+    def test_runtime_loader_does_not_refresh_stale_model_without_explicit_permission(self) -> None:
+        class FakeDB:
+            def __init__(self):
+                self.refresh_count = 0
+
+            def load_shortlist_model_runs(self, *, horizon_days, eligible_universe_mode=None, model_scope=None, xgboost_config="baseline", limit=1):
+                return pd.DataFrame(
+                    [
+                        {
+                            "generated_at": "2026-05-26T17:00:00+00:00",
+                            "champion_model": "lasso_model",
+                            "live_snapshot_date": "2026-05-18",
+                        }
+                    ]
+                )
+
+            def list_universe_daily_snapshot_dates(self):
+                return ["2026-05-19"]
+
+            def load_shortlist_model_predictions(self, **kwargs):
+                raise AssertionError("stale runtime loader should not read predictions after declining refresh")
+
+            def load_universe_daily_snapshots(self, snapshot_date=None):
+                self.refresh_count += 1
+                raise AssertionError("runtime loader should not retrain without allow_refresh=True")
+
+        fake_db = FakeDB()
+        context = load_live_shortlist_model_context(
+            fake_db,
+            refresh_if_stale=True,
+            allow_refresh=False,
+            eligible_universe_mode="passed_only",
+            model_scope="sector_specific",
+        )
+
+        self.assertIsNone(context)
+        self.assertEqual(fake_db.refresh_count, 0)
+
+    def test_champion_selection_refuses_models_that_fail_promotion_gate(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        full_summaries = pd.DataFrame(
+            [
+                {"model": "xgboost_model", "mean_target": 0.08, "beat_universe_rate": 0.60, "positive_date_rate": 0.70},
+                {"model": "lasso_model", "mean_target": 0.04, "beat_universe_rate": 0.55, "positive_date_rate": 0.60},
+            ]
+        )
+        acceptance_summaries = pd.DataFrame(
+            [
+                {"model": "xgboost_model_20d", "hit_rate": 0.45, "beat_universe_rate": 0.40, "mean_target": -0.01},
+                {"model": "xgboost_model_60d", "hit_rate": 0.55, "beat_universe_rate": 0.55, "mean_target": 0.04},
+                {"model": "lasso_model_20d", "hit_rate": 0.40, "beat_universe_rate": 0.35, "mean_target": -0.02},
+                {"model": "lasso_model_60d", "hit_rate": 0.52, "beat_universe_rate": 0.52, "mean_target": 0.01},
+            ]
+        )
+        promotion_gate = {
+            "enabled": True,
+            "min_recent_20d_hit_rate": 0.50,
+            "min_recent_20d_beat_universe_rate": 0.50,
+            "min_recent_20d_mean_target": 0.0,
+            "min_recent_60d_hit_rate": 0.50,
+            "min_recent_60d_beat_universe_rate": 0.50,
+            "min_recent_60d_mean_target": 0.0,
+        }
+
+        with self.assertRaisesRegex(ValueError, "No shortlist model candidate passed the promotion gate"):
+            service._choose_champion_model(
+                full_summaries=full_summaries,
+                acceptance_summaries=acceptance_summaries,
+                promotion_gate=promotion_gate,
+            )
+
     def test_classification_target_preserves_unmatured_alpha_as_missing(self) -> None:
         service = ShortlistModelService(db_manager=object())
         frame = pd.DataFrame(

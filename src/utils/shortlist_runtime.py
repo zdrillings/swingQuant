@@ -36,6 +36,7 @@ def load_live_shortlist_model_context(
     test_window_dates: int = 20,
     recent_dates: int = 60,
     refresh_if_stale: bool = True,
+    allow_refresh: bool = False,
     preferred_model_name: str | None = None,
     eligible_universe_mode: str = "passed_only",
     model_scope: str = "global",
@@ -64,6 +65,8 @@ def load_live_shortlist_model_context(
         run_snapshot_date = runs.iloc[0]["live_snapshot_date"]
         needs_refresh = str(run_snapshot_date or "") != str(latest_snapshot_date)
     if needs_refresh:
+        if not allow_refresh:
+            return None
         ShortlistModelService(db_manager).run(
             top_n=int(top_n),
             horizon_days=int(horizon_days),

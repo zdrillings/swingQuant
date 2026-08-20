@@ -113,6 +113,8 @@ class ScanPerformanceServiceTests(unittest.TestCase):
             self.assertIn("- model_generated_at: all", report_text)
             self.assertIn("- latest_model_generated_at: 2026-06-03T20:08:10+00:00", report_text)
             self.assertIn("- scan_dates: 2", report_text)
+            self.assertIn("## Selection Source Coverage", report_text)
+            self.assertIn("- shortlist_model: 2 (100.0%)", report_text)
             self.assertIn("### 2d", report_text)
             self.assertIn("### 60d", report_text)
             self.assertIn("## 20d Timeframe Summary", report_text)

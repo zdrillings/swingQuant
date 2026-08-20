@@ -1216,7 +1216,10 @@ class ShortlistModelService:
         if passing_models:
             passing_ranked = ranked[ranked["model"].astype(str).isin(passing_models)].copy()
             return str(passing_ranked.iloc[0]["model"]), True
-        return str(ranked.iloc[0]["model"]), False
+        raise ValueError(
+            "No shortlist model candidate passed the promotion gate; refusing to persist a failing champion. "
+            "Inspect the Recent Acceptance Windows in reports/shortlist_model.md or relax scan_policy.shortlist_model.promotion_gate explicitly."
+        )
 
     def _rank_model_summaries(self, summaries: pd.DataFrame) -> pd.DataFrame:
         if summaries.empty:

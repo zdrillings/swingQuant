@@ -517,7 +517,7 @@ class ScanServiceTests(unittest.TestCase):
              patch("src.scan.service.latest_snapshot", return_value=snapshot), \
              patch("src.scan.service.filter_signal_candidates", return_value=pd.DataFrame()), \
              patch("src.scan.service.get_settings", return_value=settings), \
-             patch("src.scan.service.load_feature_config", return_value={"scan_policy": {"max_candidates_total": 1, "max_candidates_per_slot": 1, "max_candidates_per_sector": 1, "min_opportunity_score": 0.55}}), \
+             patch("src.scan.service.load_feature_config", return_value={"scan_policy": {"max_candidates_total": 1, "max_candidates_per_slot": 1, "max_candidates_per_sector": 1, "min_opportunity_score": 0.55, "shortlist_model": {"enabled": True, "use_as_candidate_source": True}}}), \
              patch("src.scan.service.load_active_strategies", return_value={"energy": strategy}), \
              patch("src.scan.service.load_live_shortlist_model_context", return_value=model_context):
             report = service.run()
@@ -597,7 +597,7 @@ class ScanServiceTests(unittest.TestCase):
              patch("src.scan.service.latest_snapshot", return_value=snapshot), \
              patch("src.scan.service.filter_signal_candidates", return_value=snapshot[snapshot["ticker"] == "AAA"].copy()), \
              patch("src.scan.service.get_settings", return_value=settings), \
-             patch("src.scan.service.load_feature_config", return_value={"scan_policy": {"max_candidates_total": 1, "max_candidates_per_slot": 1, "max_candidates_per_sector": 1, "min_opportunity_score": 0.0}}), \
+             patch("src.scan.service.load_feature_config", return_value={"scan_policy": {"max_candidates_total": 1, "max_candidates_per_slot": 1, "max_candidates_per_sector": 1, "min_opportunity_score": 0.0, "shortlist_model": {"allow_heuristic_fallback": True}}}), \
              patch("src.scan.service.load_active_strategies", return_value={"energy": strategy}), \
              patch("src.scan.service.load_live_shortlist_model_context", return_value=model_context):
             report = service.run()
@@ -611,6 +611,73 @@ class ScanServiceTests(unittest.TestCase):
         self.assertIn("<h2>Data Freshness</h2>", html)
         self.assertIn("Shortlist model</td><td>2026-06-05</td><td>WARN</td>", html)
         self.assertIn("Model snapshot is stale and was ignored", html)
+
+    def test_scan_refuses_heuristic_fallback_when_model_source_is_required(self) -> None:
+        class FakeDB:
+            def initialize(self): return None
+            def list_universe_rows(self, active_only=True):
+                return [{"ticker": "AAA", "sector": "Energy", "md_volume_30d": 40_000_000}]
+            def load_price_history(self, tickers): return pd.DataFrame()
+            def list_open_trades(self): return []
+
+        service = ScanService(FakeDB(), email_sender=lambda subject, html_body, settings: None)
+        snapshot = pd.DataFrame(
+            [
+                {
+                    "ticker": "AAA",
+                    "date": pd.Timestamp("2026-05-19"),
+                    "sector": "Energy",
+                    "regime_green": True,
+                    "regime_etf": "SPY",
+                    "adj_close": 50.0,
+                    "atr_14": 2.0,
+                    "md_volume_30d": 40_000_000,
+                    "roc_63": 0.12,
+                    "relative_strength_index_vs_spy": 85.0,
+                    "vol_alpha": 1.2,
+                    "sma_200_dist": 0.12,
+                    "sma_50_dist": 0.08,
+                    "rsi_14": 50.0,
+                    "sector_pct_above_50": 0.8,
+                    "sector_pct_above_200": 0.8,
+                    "sector_median_roc_63": 0.08,
+                },
+            ]
+        )
+        settings = RuntimeSettings(
+            paths=AppPaths(
+                root_dir=Path("."),
+                data_dir=Path("data"),
+                duckdb_path=Path("data/market_data.duckdb"),
+                sqlite_path=Path("data/ledger.sqlite"),
+                reports_dir=Path("reports"),
+                logs_dir=Path("logs"),
+                config_path=Path("config.yaml"),
+                env_path=Path(".env"),
+                production_strategy_path=Path("production_strategy.json"),
+            ),
+            env={},
+            total_capital=50_000.0,
+            risk_per_trade=0.02,
+        )
+        strategy = ProductionStrategy(
+            strategy_id=1,
+            promoted_at="2026-05-05T17:00:00",
+            indicators={"rsi_14_max": 55.0},
+            exit_rules=ExitRules(0.05, 0.12, 20),
+            slot="energy",
+            sector="Energy",
+        )
+
+        with patch.object(service, "_download_recent_daily_history", return_value=pd.DataFrame()), \
+             patch("src.scan.service.build_analysis_frame", return_value=(pd.DataFrame(), [])), \
+             patch("src.scan.service.latest_snapshot", return_value=snapshot), \
+             patch("src.scan.service.get_settings", return_value=settings), \
+             patch("src.scan.service.load_feature_config", return_value={"scan_policy": {"shortlist_model": {"enabled": True, "use_as_candidate_source": True, "allow_heuristic_fallback": False}}}), \
+             patch("src.scan.service.load_active_strategies", return_value={"energy": strategy}), \
+             patch("src.scan.service.load_live_shortlist_model_context", return_value=None):
+            with self.assertRaisesRegex(ValueError, "no current model context"):
+                service.run()
 
     def test_data_freshness_html_summarizes_warnings(self) -> None:
         service = ScanService(db_manager=None, email_sender=lambda subject, html_body, settings: None)
@@ -793,6 +860,7 @@ class ScanServiceTests(unittest.TestCase):
                     "sector": "Energy",
                     "regime_etf": "SPY",
                     "selection_score": 0.70,
+                    "model_predicted_alpha": 0.12,
                     "opportunity_score": -0.20,
                     "overlap_penalty": 1.0,
                     "signal_score": 0.0,
@@ -812,6 +880,7 @@ class ScanServiceTests(unittest.TestCase):
                     "sub_industry": "Oil & Gas Exploration & Production",
                     "regime_etf": "SPY",
                     "selection_score": 0.90,
+                    "model_predicted_alpha": 0.18,
                     "opportunity_score": 0.85,
                     "overlap_penalty": 0.0,
                     "signal_score": 0.0,
@@ -867,6 +936,66 @@ class ScanServiceTests(unittest.TestCase):
         self.assertIn("Strongest unheld: BBB", html)
         self.assertIn("Open holdings not in candidate set: ZZZ", html)
         self.assertIn("<td>AAA</td><td>held</td><td>not selected</td><td>0.80</td>", html)
+
+    def test_evening_brief_does_not_display_heuristic_score_as_model_alpha(self) -> None:
+        class FakeDB:
+            pass
+
+        service = ScanService(FakeDB(), email_sender=lambda subject, html_body, settings: None)
+        policy = ScanPolicy.from_config({"scan_policy": {"max_candidates_total": 2, "min_opportunity_score": 0.0}})
+        strategy = ProductionStrategy(
+            strategy_id=1,
+            promoted_at="2026-05-05T17:00:00",
+            indicators={"signal_score_min": 30.0},
+            exit_rules=ExitRules(0.05, 0.12, 20),
+            slot="materials",
+            sector="Materials",
+        )
+        all_candidates = pd.DataFrame(
+            [
+                {
+                    "ticker": "AAA",
+                    "strategy_slot": "materials",
+                    "strategy_sector": "Materials",
+                    "sector": "Materials",
+                    "sub_industry": "Specialty Chemicals",
+                    "regime_etf": "SPY",
+                    "selection_score": 38.0,
+                    "opportunity_score": 0.75,
+                    "overlap_penalty": 0.0,
+                    "signal_score": 38.0,
+                    "md_volume_30d": 120_000_000,
+                    "already_owned": False,
+                    "selected": 1,
+                    "setup_quality_score": 0.0,
+                    "expected_alpha_score": 0.9,
+                    "breadth_score": 0.7,
+                    "freshness_score": 0.6,
+                },
+            ]
+        )
+        selected = all_candidates.copy()
+        selected["adj_close"] = 50.0
+        selected["shares"] = 10
+        selected["atr_14"] = 2.0
+
+        html = service._build_email_html(
+            selected,
+            policy,
+            {"materials": strategy},
+            earnings_lookup={},
+            all_candidates=all_candidates,
+            open_trade_tickers=set(),
+            open_trades=[],
+        )
+
+        self.assertIn("<h2>Current Target Dashboard</h2>", html)
+        self.assertIn(
+            "No candidates currently clear the 0.40 pre-penalty opportunity floor with positive model alpha.",
+            html,
+        )
+        self.assertNotIn("+3800.00%", html)
+        self.assertNotIn("+3,800.00%", html)
 
     def test_evening_brief_renders_analyst_target_context(self) -> None:
         class FakeDB:

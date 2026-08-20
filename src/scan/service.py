@@ -62,6 +62,7 @@ class ShortlistModelPolicy:
     recent_dates: int
     refresh_if_stale: bool
     use_as_candidate_source: bool
+    allow_heuristic_fallback: bool
     eligible_universe_mode: str
     production_eligible_universe_mode: str
     production_model_scope: str
@@ -125,6 +126,7 @@ class ScanPolicy:
         candidate_quality_throttle = policy.get("candidate_quality_throttle", {})
         slot_selection_overlay = policy.get("slot_selection_overlay", {})
         raw_overlay_weights = slot_selection_overlay.get("slot_weights", {})
+        shortlist_model_configured = "shortlist_model" in policy
         shortlist_model = policy.get("shortlist_model", {})
         return cls(
             max_candidates_total=int(policy.get("max_candidates_total", 6)),
@@ -186,7 +188,7 @@ class ScanPolicy:
                 if isinstance(weights, dict)
             } if isinstance(raw_overlay_weights, dict) else {},
             shortlist_model=ShortlistModelPolicy(
-                enabled=bool(shortlist_model.get("enabled", True)),
+                enabled=bool(shortlist_model.get("enabled", shortlist_model_configured)),
                 horizon_days=int(shortlist_model.get("horizon_days", 20)),
                 top_n=int(shortlist_model.get("top_n", 10)),
                 min_opportunity_score=float(shortlist_model.get("min_opportunity_score", 0.30)),
@@ -194,7 +196,8 @@ class ScanPolicy:
                 test_window_dates=int(shortlist_model.get("test_window_dates", 20)),
                 recent_dates=int(shortlist_model.get("recent_dates", 60)),
                 refresh_if_stale=bool(shortlist_model.get("refresh_if_stale", True)),
-                use_as_candidate_source=bool(shortlist_model.get("use_as_candidate_source", True)),
+                use_as_candidate_source=bool(shortlist_model.get("use_as_candidate_source", shortlist_model_configured)),
+                allow_heuristic_fallback=bool(shortlist_model.get("allow_heuristic_fallback", False)),
                 eligible_universe_mode=str(shortlist_model.get("eligible_universe_mode", "passed_only")),
                 production_eligible_universe_mode=str(
                     shortlist_model.get(
@@ -286,6 +289,16 @@ class ScanService:
             shortlist_model_context is not None
             and scan_policy.shortlist_model.use_as_candidate_source
         )
+        if (
+            scan_policy.shortlist_model.enabled
+            and scan_policy.shortlist_model.use_as_candidate_source
+            and shortlist_model_context is None
+            and not scan_policy.shortlist_model.allow_heuristic_fallback
+        ):
+            raise ValueError(
+                "Shortlist model candidate source is enabled, but no current model context passed freshness/promotion gates. "
+                "Run `sq shortlist-model` from the nightly pipeline and inspect reports/shortlist_model.md."
+            )
         if use_model_candidate_source:
             candidates = self._build_shortlist_model_candidates(
                 snapshot=snapshot,
@@ -296,6 +309,11 @@ class ScanService:
                 settings=settings,
             )
             if candidates.empty:
+                if not scan_policy.shortlist_model.allow_heuristic_fallback:
+                    raise ValueError(
+                        "Shortlist model context loaded, but none of its live predictions mapped to active scan slots. "
+                        "Refusing to emit heuristic picks while model candidate source is required."
+                    )
                 self.logger.warning(
                     "Shortlist model context loaded but produced zero candidates; falling back to heuristic path."
                 )
@@ -714,7 +732,7 @@ class ScanService:
         if all_candidates is not None and not all_candidates.empty:
             working = all_candidates.copy()
             if "model_predicted_alpha" not in working.columns:
-                working["model_predicted_alpha"] = working.get("selection_score", 0.0)
+                working["model_predicted_alpha"] = pd.NA
             working["pre_penalty_opportunity_score"] = (
                 pd.to_numeric(working.get("opportunity_score", 0.0), errors="coerce").fillna(float("-inf"))
                 + pd.to_numeric(working.get("overlap_penalty", 0.0), errors="coerce").fillna(0.0)
@@ -1054,6 +1072,7 @@ class ScanService:
                 test_window_dates=scan_policy.shortlist_model.test_window_dates,
                 recent_dates=scan_policy.shortlist_model.recent_dates,
                 refresh_if_stale=scan_policy.shortlist_model.refresh_if_stale,
+                allow_refresh=False,
                 eligible_universe_mode=scan_policy.shortlist_model.production_eligible_universe_mode,
                 model_scope=scan_policy.shortlist_model.production_model_scope,
                 preferred_model_name=scan_policy.shortlist_model.production_model_name,
@@ -1779,10 +1798,6 @@ class ScanService:
         )
         working["selection_score"] = pd.to_numeric(working["selection_score"], errors="coerce")
         working["model_predicted_alpha"] = pd.to_numeric(working["model_predicted_alpha"], errors="coerce")
-        working["model_predicted_alpha"] = working["model_predicted_alpha"].where(
-            working["model_predicted_alpha"].notna(),
-            working["selection_score"],
-        )
         working["theme_exposure"] = working.apply(lambda row: self._ai_buildout_exposure(row), axis=1)
         trade_lookup = self._open_trade_lookup(open_trades or [])
         held_tickers = set(trade_lookup)
@@ -1905,7 +1920,7 @@ class ScanService:
         if "selection_score" not in working.columns:
             working["selection_score"] = working.get("signal_score", 0.0)
         if "model_predicted_alpha" not in working.columns:
-            working["model_predicted_alpha"] = working["selection_score"]
+            working["model_predicted_alpha"] = pd.NA
         if "model_reason_summary" not in working.columns:
             working["model_reason_summary"] = pd.NA
         if "details_json" in working.columns:

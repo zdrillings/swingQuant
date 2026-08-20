@@ -106,6 +106,7 @@ class ScanPerformanceService:
             f"- scan_date_max: {max(scoped_dates).date()}",
             "",
         ]
+        lines.extend(self._render_selection_source_coverage(enriched))
         lines.extend(self._render_horizon_summary(enriched, horizons=horizons, benchmark=benchmark))
         lines.extend(self._render_20d_timeframe_summary(enriched, benchmark=benchmark))
         lines.extend(self._render_20d_score_bands(enriched, benchmark=benchmark))
@@ -209,6 +210,28 @@ class ScanPerformanceService:
                 return filtered.iloc[0:0].copy()
             filtered = filtered[filtered[column].astype(str) == str(value)].copy()
         return filtered
+
+    def _render_selection_source_coverage(self, enriched: pd.DataFrame) -> list[str]:
+        lines = ["## Selection Source Coverage", ""]
+        if enriched.empty or "selection_source" not in enriched.columns:
+            lines.extend(["No selection source metadata is available.", ""])
+            return lines
+        counts = (
+            enriched["selection_source"]
+            .fillna("unknown")
+            .astype(str)
+            .replace({"": "unknown"})
+            .value_counts()
+            .sort_index()
+        )
+        total = int(counts.sum())
+        for source, count in counts.items():
+            pct = (float(count) / total) if total else 0.0
+            lines.append(f"- {source}: {int(count)} ({pct:.1%})")
+        if "shortlist_model" not in counts.index:
+            lines.append("- warning: no selected picks in this report window are model-attributed.")
+        lines.append("")
+        return lines
 
     def _normalize_benchmark(self, benchmark: str) -> str:
         normalized = str(benchmark or "sector").strip().lower()

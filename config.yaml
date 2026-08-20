@@ -352,10 +352,11 @@ scan_policy:
     recent_dates: 60
     refresh_if_stale: true
     use_as_candidate_source: true
+    allow_heuristic_fallback: false
     eligible_universe_mode: passed_only
     production_eligible_universe_mode: passed_or_trend
     production_model_scope: sector_specific
-    production_xgboost_config: baseline
+    production_xgboost_config: balanced_depth4
     promotion_gate:
       enabled: true
       min_recent_20d_hit_rate: 0.50
