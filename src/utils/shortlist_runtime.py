@@ -112,8 +112,14 @@ def load_live_shortlist_model_context(
         details = live_predictions["details_json"].apply(_parse_prediction_details)
         live_predictions["model_top_reasons"] = details.apply(lambda payload: payload.get("model_top_reasons", []))
         live_predictions["model_reason_summary"] = details.apply(lambda payload: payload.get("model_reason_summary"))
+        live_predictions["calibrated_p_beat_sector"] = pd.to_numeric(
+            details.apply(lambda payload: payload.get("calibrated_p_beat_sector")),
+            errors="coerce",
+        )
+    if "calibrated_p_beat_sector" not in live_predictions.columns:
+        live_predictions["calibrated_p_beat_sector"] = np.nan
     live_predictions = live_predictions.sort_values(
-        ["predicted_alpha", "md_volume_30d", "ticker"],
+        ["calibrated_p_beat_sector", "predicted_alpha", "ticker"],
         ascending=[False, False, True],
     ).reset_index(drop=True)
     live_predictions["model_rank"] = range(1, len(live_predictions.index) + 1)
@@ -133,6 +139,12 @@ def load_live_shortlist_model_context(
         )
         if not oos_predictions.empty:
             oos_predictions["snapshot_date"] = pd.to_datetime(oos_predictions["snapshot_date"]).dt.normalize()
+            if "details_json" in oos_predictions.columns:
+                oos_details = oos_predictions["details_json"].apply(_parse_prediction_details)
+                oos_predictions["calibrated_p_beat_sector"] = pd.to_numeric(
+                    oos_details.apply(lambda payload: payload.get("calibrated_p_beat_sector")),
+                    errors="coerce",
+                )
             oos_dates = sorted(oos_predictions["snapshot_date"].drop_duplicates().tolist())
             for window in recent_metrics:
                 recent_oos_dates = oos_dates[-window:] if len(oos_dates) >= window else oos_dates
@@ -167,7 +179,12 @@ def _score_recent_oos_basket(frame: pd.DataFrame) -> dict[str, float | None]:
     daily_universe = []
     pick_actuals = []
     for _snap_date, day_frame in frame.groupby("snapshot_date", sort=True):
-        ordered = day_frame.sort_values("predicted_alpha", ascending=False)
+        sort_columns = ["predicted_alpha"]
+        ascending = [False]
+        if "calibrated_p_beat_sector" in day_frame.columns and day_frame["calibrated_p_beat_sector"].notna().any():
+            sort_columns = ["calibrated_p_beat_sector", "predicted_alpha"]
+            ascending = [False, False]
+        ordered = day_frame.sort_values(sort_columns, ascending=ascending)
         picks = ordered.head(CONFIDENCE_BASKET_SIZE)
         actual = pd.to_numeric(picks["actual_alpha_vs_sector"], errors="coerce").dropna()
         universe = pd.to_numeric(day_frame["actual_alpha_vs_sector"], errors="coerce").dropna()

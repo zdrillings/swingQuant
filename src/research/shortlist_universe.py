@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pandas as pd
 
 
@@ -50,11 +52,14 @@ def filter_eligible_universe(frame: pd.DataFrame, *, eligible_universe_mode: str
     working = frame.copy()
     working["md_volume_30d"] = pd.to_numeric(working.get("md_volume_30d"), errors="coerce")
     working["adj_close"] = pd.to_numeric(working.get("adj_close"), errors="coerce")
-    passed_any_strategy = (
-        working["passed_any_strategy"]
-        if "passed_any_strategy" in working.columns
-        else pd.Series(False, index=working.index)
-    )
+    if "passed_slots_json" in working.columns:
+        passed_any_strategy = working["passed_slots_json"].apply(_has_historical_passed_slot)
+    else:
+        passed_any_strategy = (
+            working["passed_any_strategy"]
+            if "passed_any_strategy" in working.columns
+            else pd.Series(False, index=working.index)
+        )
     working["passed_any_strategy"] = passed_any_strategy.fillna(False).astype(bool)
 
     base_mask = working["md_volume_30d"].ge(20_000_000.0) & working["adj_close"].gt(0.0)
@@ -81,3 +86,24 @@ def filter_eligible_universe(frame: pd.DataFrame, *, eligible_universe_mode: str
         & working["relative_strength_index_vs_spy"].ge(60.0)
     )
     return working.loc[base_mask & (working["passed_any_strategy"] | trend_mask)].copy()
+
+
+def _has_historical_passed_slot(value) -> bool:
+    if value is None or pd.isna(value):
+        return False
+    if isinstance(value, (list, tuple, set)):
+        return len(value) > 0
+    if isinstance(value, dict):
+        return bool(value)
+    text = str(value).strip()
+    if not text or text in {"[]", "{}", "null", "None"}:
+        return False
+    try:
+        payload = json.loads(text)
+    except (TypeError, ValueError):
+        return bool(text)
+    if isinstance(payload, dict):
+        return bool(payload)
+    if isinstance(payload, list):
+        return len(payload) > 0
+    return bool(payload)

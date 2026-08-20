@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -56,6 +57,30 @@ class ShortlistModelServiceTests(unittest.TestCase):
 
         self.assertEqual(sorted(passed_only["ticker"].tolist()), ["AAA"])
         self.assertEqual(sorted(passed_or_trend["ticker"].tolist()), ["AAA", "BBB"])
+
+    def test_filter_eligible_universe_prefers_historical_passed_slots_json(self) -> None:
+        frame = pd.DataFrame(
+            [
+                {
+                    "ticker": "AAA",
+                    "passed_any_strategy": 0,
+                    "passed_slots_json": '["energy"]',
+                    "md_volume_30d": 30_000_000.0,
+                    "adj_close": 100.0,
+                },
+                {
+                    "ticker": "BBB",
+                    "passed_any_strategy": 1,
+                    "passed_slots_json": "[]",
+                    "md_volume_30d": 30_000_000.0,
+                    "adj_close": 100.0,
+                },
+            ]
+        )
+
+        passed_only = filter_eligible_universe(frame, eligible_universe_mode="passed_only")
+
+        self.assertEqual(passed_only["ticker"].tolist(), ["AAA"])
 
     def test_model_reason_summary_uses_relative_language(self) -> None:
         service = ShortlistModelService(db_manager=object())
@@ -297,6 +322,113 @@ class ShortlistModelServiceTests(unittest.TestCase):
             context.live_predictions.iloc[0]["model_comparison_summary"],
             "BBB in Energy on strong 63d momentum",
         )
+
+    def test_walk_forward_predictions_use_sparse_horizon_spaced_oos_dates(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        dates = pd.bdate_range("2026-01-02", periods=30)
+        rows = []
+        for date_index, snapshot_date in enumerate(dates):
+            for ticker in ("AAA", "BBB"):
+                rows.append(
+                    {
+                        "snapshot_date": snapshot_date,
+                        "ticker": ticker,
+                        "sector": "Energy",
+                        "md_volume_30d": 50_000_000.0,
+                        "relative_strength_index_vs_spy": 70.0 + date_index,
+                        "roc_63": 0.1,
+                        "sma_200_dist": 0.1,
+                        "vol_alpha": 1.0,
+                        "alpha_vs_sector_20d": 0.01,
+                    }
+                )
+        frame = pd.DataFrame(rows)
+
+        predictions = service._walk_forward_predictions(
+            frame,
+            target_column="alpha_vs_sector_20d",
+            model_name="signal_proxy",
+            min_train_dates=5,
+            test_window_dates=2,
+            model_scope="global",
+            evaluation_stride_dates=10,
+        )
+
+        self.assertIsNotNone(predictions)
+        assert predictions is not None
+        self.assertEqual(len(predictions["snapshot_date"].drop_duplicates()), 3)
+
+    def test_shortlist_model_writes_failure_report_when_no_candidate_passes_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            paths = AppPaths(
+                root_dir=root,
+                data_dir=root / "data",
+                duckdb_path=root / "data" / "market_data.duckdb",
+                sqlite_path=root / "data" / "ledger.sqlite",
+                reports_dir=root / "reports",
+                logs_dir=root / "logs",
+                config_path=root / "config.yaml",
+                env_path=root / ".env",
+                production_strategy_path=root / "production_strategy.json",
+                production_strategies_path=root / "production_strategies.json",
+            )
+            paths.reports_dir.mkdir(parents=True, exist_ok=True)
+            paths.logs_dir.mkdir(parents=True, exist_ok=True)
+            dates = pd.bdate_range("2026-01-02", periods=10)
+            rows = []
+            for date_index, snapshot_date in enumerate(dates):
+                for ticker_index, ticker in enumerate(("AAA", "BBB")):
+                    row = {
+                        "snapshot_date": snapshot_date.strftime("%Y-%m-%d"),
+                        "ticker": ticker,
+                        "sector": "Energy",
+                        "passed_any_strategy": 1,
+                        "passed_slots_json": '["energy"]',
+                        "md_volume_30d": 50_000_000.0,
+                        "adj_close": 100.0,
+                        "alpha_vs_sector_20d": 0.01 * (ticker_index + 1),
+                    }
+                    for feature_index, column in enumerate(MODEL_FEATURE_COLUMNS):
+                        row[column] = float(feature_index + ticker_index + date_index)
+                    rows.append(row)
+
+            class FakeDB:
+                def __init__(self, paths, snapshot_frame):
+                    self.paths = paths
+                    self._snapshot_frame = snapshot_frame
+
+                def initialize(self): return None
+                def load_universe_daily_snapshots(self, snapshot_date=None):
+                    return self._snapshot_frame.copy()
+
+            gate = {
+                "scan_policy": {
+                    "shortlist_model": {
+                        "promotion_gate": {
+                            "enabled": True,
+                            "min_recent_20d_hit_rate": 1.01,
+                            "min_recent_20d_beat_universe_rate": 1.01,
+                            "min_recent_20d_mean_target": 1.01,
+                            "min_recent_60d_hit_rate": 1.01,
+                            "min_recent_60d_beat_universe_rate": 1.01,
+                            "min_recent_60d_mean_target": 1.01,
+                        }
+                    }
+                }
+            }
+            service = ShortlistModelService(FakeDB(paths, pd.DataFrame(rows)))
+
+            with patch("src.research.shortlist_model_service.load_feature_config", return_value=gate), \
+                 patch.object(service, "_score_xgboost_model", return_value=None), \
+                 self.assertRaisesRegex(ValueError, "No shortlist model candidate passed"):
+                service.run(top_n=1, min_train_dates=4, test_window_dates=2)
+
+            report_text = (paths.reports_dir / "shortlist_model.md").read_text(encoding="utf-8")
+            self.assertIn("## Promotion Failure", report_text)
+            self.assertIn("- selected_model: n/a", report_text)
+            self.assertIn("- oos_evaluation_stride_dates: 20", report_text)
+            self.assertTrue((paths.reports_dir / "shortlist_model_oos_predictions.csv").exists())
 
     def test_runtime_loader_does_not_refresh_stale_model_without_explicit_permission(self) -> None:
         class FakeDB:

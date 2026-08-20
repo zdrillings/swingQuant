@@ -430,6 +430,8 @@ class ScanService:
             candidates["model_predicted_alpha"] = pd.NA
         if "model_rank" not in candidates.columns:
             candidates["model_rank"] = pd.NA
+        if "calibrated_p_beat_sector" not in candidates.columns:
+            candidates["calibrated_p_beat_sector"] = pd.NA
         if "model_generated_at" not in candidates.columns:
             candidates["model_generated_at"] = pd.NA
         if "model_name" not in candidates.columns:
@@ -578,6 +580,8 @@ class ScanService:
         if predictions.empty:
             return snapshot.iloc[0:0].copy()
         prediction_columns = ["ticker", "predicted_alpha", "model_rank"]
+        if "calibrated_p_beat_sector" in shortlist_model_context.live_predictions.columns:
+            prediction_columns.append("calibrated_p_beat_sector")
         if "model_reason_summary" in predictions.columns:
             prediction_columns.append("model_reason_summary")
         if "model_comparison_summary" in predictions.columns:
@@ -593,7 +597,14 @@ class ScanService:
         if merged.empty:
             return merged
         merged["model_predicted_alpha"] = pd.to_numeric(merged["model_predicted_alpha"], errors="coerce")
-        merged["selection_score"] = merged["model_predicted_alpha"]
+        if "calibrated_p_beat_sector" in merged.columns:
+            merged["calibrated_p_beat_sector"] = pd.to_numeric(merged["calibrated_p_beat_sector"], errors="coerce")
+            merged["selection_score"] = merged["calibrated_p_beat_sector"].where(
+                merged["calibrated_p_beat_sector"].notna(),
+                merged["model_predicted_alpha"],
+            )
+        else:
+            merged["selection_score"] = merged["model_predicted_alpha"]
         merged["selection_source"] = "shortlist_model"
         merged["model_generated_at"] = shortlist_model_context.generated_at
         merged["model_name"] = shortlist_model_context.champion_model
@@ -1250,12 +1261,15 @@ class ScanService:
                 "predicted_alpha",
                 "model_predicted_alpha",
                 "model_rank",
+                "calibrated_p_beat_sector",
                 "model_reason_summary",
                 "model_comparison_summary",
             ],
             errors="ignore",
         )
         prediction_columns = ["ticker", "predicted_alpha", "model_rank"]
+        if "calibrated_p_beat_sector" in shortlist_model_context.live_predictions.columns:
+            prediction_columns.append("calibrated_p_beat_sector")
         if "model_reason_summary" in shortlist_model_context.live_predictions.columns:
             prediction_columns.append("model_reason_summary")
         if "model_comparison_summary" in shortlist_model_context.live_predictions.columns:
@@ -1266,7 +1280,11 @@ class ScanService:
             }
         )
         merged = scored.merge(predictions, on="ticker", how="left")
-        merged["selection_score"] = pd.to_numeric(merged["model_predicted_alpha"], errors="coerce")
+        if "calibrated_p_beat_sector" in merged.columns:
+            merged["calibrated_p_beat_sector"] = pd.to_numeric(merged["calibrated_p_beat_sector"], errors="coerce")
+            merged["selection_score"] = merged["calibrated_p_beat_sector"]
+        else:
+            merged["selection_score"] = pd.to_numeric(merged["model_predicted_alpha"], errors="coerce")
         fallback_selection = merged.get("selection_score")
         if fallback_selection is None:
             if "signal_score" in merged.columns:
@@ -1308,6 +1326,7 @@ class ScanService:
             "selection_source",
             "model_predicted_alpha",
             "model_rank",
+            "calibrated_p_beat_sector",
             "model_generated_at",
             "model_name",
             "model_reason_summary",
@@ -1327,6 +1346,7 @@ class ScanService:
             "ranker_top_positive_reasons",
             "ranker_top_negative_reasons",
         ]
+        metadata_columns = [column for column in metadata_columns if column in candidates.columns]
         persisted = persisted_candidates.drop(columns=metadata_columns, errors="ignore")
         return persisted.merge(
             candidates[

@@ -91,7 +91,9 @@ The shortlist model is the core prediction engine. It evaluates multiple candida
 - **Features**: 47 raw features from `universe_daily_snapshots` (including `rsi_2`, `ret_1d`, `ret_5d`, `close_vs_20d_low` mean-reversion features), each with `__rank_all` and `__rank_sector` cross-sectional rank variants, plus sector one-hot dummies (~150 total features)
 - **Macro features**: `spy_roc_20`, `spy_roc_5`, `spy_realized_vol_20`, `qqq_roc_20` — computed from SPY/QQQ price history, populated across all snapshot dates via DuckDB SQL
 - **Binary target**: `alpha_vs_sector_20d_pos` — computed on-the-fly from matured `alpha_vs_sector_20d` if not yet backfilled, or stored in DuckDB; missing alpha stays missing
-- **Validation**: Expanding-window walk-forward, 252 min train dates, 20-day test windows, chronological split only
+- **Validation**: Expanding-window walk-forward, 252 min train dates, horizon-spaced OOS snapshot dates (`oos_evaluation_stride_dates=20` for 20d target), chronological split only
+- **Eligibility**: use historical `passed_slots_json` when available so the research universe reflects what passed on that snapshot date
+- **Calibration**: OOS predictions are calibrated to `calibrated_p_beat_sector`; live selection ranks by calibrated probability when available, then raw predicted alpha
 - **Model scopes**: `global` (single model), `sector_specific` (per-sector with fallback), `regime_specific` (2 regimes: trending when `spy_roc_20 > 1%` else choppy; uses `regime_green` when macro features unavailable)
 - **Champion selection**: selected from model summaries and recent acceptance windows; it must not be hardcoded to the latest experiment
 - **Feature purging**: For L1 models, zero-coefficient features are dropped and the model is re-fit on the reduced set (per-fold, honest)
@@ -114,7 +116,7 @@ The model's evaluation product is its **top-2 predictions**, not the full top-10
 - Uses explicit `production_model_name` only when configured; otherwise uses the persisted `champion_model`
 - Returns no model context when the selected model fails `scan_policy.shortlist_model.promotion_gate`
 - Heuristic fallback is a diagnostic escape hatch, not the production default.
-- Confidence metrics (`recent_20d_beat_rate`, `recent_20d_mean_target`) are computed from the top-2 OOS basket and threaded into the quality gate
+- Confidence metrics (`recent_20d_beat_rate`, `recent_20d_mean_target`) are computed from the top-2 OOS basket, sorted by calibrated probability when present, and threaded into the quality gate
 - Model path selects at most 2 candidates; rotation exclusion removes the previous 3 scan dates' picks when the cap is below the configured total
 
 ## Command Behavior Expectations

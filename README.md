@@ -470,6 +470,9 @@ Key characteristics:
 
 - **Target**: `alpha_vs_sector_20d` or `alpha_vs_sector_20d_pos`; missing forward alpha remains missing and is not converted into a negative label
 - **Selection**: the champion is selected from model summaries, not hardcoded
+- **Honest OOS cadence**: 20d shortlist evaluation scores one OOS snapshot every 20 trading days to reduce overlapping-label inflation
+- **Historical eligibility**: model research prefers `passed_slots_json` when available, so the universe reflects what passed on each snapshot date
+- **Calibration**: OOS predictions are converted to `calibrated_p_beat_sector`; live scan ranking uses calibrated probability when available, then raw predicted alpha
 - **Runtime override**: `scan_policy.shortlist_model.production_model_name`, when set, explicitly selects a preferred model; when omitted, runtime uses the persisted champion
 - **No runtime retraining**: `sq scan` loads persisted model runs and predictions; model training belongs in `sq shortlist-model`
 - **Promotion gate**: model-driven scan picks are unavailable unless recent top-2 OOS metrics pass `scan_policy.shortlist_model.promotion_gate`

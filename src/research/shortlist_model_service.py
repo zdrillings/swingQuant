@@ -113,6 +113,7 @@ class ShortlistModelService:
                 model_name=model_name,
                 min_train_dates=int(min_train_dates),
                 test_window_dates=int(test_window_dates),
+                evaluation_stride_dates=max(int(horizon_days), 1),
                 model_scope=model_scope,
                 xgboost_params=xgboost_params if model_name == "xgboost_model" else None,
             )
@@ -125,6 +126,27 @@ class ShortlistModelService:
         if not model_predictions:
             raise ValueError("No shortlist models produced out-of-sample predictions.")
 
+        report_path = self.db_manager.paths.reports_dir / "shortlist_model.md"
+        oos_path = self.db_manager.paths.reports_dir / "shortlist_model_oos_predictions.csv"
+        live_path = self.db_manager.paths.reports_dir / "shortlist_model_live_predictions.csv"
+        generated_at = datetime.now(UTC).replace(microsecond=0).isoformat()
+        combined_predictions = pd.concat(
+            [
+                predictions.assign(model_name=model_name, dataset_split="oos")
+                for model_name, predictions in model_predictions.items()
+            ],
+            axis=0,
+            ignore_index=True,
+        )
+        combined_predictions = self._annotate_calibrated_probabilities(
+            combined_predictions,
+            target_column=target_column,
+        )
+        for model_name, predictions in list(model_predictions.items()):
+            model_predictions[model_name] = self._annotate_calibrated_probabilities(
+                predictions,
+                target_column=target_column,
+            )
         full_summaries = pd.DataFrame(
             [
                 self._evaluate_predictions(
@@ -163,11 +185,41 @@ class ShortlistModelService:
                 ).to_dict(orient="records")
             ]
         )
-        champion_model, champion_gate_passed = self._choose_champion_model(
-            full_summaries=full_summaries,
-            acceptance_summaries=acceptance_summaries,
-            promotion_gate=promotion_gate,
-        )
+        try:
+            champion_model, champion_gate_passed = self._choose_champion_model(
+                full_summaries=full_summaries,
+                acceptance_summaries=acceptance_summaries,
+                promotion_gate=promotion_gate,
+            )
+        except ValueError as exc:
+            combined_predictions.to_csv(oos_path, index=False)
+            lines = self._build_report_lines(
+                target_column=target_column,
+                top_n=int(top_n),
+                eligible_universe_mode=eligible_universe_mode,
+                model_scope=model_scope,
+                candidate_models=tuple(model_predictions.keys()),
+                selected_model="n/a",
+                selected_model_gate_passed=False,
+                xgboost_config=xgboost_config,
+                min_train_dates=int(min_train_dates),
+                test_window_dates=int(test_window_dates),
+                evaluation_stride_dates=max(int(horizon_days), 1),
+                eligible_rows=len(matured.index),
+                eligible_dates=int(matured["snapshot_date"].nunique()),
+                oos_prediction_dates=int(combined_predictions["snapshot_date"].nunique()),
+                oos_path=oos_path,
+                live_path=live_path,
+                generated_at=generated_at,
+                full_summaries=full_summaries,
+                recent_summaries=recent_summaries,
+                recent_dates=min(int(recent_dates), int(combined_predictions["snapshot_date"].nunique())),
+                promotion_gate=promotion_gate,
+                acceptance_summaries=acceptance_summaries,
+                failure_reason=str(exc),
+            )
+            report_path.write_text("\n".join(lines), encoding="utf-8")
+            raise
 
         live_base_predictions: dict[str, pd.DataFrame] = {}
         for model_name in candidate_models:
@@ -183,63 +235,54 @@ class ShortlistModelService:
                 xgboost_params=xgboost_params if model_name == "xgboost_model" else None,
             )
             if scored is not None and not scored.empty:
+                scored = self._apply_calibration_from_oos(
+                    scored,
+                    model_predictions.get(model_name, pd.DataFrame()),
+                    target_column=target_column,
+                )
                 live_base_predictions[model_name] = scored
         live_ensemble_predictions = self._build_ensemble_predictions(live_base_predictions)
         if live_ensemble_predictions is not None:
+            live_ensemble_predictions = self._apply_calibration_from_oos(
+                live_ensemble_predictions,
+                model_predictions.get("ensemble_model", pd.DataFrame()),
+                target_column=target_column,
+            )
             live_base_predictions["ensemble_model"] = live_ensemble_predictions
         live_predictions_all = live_base_predictions.get(champion_model)
         if live_predictions_all is None:
             raise ValueError(f"No live predictions available for champion_model={champion_model}.")
         live_predictions = live_predictions_all.sort_values(
-            ["predicted_alpha", "md_volume_30d", "ticker"],
+            ["calibrated_p_beat_sector", "predicted_alpha", "ticker"],
             ascending=[False, False, True],
         ).head(int(top_n)).reset_index(drop=True)
-
-        report_path = self.db_manager.paths.reports_dir / "shortlist_model.md"
-        oos_path = self.db_manager.paths.reports_dir / "shortlist_model_oos_predictions.csv"
-        live_path = self.db_manager.paths.reports_dir / "shortlist_model_live_predictions.csv"
-        generated_at = datetime.now(UTC).replace(microsecond=0).isoformat()
-
-        combined_predictions = pd.concat(
-            [
-                predictions.assign(model_name=model_name, dataset_split="oos")
-                for model_name, predictions in model_predictions.items()
-            ],
-            axis=0,
-            ignore_index=True,
-        )
         combined_predictions.to_csv(oos_path, index=False)
         live_predictions_all.to_csv(live_path, index=False)
 
-        lines = [
-            "# Shortlist Model",
-            "",
-            f"- target_column: {target_column}",
-            f"- top_n: {int(top_n)}",
-            f"- eligible_universe_mode: {eligible_universe_mode}",
-            f"- model_scope: {model_scope}",
-            f"- candidate_models: {', '.join(model_predictions.keys())}",
-            f"- selected_model: {champion_model}",
-            f"- selected_model_gate_passed: {str(bool(champion_gate_passed)).lower()}",
-            f"- xgboost_config: {xgboost_config}",
-            f"- min_train_dates: {int(min_train_dates)}",
-            f"- test_window_dates: {int(test_window_dates)}",
-            "- objective: walk-forward cross-sectional ranking of the eligible universe on forward sector-relative alpha",
-            f"- universe: {eligible_universe_mode_description(eligible_universe_mode)}",
-            "- feature_matrix: raw features plus date-wise cross-sectional ranks and sector-relative ranks",
-            "",
-            f"- eligible_rows: {len(matured.index)}",
-            f"- eligible_dates: {int(matured['snapshot_date'].nunique())}",
-            f"- oos_prediction_dates: {int(combined_predictions['snapshot_date'].nunique())}",
-            f"- champion_model: {champion_model}",
-            f"- oos_predictions_csv: {oos_path}",
-            f"- live_predictions_csv: {live_path}",
-            f"- generated_at: {generated_at}",
-            "",
-        ]
-        lines.extend(self._render_summary_table(full_summaries, heading="## Full Walk-Forward Evaluation"))
-        lines.extend(self._render_summary_table(recent_summaries, heading=f"## Recent {min(int(recent_dates), int(combined_predictions['snapshot_date'].nunique()))} Walk-Forward Dates"))
-        lines.extend(self._render_promotion_gate(promotion_gate=promotion_gate, summaries=acceptance_summaries))
+        lines = self._build_report_lines(
+            target_column=target_column,
+            top_n=int(top_n),
+            eligible_universe_mode=eligible_universe_mode,
+            model_scope=model_scope,
+            candidate_models=tuple(model_predictions.keys()),
+            selected_model=champion_model,
+            selected_model_gate_passed=bool(champion_gate_passed),
+            xgboost_config=xgboost_config,
+            min_train_dates=int(min_train_dates),
+            test_window_dates=int(test_window_dates),
+            evaluation_stride_dates=max(int(horizon_days), 1),
+            eligible_rows=len(matured.index),
+            eligible_dates=int(matured["snapshot_date"].nunique()),
+            oos_prediction_dates=int(combined_predictions["snapshot_date"].nunique()),
+            oos_path=oos_path,
+            live_path=live_path,
+            generated_at=generated_at,
+            full_summaries=full_summaries,
+            recent_summaries=recent_summaries,
+            recent_dates=min(int(recent_dates), int(combined_predictions["snapshot_date"].nunique())),
+            promotion_gate=promotion_gate,
+            acceptance_summaries=acceptance_summaries,
+        )
         lines.extend(
             self._render_summary_table(
                 self._rolling_window_summaries(
@@ -298,6 +341,7 @@ class ShortlistModelService:
                 "details": {
                     "model_top_reasons": self._ensure_reason_list(row.get("model_top_reasons")),
                     "model_reason_summary": row.get("model_reason_summary"),
+                    "calibrated_p_beat_sector": row.get("calibrated_p_beat_sector"),
                 },
             }
             for row in combined_predictions.to_dict(orient="records")
@@ -319,6 +363,7 @@ class ShortlistModelService:
                         "details": {
                             "model_top_reasons": self._ensure_reason_list(row.get("model_top_reasons")),
                             "model_reason_summary": row.get("model_reason_summary"),
+                            "calibrated_p_beat_sector": row.get("calibrated_p_beat_sector"),
                         },
                     }
                     for row in live_frame.to_dict(orient="records")
@@ -390,15 +435,20 @@ class ShortlistModelService:
         min_train_dates: int,
         test_window_dates: int,
         model_scope: str,
+        evaluation_stride_dates: int | None = None,
         xgboost_params: dict[str, float | int] | None = None,
         feature_columns_override: list[str] | None = None,
     ) -> pd.DataFrame | None:
         dates = sorted(frame["snapshot_date"].drop_duplicates().tolist())
         folds: list[pd.DataFrame] = []
         start_index = int(min_train_dates)
+        stride = max(int(evaluation_stride_dates or test_window_dates), 1)
         while start_index < len(dates):
             train_dates = set(dates[:start_index])
-            test_dates = dates[start_index : start_index + max(int(test_window_dates), 1)]
+            if evaluation_stride_dates is not None:
+                test_dates = [dates[start_index]]
+            else:
+                test_dates = dates[start_index : start_index + max(int(test_window_dates), 1)]
             if not test_dates:
                 break
             train_frame = frame[frame["snapshot_date"].isin(train_dates)].copy()
@@ -427,7 +477,7 @@ class ShortlistModelService:
                         ]
                     ].copy()
                 )
-            start_index += max(int(test_window_dates), 1)
+            start_index += stride
         if not folds:
             return None
         return pd.concat(folds, axis=0, ignore_index=True)
@@ -913,6 +963,84 @@ class ShortlistModelService:
         test_matrix = standardized_test.to_numpy(dtype=float)
         return train_matrix, test_matrix, list(train_features.columns), standardized_test
 
+    def _annotate_calibrated_probabilities(self, frame: pd.DataFrame, *, target_column: str) -> pd.DataFrame:
+        if frame.empty or "predicted_alpha" not in frame.columns or target_column not in frame.columns:
+            return frame.copy()
+        working = frame.copy()
+        calibrated = pd.Series(np.nan, index=working.index, dtype=float)
+        for _model_name, model_frame in working.groupby("model_name", sort=False) if "model_name" in working.columns else [(None, working)]:
+            scores = pd.to_numeric(model_frame["predicted_alpha"], errors="coerce")
+            actual = pd.to_numeric(model_frame[target_column], errors="coerce")
+            valid = scores.notna() & actual.notna()
+            if valid.sum() < 20:
+                calibrated.loc[model_frame.index] = np.nan
+                continue
+            calibrated.loc[model_frame.index] = self._calibrate_scores_to_probability(
+                fit_scores=scores[valid],
+                fit_actual=actual[valid],
+                transform_scores=scores,
+            )
+        working["calibrated_p_beat_sector"] = calibrated
+        return working
+
+    def _apply_calibration_from_oos(
+        self,
+        live_frame: pd.DataFrame,
+        oos_frame: pd.DataFrame,
+        *,
+        target_column: str,
+    ) -> pd.DataFrame:
+        working = live_frame.copy()
+        if working.empty or oos_frame.empty:
+            working["calibrated_p_beat_sector"] = np.nan
+            return working
+        fit_scores = pd.to_numeric(oos_frame.get("predicted_alpha"), errors="coerce")
+        fit_actual = pd.to_numeric(oos_frame.get(target_column), errors="coerce")
+        transform_scores = pd.to_numeric(working.get("predicted_alpha"), errors="coerce")
+        valid = fit_scores.notna() & fit_actual.notna()
+        if valid.sum() < 20:
+            working["calibrated_p_beat_sector"] = np.nan
+            return working
+        working["calibrated_p_beat_sector"] = self._calibrate_scores_to_probability(
+            fit_scores=fit_scores[valid],
+            fit_actual=fit_actual[valid],
+            transform_scores=transform_scores,
+        )
+        return working
+
+    def _calibrate_scores_to_probability(
+        self,
+        *,
+        fit_scores: pd.Series,
+        fit_actual: pd.Series,
+        transform_scores: pd.Series,
+    ) -> np.ndarray:
+        y = (pd.to_numeric(fit_actual, errors="coerce") > 0.0).astype(float).to_numpy(dtype=float)
+        x = pd.to_numeric(fit_scores, errors="coerce").to_numpy(dtype=float)
+        target_x = pd.to_numeric(transform_scores, errors="coerce").to_numpy(dtype=float)
+        try:
+            from sklearn.isotonic import IsotonicRegression
+
+            model = IsotonicRegression(out_of_bounds="clip", y_min=0.0, y_max=1.0)
+            model.fit(x, y)
+            return model.predict(target_x)
+        except Exception:
+            ordered = pd.DataFrame({"score": x, "actual": y}).sort_values("score").reset_index(drop=True)
+            if ordered.empty:
+                return np.full(len(target_x), np.nan, dtype=float)
+            quantile_count = min(10, max(2, int(len(ordered.index) // 20)))
+            ordered["bucket"] = pd.qcut(ordered.index, q=quantile_count, labels=False, duplicates="drop")
+            bucket_stats = ordered.groupby("bucket", sort=True).agg(score=("score", "mean"), prob=("actual", "mean")).dropna()
+            if bucket_stats.empty:
+                return np.full(len(target_x), float(np.mean(y)) if len(y) else np.nan, dtype=float)
+            return np.interp(
+                target_x,
+                bucket_stats["score"].to_numpy(dtype=float),
+                bucket_stats["prob"].to_numpy(dtype=float),
+                left=float(bucket_stats["prob"].iloc[0]),
+                right=float(bucket_stats["prob"].iloc[-1]),
+            )
+
     def _evaluate_predictions(
         self,
         *,
@@ -1299,6 +1427,75 @@ class ShortlistModelService:
             "ge_5pct_rate": float("nan"),
         }
 
+    def _build_report_lines(
+        self,
+        *,
+        target_column: str,
+        top_n: int,
+        eligible_universe_mode: str,
+        model_scope: str,
+        candidate_models: tuple[str, ...],
+        selected_model: str,
+        selected_model_gate_passed: bool,
+        xgboost_config: str,
+        min_train_dates: int,
+        test_window_dates: int,
+        evaluation_stride_dates: int,
+        eligible_rows: int,
+        eligible_dates: int,
+        oos_prediction_dates: int,
+        oos_path,
+        live_path,
+        generated_at: str,
+        full_summaries: pd.DataFrame,
+        recent_summaries: pd.DataFrame,
+        recent_dates: int,
+        promotion_gate: dict[str, float | int],
+        acceptance_summaries: pd.DataFrame,
+        failure_reason: str | None = None,
+    ) -> list[str]:
+        lines = [
+            "# Shortlist Model",
+            "",
+            f"- target_column: {target_column}",
+            f"- top_n: {int(top_n)}",
+            f"- eligible_universe_mode: {eligible_universe_mode}",
+            f"- model_scope: {model_scope}",
+            f"- candidate_models: {', '.join(candidate_models)}",
+            f"- selected_model: {selected_model}",
+            f"- selected_model_gate_passed: {str(bool(selected_model_gate_passed)).lower()}",
+            f"- xgboost_config: {xgboost_config}",
+            f"- min_train_dates: {int(min_train_dates)}",
+            f"- test_window_dates: {int(test_window_dates)}",
+            f"- oos_evaluation_stride_dates: {int(evaluation_stride_dates)}",
+            "- objective: walk-forward cross-sectional ranking of the eligible universe on forward sector-relative alpha",
+            f"- universe: {eligible_universe_mode_description(eligible_universe_mode)}",
+            "- feature_matrix: raw features plus date-wise cross-sectional ranks and sector-relative ranks",
+            "",
+            f"- eligible_rows: {int(eligible_rows)}",
+            f"- eligible_dates: {int(eligible_dates)}",
+            f"- oos_prediction_dates: {int(oos_prediction_dates)}",
+            f"- champion_model: {selected_model}",
+            f"- oos_predictions_csv: {oos_path}",
+            f"- live_predictions_csv: {live_path}",
+            f"- generated_at: {generated_at}",
+            "",
+        ]
+        if failure_reason:
+            lines.extend(
+                [
+                    "## Promotion Failure",
+                    "",
+                    f"- reason: {failure_reason}",
+                    "- action: no champion was persisted and live scan must fail closed.",
+                    "",
+                ]
+            )
+        lines.extend(self._render_summary_table(full_summaries, heading="## Full Walk-Forward Evaluation"))
+        lines.extend(self._render_summary_table(recent_summaries, heading=f"## Recent {int(recent_dates)} Walk-Forward Dates"))
+        lines.extend(self._render_promotion_gate(promotion_gate=promotion_gate, summaries=acceptance_summaries))
+        return lines
+
     def _render_summary_table(self, frame: pd.DataFrame, *, heading: str) -> list[str]:
         lines = [heading, ""]
         if frame.empty:
@@ -1335,6 +1532,9 @@ class ShortlistModelService:
             lines.append(f"### {row.ticker}")
             lines.append(f"- sector: {row.sector}")
             lines.append(f"- predicted_alpha: {float(row.predicted_alpha):.6f}")
+            calibrated = getattr(row, "calibrated_p_beat_sector", None)
+            if calibrated is not None and pd.notna(calibrated) and math.isfinite(float(calibrated)):
+                lines.append(f"- calibrated_p_beat_sector: {float(calibrated):.2%}")
             model_reason_summary = getattr(row, "model_reason_summary", None)
             if model_reason_summary:
                 lines.append(f"- why: {model_reason_summary}")
