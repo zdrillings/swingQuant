@@ -6,167 +6,122 @@
 - model_name: all
 - model_generated_at: all
 - latest_model_generated_at: n/a
-- recent_scan_dates: all
-- scan_dates: 611
-- selected_rows: 3565
-- scan_date_min: 2024-01-02
+- recent_scan_dates: 20
+- scan_dates: 20
+- selected_rows: 76
+- scan_date_min: 2026-07-27
 - scan_date_max: 2026-08-21
 
 ## Selection Source Coverage
 
-- heuristic: 19 (0.5%)
-- shortlist_model: 2031 (57.0%)
-- unknown: 1515 (42.5%)
+- heuristic: 19 (25.0%)
+- shortlist_model: 57 (75.0%)
+
+## Latest Model Selection Audit
+
+- scan_date: 2026-08-21
+- note: final picks are chosen after opportunity floor, recent rotation, current holdings, and portfolio caps; this section surfaces model-rank divergences.
+- selected:
+  - PANW: selected_rank=1, model_rank=5, slot=technology, selection_score=0.8448, opportunity=0.4419
+  - CDW: selected_rank=2, model_rank=3, slot=technology, selection_score=0.8448, opportunity=0.3979
+- higher_model_rank_unselected:
+  - DELL: model_rank=4, slot=technology, selection_score=0.8448, opportunity=0.4512
 
 ## Horizon Summary
 
+### 1d
+- matured_picks: 74
+- matured_scan_dates: 19
+- latest_selected_scan_date: 2026-08-21
+- latest_matured_scan_date: 2026-08-20
+- mean_return: 0.24%
+- median_return: 0.08%
+- return_iqr: -2.60% to 2.73%
+- return_p05_p95: -8.41% to 9.67%
+- return_range: -12.00% to 20.44%
+- hit_rate: 50.00%
+- mean_alpha_vs_sector: -0.13%
+- median_alpha_vs_sector: -0.20%
+- alpha_iqr: -2.95% to 2.53%
+- positive_alpha_rate: 48.65%
+
 ### 2d
-- matured_picks: 3543
-- matured_scan_dates: 606
+- matured_picks: 72
+- matured_scan_dates: 18
 - latest_selected_scan_date: 2026-08-21
 - latest_matured_scan_date: 2026-08-19
-- mean_return: 0.78%
-- median_return: 0.42%
-- return_iqr: -1.92% to 2.89%
-- return_p05_p95: -6.58% to 10.16%
-- return_range: -28.91% to 50.22%
-- hit_rate: 55.26%
-- mean_alpha_vs_sector: 0.63%
-- median_alpha_vs_sector: 0.33%
-- alpha_iqr: -1.63% to 2.45%
-- positive_alpha_rate: 54.19%
+- mean_return: 0.87%
+- median_return: 0.60%
+- return_iqr: -2.74% to 5.33%
+- return_p05_p95: -10.79% to 10.12%
+- return_range: -19.42% to 20.17%
+- hit_rate: 56.94%
+- mean_alpha_vs_sector: 0.03%
+- median_alpha_vs_sector: 0.53%
+- alpha_iqr: -2.61% to 3.41%
+- positive_alpha_rate: 54.17%
+
+### 3d
+- matured_picks: 68
+- matured_scan_dates: 17
+- latest_selected_scan_date: 2026-08-21
+- latest_matured_scan_date: 2026-08-18
+- mean_return: 1.76%
+- median_return: 1.37%
+- return_iqr: -2.49% to 5.94%
+- return_p05_p95: -9.10% to 12.48%
+- return_range: -21.41% to 20.43%
+- hit_rate: 58.82%
+- mean_alpha_vs_sector: 0.08%
+- median_alpha_vs_sector: -0.19%
+- alpha_iqr: -3.27% to 4.14%
+- positive_alpha_rate: 45.59%
 
 ### 5d
-- matured_picks: 3532
-- matured_scan_dates: 603
+- matured_picks: 61
+- matured_scan_dates: 15
 - latest_selected_scan_date: 2026-08-21
 - latest_matured_scan_date: 2026-08-14
-- mean_return: 1.85%
-- median_return: 1.12%
-- return_iqr: -2.85% to 5.56%
-- return_p05_p95: -10.20% to 16.67%
-- return_range: -35.80% to 94.97%
-- hit_rate: 58.27%
-- mean_alpha_vs_sector: 1.45%
-- median_alpha_vs_sector: 0.74%
-- alpha_iqr: -2.56% to 4.43%
-- positive_alpha_rate: 56.37%
+- mean_return: 1.99%
+- median_return: 1.80%
+- return_iqr: -3.16% to 8.67%
+- return_p05_p95: -13.57% to 18.73%
+- return_range: -24.65% to 25.18%
+- hit_rate: 62.30%
+- mean_alpha_vs_sector: -0.91%
+- median_alpha_vs_sector: -0.74%
+- alpha_iqr: -3.93% to 3.82%
+- positive_alpha_rate: 45.90%
 
 ### 10d
-- matured_picks: 3521
-- matured_scan_dates: 598
+- matured_picks: 50
+- matured_scan_dates: 10
 - latest_selected_scan_date: 2026-08-21
 - latest_matured_scan_date: 2026-08-07
-- mean_return: 3.55%
-- median_return: 2.18%
-- return_iqr: -3.78% to 9.11%
-- return_p05_p95: -14.57% to 25.32%
-- return_range: -38.18% to 206.77%
-- hit_rate: 59.61%
-- mean_alpha_vs_sector: 2.82%
-- median_alpha_vs_sector: 1.38%
-- alpha_iqr: -3.34% to 7.26%
-- positive_alpha_rate: 58.62%
+- mean_return: 1.71%
+- median_return: 1.38%
+- return_iqr: -6.96% to 10.73%
+- return_p05_p95: -18.58% to 21.43%
+- return_range: -25.00% to 31.07%
+- hit_rate: 54.00%
+- mean_alpha_vs_sector: -2.78%
+- median_alpha_vs_sector: -2.34%
+- alpha_iqr: -8.71% to 5.36%
+- positive_alpha_rate: 36.00%
 
 ### 20d
-- matured_picks: 3471
-- matured_scan_dates: 588
-- latest_selected_scan_date: 2026-08-21
-- latest_matured_scan_date: 2026-07-24
-- mean_return: 5.46%
-- median_return: 3.47%
-- return_iqr: -5.21% to 13.52%
-- return_p05_p95: -20.22% to 37.67%
-- return_range: -55.28% to 298.59%
-- hit_rate: 60.13%
-- mean_alpha_vs_sector: 4.12%
-- median_alpha_vs_sector: 2.40%
-- alpha_iqr: -5.36% to 10.81%
-- positive_alpha_rate: 58.51%
+- matured_picks: 0
 
 ### 60d
-- matured_picks: 3231
-- matured_scan_dates: 548
-- latest_selected_scan_date: 2026-08-21
-- latest_matured_scan_date: 2026-05-27
-- mean_return: 14.35%
-- median_return: 6.07%
-- return_iqr: -9.93% to 28.44%
-- return_p05_p95: -29.02% to 84.51%
-- return_range: -59.90% to 305.72%
-- hit_rate: 59.61%
-- mean_alpha_vs_sector: 10.67%
-- median_alpha_vs_sector: 3.47%
-- alpha_iqr: -11.59% to 23.49%
-- positive_alpha_rate: 55.80%
+- matured_picks: 0
 
 ## 20d Timeframe Summary
 
-- latest_selected_scan_date: 2026-08-21
-- latest_matured_20d_scan_date: 2026-07-24
-- note: 20d summaries are anchored to scan dates with a full 20 trading sessions of forward data.
-
-### 1y
-- start_date: 2025-07-24
-- end_date: 2026-07-24
-- matured_picks: 1440
-- matured_scan_dates: 240
-- mean_return: 10.34%
-- median_return: 8.68%
-- hit_rate: 69.44%
-- mean_alpha_vs_sector: 8.48%
-- median_alpha_vs_sector: 6.70%
-- positive_alpha_rate: 67.99%
-
-### ytd
-- start_date: 2026-01-01
-- end_date: 2026-07-24
-- matured_picks: 768
-- matured_scan_dates: 128
-- mean_return: 7.31%
-- median_return: 4.04%
-- hit_rate: 60.81%
-- mean_alpha_vs_sector: 5.28%
-- median_alpha_vs_sector: 3.64%
-- positive_alpha_rate: 59.90%
-
-### 3m
-- start_date: 2026-04-24
-- end_date: 2026-07-24
-- matured_picks: 378
-- matured_scan_dates: 63
-- mean_return: -1.12%
-- median_return: -0.69%
-- hit_rate: 43.65%
-- mean_alpha_vs_sector: -2.88%
-- median_alpha_vs_sector: -2.92%
-- positive_alpha_rate: 42.33%
-
-### 20d
-- start_date: 2026-07-04
-- end_date: 2026-07-24
-- matured_picks: 90
-- matured_scan_dates: 15
-- mean_return: -5.50%
-- median_return: -5.96%
-- hit_rate: 34.44%
-- mean_alpha_vs_sector: -8.59%
-- median_alpha_vs_sector: -10.25%
-- positive_alpha_rate: 21.11%
+- observations: 0
 
 ## 20d Opportunity Score Bands
 
-- score: opportunity_score
-- return: fwd_return_20d
-- alpha: alpha_vs_sector_20d
-- observations: 3471
-
-- score < 0.30: n=46, pick_share=1.33%, mean_return=1.45%, median_return=2.76%, hit_rate=56.52%, mean_alpha=-0.29%, median_alpha=-0.24%, positive_alpha_rate=47.83%
-- 0.30 <= score < 0.35: n=114, pick_share=3.28%, mean_return=2.50%, median_return=3.54%, hit_rate=58.77%, mean_alpha=1.04%, median_alpha=1.39%, positive_alpha_rate=56.14%
-- 0.35 <= score < 0.40: n=348, pick_share=10.03%, mean_return=5.76%, median_return=2.23%, hit_rate=59.48%, mean_alpha=4.42%, median_alpha=2.55%, positive_alpha_rate=57.18%
-- 0.40 <= score < 0.45: n=765, pick_share=22.04%, mean_return=10.45%, median_return=8.11%, hit_rate=69.41%, mean_alpha=8.79%, median_alpha=6.16%, positive_alpha_rate=67.19%
-- 0.45 <= score < 0.50: n=557, pick_share=16.05%, mean_return=10.26%, median_return=9.17%, hit_rate=68.04%, mean_alpha=8.27%, median_alpha=6.13%, positive_alpha_rate=66.79%
-- score >= 0.50: n=1641, pick_share=47.28%, mean_return=1.75%, median_return=0.91%, hit_rate=53.44%, mean_alpha=0.81%, median_alpha=0.67%, positive_alpha_rate=52.41%
+- observations: 0
 
 ## Market Turn Diagnostics
 
@@ -203,21 +158,21 @@
 
 ## Portfolio Performance
 
-- closed_trades: 48
+- closed_trades: 47
 - open_trades: 9
-- realized_pnl: $19,151.06
-- realized_return_on_cost: 5.44%
+- realized_pnl: $22,524.42
+- realized_return_on_cost: 6.53%
 - unrealized_pnl: $210.95
 - unrealized_return_on_cost: 0.33%
-- total_pnl: $19,362.01
-- total_return_on_cost: 4.66%
+- total_pnl: $22,735.37
+- total_return_on_cost: 5.57%
 
 ### Realized By Stock
 - MRVL: trades=1, realized_pnl=$10,027.25, return_on_cost=59.82%, mean_trade_return=59.82%, range=59.82% to 59.82%, first_entry=2026-05-15, last_exit=2026-06-23
-- ASTS: trades=3, realized_pnl=$5,181.50, return_on_cost=23.12%, mean_trade_return=24.85%, range=-10.50% to 42.74%, first_entry=2026-05-11, last_exit=2026-06-01
 - MU: trades=1, realized_pnl=$3,900.25, return_on_cost=35.55%, mean_trade_return=35.55%, range=35.55% to 35.55%, first_entry=2026-05-15, last_exit=2026-06-04
 - NBIS: trades=2, realized_pnl=$2,746.95, return_on_cost=8.36%, mean_trade_return=11.49%, range=1.17% to 21.80%, first_entry=2026-05-05, last_exit=2026-05-12
 - TWLO: trades=1, realized_pnl=$2,262.00, return_on_cost=18.22%, mean_trade_return=18.22%, range=18.22% to 18.22%, first_entry=2026-07-01, last_exit=2026-08-10
+- ASTS: trades=2, realized_pnl=$2,149.50, return_on_cost=14.04%, mean_trade_return=15.90%, range=-10.50% to 42.31%, first_entry=2026-05-11, last_exit=2026-06-01
 - RKLB: trades=2, realized_pnl=$1,951.20, return_on_cost=10.48%, mean_trade_return=15.04%, range=5.67% to 24.40%, first_entry=2026-05-05, last_exit=2026-06-01
 - OKTA: trades=1, realized_pnl=$1,113.50, return_on_cost=8.09%, mean_trade_return=8.09%, range=8.09% to 8.09%, first_entry=2026-07-28, last_exit=2026-08-14
 - AGX: trades=2, realized_pnl=$1,007.65, return_on_cost=5.86%, mean_trade_return=5.94%, range=5.41% to 6.46%, first_entry=2026-06-01, last_exit=2026-06-29
@@ -229,6 +184,7 @@
 - CRSR: trades=1, realized_pnl=$655.50, return_on_cost=7.63%, mean_trade_return=7.63%, range=7.63% to 7.63%, first_entry=2026-06-29, last_exit=2026-07-20
 - PANW: trades=1, realized_pnl=$486.45, return_on_cost=6.14%, mean_trade_return=6.14%, range=6.14% to 6.14%, first_entry=2026-07-03, last_exit=2026-07-20
 - ANET: trades=1, realized_pnl=$392.43, return_on_cost=4.07%, mean_trade_return=4.07%, range=4.07% to 4.07%, first_entry=2026-06-16, last_exit=2026-08-03
+- CRWD: trades=1, realized_pnl=$285.22, return_on_cost=4.54%, mean_trade_return=4.54%, range=4.54% to 4.54%, first_entry=2026-05-05, last_exit=2026-05-07
 - APA: trades=1, realized_pnl=$230.00, return_on_cost=3.16%, mean_trade_return=3.16%, range=3.16% to 3.16%, first_entry=2026-05-11, last_exit=2026-05-15
 - TFX: trades=1, realized_pnl=$229.27, return_on_cost=4.43%, mean_trade_return=4.43%, range=4.43% to 4.43%, first_entry=2026-05-05, last_exit=2026-05-07
 - AA: trades=1, realized_pnl=$198.38, return_on_cost=10.61%, mean_trade_return=10.61%, range=10.61% to 10.61%, first_entry=2026-05-27, last_exit=2026-06-01
@@ -254,7 +210,6 @@
 - HIMS: trades=1, realized_pnl=$-1,010.10, return_on_cost=-8.73%, mean_trade_return=-8.73%, range=-8.73% to -8.73%, first_entry=2026-08-05, last_exit=2026-08-18
 - VSH: trades=1, realized_pnl=$-1,533.50, return_on_cost=-26.74%, mean_trade_return=-26.74%, range=-26.74% to -26.74%, first_entry=2026-06-11, last_exit=2026-07-08
 - TTMI: trades=1, realized_pnl=$-2,346.50, return_on_cost=-24.90%, mean_trade_return=-24.90%, range=-24.90% to -24.90%, first_entry=2026-06-30, last_exit=2026-07-14
-- CRWD: trades=1, realized_pnl=$-6,120.14, return_on_cost=-97.31%, mean_trade_return=-97.31%, range=-97.31% to -97.31%, first_entry=2026-05-05, last_exit=2026-05-07
 
 ### Unrealized Open Positions
 - RNG: shares=200, entry_date=2026-08-18, entry=65.08, latest=67.01 (2026-08-21), unrealized_pnl=$386.00, return=2.97%
@@ -269,107 +224,119 @@
 
 ## Best And Worst Picks
 
+### 1d
+- best:
+  - AVTR (2026-07-28): return=15.78%, alpha_vs_sector=16.39%
+  - ACMR (2026-07-29): return=20.44%, alpha_vs_sector=14.94%
+  - MRNA (2026-07-29): return=6.29%, alpha_vs_sector=7.93%
+- worst:
+  - STRL (2026-08-03): return=-11.42%, alpha_vs_sector=-13.19%
+  - VSH (2026-07-27): return=-12.00%, alpha_vs_sector=-10.15%
+  - ALKS (2026-07-27): return=-4.23%, alpha_vs_sector=-6.59%
+
 ### 2d
 - best:
-  - MP (2025-07-09): return=50.22%, alpha_vs_sector=50.50%
-  - APP (2025-02-12): return=34.13%, alpha_vs_sector=32.37%
-  - RAMP (2026-05-15): return=27.24%, alpha_vs_sector=28.05%
+  - ACMR (2026-07-29): return=20.17%, alpha_vs_sector=14.90%
+  - AVTR (2026-07-28): return=11.59%, alpha_vs_sector=13.83%
+  - AMN (2026-08-05): return=9.76%, alpha_vs_sector=8.83%
 - worst:
-  - MXL (2026-07-23): return=-28.91%, alpha_vs_sector=-26.59%
-  - VICR (2026-06-30): return=-25.50%, alpha_vs_sector=-24.78%
-  - SMCI (2026-06-09): return=-21.33%, alpha_vs_sector=-22.68%
+  - VSH (2026-07-27): return=-19.42%, alpha_vs_sector=-14.98%
+  - STRL (2026-08-03): return=-12.34%, alpha_vs_sector=-14.08%
+  - PGNY (2026-08-05): return=-10.42%, alpha_vs_sector=-11.35%
+
+### 3d
+- best:
+  - AVTR (2026-07-28): return=10.95%, alpha_vs_sector=13.77%
+  - ACMR (2026-07-29): return=20.43%, alpha_vs_sector=13.54%
+  - MAN (2026-08-17): return=6.99%, alpha_vs_sector=10.51%
+- worst:
+  - DVA (2026-07-31): return=-21.41%, alpha_vs_sector=-22.40%
+  - PGNY (2026-08-05): return=-11.22%, alpha_vs_sector=-13.83%
+  - STRL (2026-08-03): return=-10.38%, alpha_vs_sector=-11.58%
 
 ### 5d
 - best:
-  - MP (2025-07-09): return=94.97%, alpha_vs_sector=97.59%
-  - VSAT (2025-07-30): return=79.25%, alpha_vs_sector=79.87%
-  - ICHR (2026-02-05): return=54.03%, alpha_vs_sector=51.39%
+  - DELL (2026-07-29): return=25.18%, alpha_vs_sector=13.57%
+  - VSEC (2026-08-04): return=12.88%, alpha_vs_sector=13.25%
+  - AVTR (2026-07-28): return=10.14%, alpha_vs_sector=13.23%
 - worst:
-  - BILL (2025-01-31): return=-35.80%, alpha_vs_sector=-36.67%
-  - SMCI (2026-06-09): return=-28.10%, alpha_vs_sector=-31.24%
-  - STRL (2026-07-22): return=-31.29%, alpha_vs_sector=-30.07%
+  - DVA (2026-07-31): return=-23.46%, alpha_vs_sector=-25.38%
+  - PGNY (2026-08-05): return=-18.97%, alpha_vs_sector=-21.57%
+  - PARR (2026-08-13): return=-11.80%, alpha_vs_sector=-16.20%
 
 ### 10d
 - best:
-  - MXL (2026-04-15): return=206.77%, alpha_vs_sector=200.91%
-  - MP (2025-07-09): return=103.60%, alpha_vs_sector=103.10%
-  - VSAT (2025-07-30): return=77.13%, alpha_vs_sector=75.75%
+  - DELL (2026-07-29): return=31.07%, alpha_vs_sector=17.69%
+  - MRNA (2026-07-29): return=16.85%, alpha_vs_sector=15.52%
+  - PANW (2026-07-30): return=21.59%, alpha_vs_sector=13.03%
 - worst:
-  - BILL (2025-01-31): return=-38.18%, alpha_vs_sector=-42.15%
-  - MP (2025-10-14): return=-34.17%, alpha_vs_sector=-34.15%
-  - ICHR (2025-10-27): return=-34.26%, alpha_vs_sector=-33.10%
+  - DVA (2026-07-31): return=-25.00%, alpha_vs_sector=-27.97%
+  - PGNY (2026-08-05): return=-18.62%, alpha_vs_sector=-25.63%
+  - ALGT (2026-08-03): return=-18.53%, alpha_vs_sector=-20.26%
 
 ### 20d
-- best:
-  - MXL (2026-04-15): return=298.59%, alpha_vs_sector=280.93%
-  - MP (2025-07-09): return=124.81%, alpha_vs_sector=129.44%
-  - SNDK (2025-12-19): return=110.97%, alpha_vs_sector=111.37%
-- worst:
-  - VICR (2026-06-30): return=-51.88%, alpha_vs_sector=-47.25%
-  - CLSK (2025-10-15): return=-42.54%, alpha_vs_sector=-45.93%
-  - MXL (2026-06-30): return=-55.28%, alpha_vs_sector=-42.71%
+No matured picks.
 
 ### 60d
-- best:
-  - MXL (2026-04-15): return=305.72%, alpha_vs_sector=285.11%
-  - SNDK (2025-12-17): return=248.19%, alpha_vs_sector=247.93%
-  - DD (2026-05-05): return=177.81%, alpha_vs_sector=179.94%
-- worst:
-  - RUN (2024-09-11): return=-45.90%, alpha_vs_sector=-56.12%
-  - CLSK (2025-10-15): return=-48.45%, alpha_vs_sector=-51.87%
-  - KTOS (2026-01-28): return=-45.63%, alpha_vs_sector=-51.00%
+No matured picks.
 
 ## Repeated Winners And Losers
 
+### 1d
+- repeated_winners:
+  - AMD: n=3, mean_return=7.26%, mean_alpha_vs_sector=3.26%
+  - DELL: n=2, mean_return=5.60%, mean_alpha_vs_sector=2.79%
+  - PANW: n=2, mean_return=3.25%, mean_alpha_vs_sector=2.59%
+- repeated_losers:
+  - VSH: n=2, mean_return=-10.22%, mean_alpha_vs_sector=-7.97%
+  - AMAT: n=2, mean_return=-8.11%, mean_alpha_vs_sector=-5.87%
+  - PARR: n=2, mean_return=-4.14%, mean_alpha_vs_sector=-4.97%
+
 ### 2d
 - repeated_winners:
-  - DELL: n=2, mean_return=12.68%, mean_alpha_vs_sector=8.75%
-  - FORM: n=3, mean_return=10.96%, mean_alpha_vs_sector=8.15%
-  - AMKR: n=2, mean_return=5.80%, mean_alpha_vs_sector=7.20%
+  - PANW: n=2, mean_return=8.49%, mean_alpha_vs_sector=4.54%
+  - PENG: n=11, mean_return=4.05%, mean_alpha_vs_sector=2.30%
+  - DINO: n=2, mean_return=3.12%, mean_alpha_vs_sector=1.83%
 - repeated_losers:
-  - VIAV: n=5, mean_return=-6.39%, mean_alpha_vs_sector=-6.65%
+  - VSH: n=2, mean_return=-8.07%, mean_alpha_vs_sector=-7.21%
+  - CLF: n=3, mean_return=-4.37%, mean_alpha_vs_sector=-4.29%
   - AMAT: n=2, mean_return=-5.13%, mean_alpha_vs_sector=-4.26%
-  - DNOW: n=4, mean_return=-3.61%, mean_alpha_vs_sector=-4.11%
+
+### 3d
+- repeated_winners:
+  - PANW: n=2, mean_return=10.89%, mean_alpha_vs_sector=4.70%
+  - PENG: n=11, mean_return=6.03%, mean_alpha_vs_sector=3.67%
+  - NSP: n=2, mean_return=1.24%, mean_alpha_vs_sector=3.32%
+- repeated_losers:
+  - DVA: n=2, mean_return=-12.98%, mean_alpha_vs_sector=-13.04%
+  - VSH: n=2, mean_return=-2.27%, mean_alpha_vs_sector=-3.92%
+  - HIMS: n=2, mean_return=-2.33%, mean_alpha_vs_sector=-3.72%
 
 ### 5d
 - repeated_winners:
-  - FORM: n=3, mean_return=29.37%, mean_alpha_vs_sector=24.72%
-  - OKTA: n=2, mean_return=16.24%, mean_alpha_vs_sector=14.76%
-  - DELL: n=2, mean_return=18.48%, mean_alpha_vs_sector=13.08%
+  - PENG: n=11, mean_return=6.71%, mean_alpha_vs_sector=3.90%
+  - PANW: n=2, mean_return=9.45%, mean_alpha_vs_sector=2.93%
+  - AMAT: n=2, mean_return=7.49%, mean_alpha_vs_sector=1.80%
 - repeated_losers:
   - DVA: n=2, mean_return=-24.06%, mean_alpha_vs_sector=-24.91%
-  - BA: n=2, mean_return=-11.61%, mean_alpha_vs_sector=-10.32%
-  - BILL: n=3, mean_return=-7.52%, mean_alpha_vs_sector=-9.86%
+  - HIMS: n=2, mean_return=-1.02%, mean_alpha_vs_sector=-4.76%
+  - ALGT: n=3, mean_return=-1.26%, mean_alpha_vs_sector=-4.65%
 
 ### 10d
 - repeated_winners:
-  - OKTA: n=2, mean_return=38.34%, mean_alpha_vs_sector=34.96%
-  - FORM: n=3, mean_return=29.86%, mean_alpha_vs_sector=28.23%
-  - SYNA: n=3, mean_return=35.81%, mean_alpha_vs_sector=25.00%
+  - PANW: n=2, mean_return=18.70%, mean_alpha_vs_sector=10.24%
+  - PENG: n=8, mean_return=6.75%, mean_alpha_vs_sector=3.42%
+  - NHC: n=5, mean_return=3.11%, mean_alpha_vs_sector=-1.02%
 - repeated_losers:
   - DVA: n=2, mean_return=-25.00%, mean_alpha_vs_sector=-27.97%
-  - BMI: n=2, mean_return=-19.74%, mean_alpha_vs_sector=-21.87%
+  - ALGT: n=3, mean_return=-14.33%, mean_alpha_vs_sector=-18.02%
   - HIMS: n=2, mean_return=-11.00%, mean_alpha_vs_sector=-14.84%
 
 ### 20d
-- repeated_winners:
-  - AMD: n=2, mean_return=52.16%, mean_alpha_vs_sector=47.52%
-  - SYNA: n=3, mean_return=53.55%, mean_alpha_vs_sector=37.66%
-  - SNDK: n=59, mean_return=40.11%, mean_alpha_vs_sector=35.53%
-- repeated_losers:
-  - BILL: n=3, mean_return=-33.61%, mean_alpha_vs_sector=-34.31%
-  - BMI: n=2, mean_return=-21.32%, mean_alpha_vs_sector=-23.99%
-  - HUBG: n=2, mean_return=-18.81%, mean_alpha_vs_sector=-19.78%
+No matured picks.
 
 ### 60d
-- repeated_winners:
-  - SNDK: n=59, mean_return=107.07%, mean_alpha_vs_sector=92.60%
-  - MU: n=19, mean_return=118.89%, mean_alpha_vs_sector=87.93%
-  - FORM: n=3, mean_return=93.02%, mean_alpha_vs_sector=87.52%
-- repeated_losers:
-  - BILL: n=3, mean_return=-53.31%, mean_alpha_vs_sector=-38.79%
-  - BMI: n=2, mean_return=-25.00%, mean_alpha_vs_sector=-36.51%
-  - UPWK: n=6, mean_return=-20.72%, mean_alpha_vs_sector=-31.40%
+No matured picks.
 
 ## Recent Scan Dates
 
@@ -378,42 +345,58 @@
 
 ### 2026-08-20
 - picks: GEN, DELL
+- 1d: median_return=2.18%, median_alpha_vs_sector=2.06%, winners=2/2, range=1.68% to 2.68%
 
 ### 2026-08-19
 - picks: DINO, PARR, OII, MOG-A
+- 1d: median_return=-4.04%, median_alpha_vs_sector=-4.12%, winners=0/4, range=-7.16% to -0.38%
 - 2d: median_return=1.53%, median_alpha_vs_sector=1.43%, winners=3/4, range=-5.30% to 2.85%
 
 ### 2026-08-18
 - picks: ASH, AXTA, SON
+- 1d: median_return=1.22%, median_alpha_vs_sector=-0.21%, winners=2/3, range=-1.58% to 2.40%
 - 2d: median_return=0.23%, median_alpha_vs_sector=-1.01%, winners=2/3, range=-1.10% to 1.98%
+- 3d: median_return=2.20%, median_alpha_vs_sector=-1.20%, winners=2/3, range=-1.32% to 3.99%
 
 ### 2026-08-17
 - picks: MAN, GEO, NSP, DD
+- 1d: median_return=1.47%, median_alpha_vs_sector=2.94%, winners=2/4, range=-2.98% to 4.77%
 - 2d: median_return=0.63%, median_alpha_vs_sector=2.98%, winners=2/4, range=-2.37% to 4.67%
+- 3d: median_return=2.58%, median_alpha_vs_sector=6.10%, winners=3/4, range=-3.22% to 6.99%
 
 ### 2026-08-14
 - picks: PBF, MPC, WKC, RXO
+- 1d: median_return=0.24%, median_alpha_vs_sector=-0.25%, winners=2/4, range=-1.30% to 4.48%
 - 2d: median_return=1.59%, median_alpha_vs_sector=-1.02%, winners=3/4, range=-3.78% to 4.66%
+- 3d: median_return=1.28%, median_alpha_vs_sector=-1.42%, winners=3/4, range=-5.65% to 2.87%
 - 5d: median_return=0.52%, median_alpha_vs_sector=-1.06%, winners=2/4, range=-4.17% to 2.34%
 
 ### 2026-08-13
 - picks: PARR, DINO, OII, CXW
+- 1d: median_return=1.81%, median_alpha_vs_sector=0.42%, winners=3/4, range=-2.22% to 3.86%
 - 2d: median_return=4.39%, median_alpha_vs_sector=1.90%, winners=3/4, range=-0.09% to 6.27%
+- 3d: median_return=2.97%, median_alpha_vs_sector=-0.50%, winners=3/4, range=-1.98% to 4.17%
 - 5d: median_return=1.57%, median_alpha_vs_sector=-2.83%, winners=3/4, range=-11.80% to 6.04%
 
 ### 2026-08-12
 - picks: PENG
+- 1d: median_return=3.69%, median_alpha_vs_sector=2.68%, winners=1/1, range=3.69% to 3.69%
 - 2d: median_return=8.63%, median_alpha_vs_sector=8.02%, winners=1/1, range=8.63% to 8.63%
+- 3d: median_return=7.41%, median_alpha_vs_sector=6.63%, winners=1/1, range=7.41% to 7.41%
 - 5d: median_return=-9.84%, median_alpha_vs_sector=-7.08%, winners=0/1, range=-9.84% to -9.84%
 
 ### 2026-08-11
 - picks: PENG
+- 1d: median_return=2.44%, median_alpha_vs_sector=0.95%, winners=1/1, range=2.44% to 2.44%
 - 2d: median_return=6.23%, median_alpha_vs_sector=3.71%, winners=1/1, range=6.23% to 6.23%
+- 3d: median_return=11.29%, median_alpha_vs_sector=9.18%, winners=1/1, range=11.29% to 11.29%
 - 5d: median_return=1.80%, median_alpha_vs_sector=2.05%, winners=1/1, range=1.80% to 1.80%
 
 ### 2026-08-10
 - picks: PENG
+- 1d: median_return=3.90%, median_alpha_vs_sector=4.02%, winners=1/1, range=3.90% to 3.90%
 - 2d: median_return=6.43%, median_alpha_vs_sector=5.07%, winners=1/1, range=6.43% to 6.43%
+- 3d: median_return=10.37%, median_alpha_vs_sector=7.98%, winners=1/1, range=10.37% to 10.37%
 - 5d: median_return=14.32%, median_alpha_vs_sector=12.17%, winners=1/1, range=14.32% to 14.32%
 
 ## Recent Picks
@@ -432,109 +415,139 @@
 - scan_date: 2026-08-20
 - sector: Information Technology
 - selected_rank: 1
+- 1d: return=2.68%, alpha_vs_sector=2.56%
 
 ### DELL
 - scan_date: 2026-08-20
 - sector: Information Technology
 - selected_rank: 2
+- 1d: return=1.68%, alpha_vs_sector=1.56%
 
 ### DINO
 - scan_date: 2026-08-19
 - sector: Energy
 - selected_rank: 1
+- 1d: return=-2.01%, alpha_vs_sector=-2.28%
 - 2d: return=2.85%, alpha_vs_sector=2.76%
 
 ### PARR
 - scan_date: 2026-08-19
 - sector: Energy
 - selected_rank: 2
+- 1d: return=-6.07%, alpha_vs_sector=-6.34%
 - 2d: return=2.46%, alpha_vs_sector=2.37%
 
 ### OII
 - scan_date: 2026-08-19
 - sector: Energy
 - selected_rank: 3
+- 1d: return=-0.38%, alpha_vs_sector=-0.65%
 - 2d: return=0.59%, alpha_vs_sector=0.49%
 
 ### MOG-A
 - scan_date: 2026-08-19
 - sector: Industrials
 - selected_rank: 4
+- 1d: return=-7.16%, alpha_vs_sector=-5.96%
 - 2d: return=-5.30%, alpha_vs_sector=-4.37%
 
 ### ASH
 - scan_date: 2026-08-18
 - sector: Materials
 - selected_rank: 1
+- 1d: return=-1.58%, alpha_vs_sector=-3.00%
 - 2d: return=-1.10%, alpha_vs_sector=-2.34%
+- 3d: return=-1.32%, alpha_vs_sector=-4.72%
 
 ### AXTA
 - scan_date: 2026-08-18
 - sector: Materials
 - selected_rank: 2
+- 1d: return=2.40%, alpha_vs_sector=0.97%
 - 2d: return=0.23%, alpha_vs_sector=-1.01%
+- 3d: return=2.20%, alpha_vs_sector=-1.20%
 
 ### SON
 - scan_date: 2026-08-18
 - sector: Materials
 - selected_rank: 3
+- 1d: return=1.22%, alpha_vs_sector=-0.21%
 - 2d: return=1.98%, alpha_vs_sector=0.74%
+- 3d: return=3.99%, alpha_vs_sector=0.59%
 
 ### MAN
 - scan_date: 2026-08-17
 - sector: Industrials
 - selected_rank: 1
+- 1d: return=4.77%, alpha_vs_sector=6.25%
 - 2d: return=4.67%, alpha_vs_sector=7.01%
+- 3d: return=6.99%, alpha_vs_sector=10.51%
 
 ### GEO
 - scan_date: 2026-08-17
 - sector: Industrials
 - selected_rank: 2
+- 1d: return=-0.77%, alpha_vs_sector=0.71%
 - 2d: return=-1.51%, alpha_vs_sector=0.84%
+- 3d: return=1.83%, alpha_vs_sector=5.35%
 
 ### NSP
 - scan_date: 2026-08-17
 - sector: Industrials
 - selected_rank: 3
+- 1d: return=3.71%, alpha_vs_sector=5.18%
 - 2d: return=2.77%, alpha_vs_sector=5.12%
+- 3d: return=3.33%, alpha_vs_sector=6.84%
 
 ### DD
 - scan_date: 2026-08-17
 - sector: Materials
 - selected_rank: 4
+- 1d: return=-2.98%, alpha_vs_sector=-2.10%
 - 2d: return=-2.37%, alpha_vs_sector=-2.91%
+- 3d: return=-3.22%, alpha_vs_sector=-3.57%
 
 ### PBF
 - scan_date: 2026-08-14
 - sector: Energy
 - selected_rank: 1
+- 1d: return=4.48%, alpha_vs_sector=3.40%
 - 2d: return=4.66%, alpha_vs_sector=1.80%
+- 3d: return=2.87%, alpha_vs_sector=0.17%
 - 5d: return=2.34%, alpha_vs_sector=-0.46%
 
 ### MPC
 - scan_date: 2026-08-14
 - sector: Energy
 - selected_rank: 2
+- 1d: return=0.78%, alpha_vs_sector=-0.31%
 - 2d: return=3.04%, alpha_vs_sector=0.18%
+- 3d: return=1.50%, alpha_vs_sector=-1.20%
 - 5d: return=1.49%, alpha_vs_sector=-1.30%
 
 ### WKC
 - scan_date: 2026-08-14
 - sector: Energy
 - selected_rank: 3
+- 1d: return=-1.30%, alpha_vs_sector=-2.38%
 - 2d: return=0.14%, alpha_vs_sector=-2.72%
+- 3d: return=1.05%, alpha_vs_sector=-1.65%
 - 5d: return=-0.44%, alpha_vs_sector=-3.24%
 
 ### RXO
 - scan_date: 2026-08-14
 - sector: Industrials
 - selected_rank: 4
+- 1d: return=-0.30%, alpha_vs_sector=-0.20%
 - 2d: return=-3.78%, alpha_vs_sector=-2.21%
+- 3d: return=-5.65%, alpha_vs_sector=-3.21%
 - 5d: return=-4.17%, alpha_vs_sector=-0.81%
 
 ### PARR
 - scan_date: 2026-08-13
 - sector: Energy
 - selected_rank: 1
+- 1d: return=-2.22%, alpha_vs_sector=-3.61%
 - 2d: return=-0.09%, alpha_vs_sector=-2.57%
+- 3d: return=-1.98%, alpha_vs_sector=-6.28%
 - 5d: return=-11.80%, alpha_vs_sector=-16.20%
