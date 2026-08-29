@@ -279,7 +279,9 @@ class SchwabLedgerSyncService:
                 if history.empty:
                     continue
                 latest = history.sort_values("date").tail(1).iloc[0]
-                prices[ticker] = (float(latest["close"]), "intraday")
+                price = self._validated_ohlc_price(ticker=ticker, row=latest, price_column="close", source="intraday")
+                if price is not None:
+                    prices[ticker] = (price, "intraday")
         except Exception as exc:
             self.logger.warning("Unable to download intraday prices for Schwab ledger exits: %s", exc)
 
@@ -294,6 +296,44 @@ class SchwabLedgerSyncService:
             except Exception as exc:
                 self.logger.warning("Unable to load stored prices for Schwab ledger exits: %s", exc)
         return prices
+
+    def _validated_ohlc_price(
+        self,
+        *,
+        ticker: str,
+        row,
+        price_column: str,
+        source: str,
+        tolerance_pct: float = 0.01,
+    ) -> float | None:
+        try:
+            price = float(row[price_column])
+        except (KeyError, TypeError, ValueError):
+            return None
+        if not math.isfinite(price) or price <= 0:
+            return None
+        if "low" not in row.index or "high" not in row.index:
+            return price
+        try:
+            low = float(row["low"])
+            high = float(row["high"])
+        except (TypeError, ValueError):
+            return price
+        if not (math.isfinite(low) and math.isfinite(high) and low > 0 and high >= low):
+            return price
+        lower_bound = low * (1.0 - float(tolerance_pct))
+        upper_bound = high * (1.0 + float(tolerance_pct))
+        if lower_bound <= price <= upper_bound:
+            return price
+        self.logger.warning(
+            "Rejected %s exit price for %s: %.2f outside OHLC range %.2f-%.2f",
+            source,
+            ticker,
+            price,
+            low,
+            high,
+        )
+        return None
 
     def _resolve_strategy_for_broker_position(
         self,

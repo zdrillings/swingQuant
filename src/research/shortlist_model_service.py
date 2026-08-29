@@ -182,6 +182,7 @@ class ShortlistModelService:
                     model_name=model_name,
                     top_n=int(top_n),
                     windows=(20, 60),
+                    fold_windows=(1, 3),
                 ).to_dict(orient="records")
             ]
         )
@@ -291,6 +292,7 @@ class ShortlistModelService:
                     model_name=champion_model,
                     top_n=int(top_n),
                     windows=(20, 40, 60),
+                    fold_windows=(1, 3),
                 ),
                 heading="## Champion Rolling Acceptance Windows",
             )
@@ -1091,6 +1093,7 @@ class ShortlistModelService:
         model_name: str,
         top_n: int,
         windows: tuple[int, ...],
+        fold_windows: tuple[int, ...] = (),
     ) -> pd.DataFrame:
         rows: list[dict[str, object]] = []
         unique_dates = sorted(predictions["snapshot_date"].drop_duplicates().tolist())
@@ -1102,6 +1105,16 @@ class ShortlistModelService:
                 top_n=top_n,
                 target_column=target_column,
                 model_name=f"{model_name}_{int(window)}d",
+            )
+            rows.append(summary)
+        for fold_count in fold_windows:
+            selected_dates = unique_dates[-min(int(fold_count), len(unique_dates)) :]
+            scoped = predictions[predictions["snapshot_date"].isin(selected_dates)].copy()
+            summary = self._evaluate_predictions(
+                predictions=scoped,
+                top_n=top_n,
+                target_column=target_column,
+                model_name=f"{model_name}_last_{int(fold_count)}fold",
             )
             rows.append(summary)
         return pd.DataFrame(rows)
@@ -1317,6 +1330,12 @@ class ShortlistModelService:
             "min_recent_60d_hit_rate": float(payload.get("min_recent_60d_hit_rate", 0.50)),
             "min_recent_60d_beat_universe_rate": float(payload.get("min_recent_60d_beat_universe_rate", 0.50)),
             "min_recent_60d_mean_target": float(payload.get("min_recent_60d_mean_target", 0.0)),
+            "min_recent_1fold_hit_rate": float(payload.get("min_recent_1fold_hit_rate", 0.50)),
+            "min_recent_1fold_beat_universe_rate": float(payload.get("min_recent_1fold_beat_universe_rate", 0.50)),
+            "min_recent_1fold_mean_target": float(payload.get("min_recent_1fold_mean_target", 0.0)),
+            "min_recent_3fold_hit_rate": float(payload.get("min_recent_3fold_hit_rate", 0.50)),
+            "min_recent_3fold_beat_universe_rate": float(payload.get("min_recent_3fold_beat_universe_rate", 0.50)),
+            "min_recent_3fold_mean_target": float(payload.get("min_recent_3fold_mean_target", 0.0)),
         }
 
     def _choose_champion_model(
@@ -1382,6 +1401,22 @@ class ShortlistModelService:
                 return False
             if not self._finite_at_least(summary.get("mean_target"), promotion_gate[f"min_recent_{window}d_mean_target"]):
                 return False
+        for folds in (1, 3):
+            row = acceptance_summaries[
+                acceptance_summaries["model"].astype(str) == f"{model_name}_last_{folds}fold"
+            ]
+            if row.empty:
+                return False
+            summary = row.iloc[0]
+            if not self._finite_at_least(summary.get("hit_rate"), promotion_gate[f"min_recent_{folds}fold_hit_rate"]):
+                return False
+            if not self._finite_at_least(
+                summary.get("beat_universe_rate"),
+                promotion_gate[f"min_recent_{folds}fold_beat_universe_rate"],
+            ):
+                return False
+            if not self._finite_at_least(summary.get("mean_target"), promotion_gate[f"min_recent_{folds}fold_mean_target"]):
+                return False
         return True
 
     def _finite_at_least(self, value, threshold) -> bool:
@@ -1408,6 +1443,12 @@ class ShortlistModelService:
                 f"- min_recent_60d_hit_rate: {float(promotion_gate['min_recent_60d_hit_rate']):.2f}",
                 f"- min_recent_60d_beat_universe_rate: {float(promotion_gate['min_recent_60d_beat_universe_rate']):.2f}",
                 f"- min_recent_60d_mean_target: {float(promotion_gate['min_recent_60d_mean_target']):.4f}",
+                f"- min_recent_1fold_hit_rate: {float(promotion_gate['min_recent_1fold_hit_rate']):.2f}",
+                f"- min_recent_1fold_beat_universe_rate: {float(promotion_gate['min_recent_1fold_beat_universe_rate']):.2f}",
+                f"- min_recent_1fold_mean_target: {float(promotion_gate['min_recent_1fold_mean_target']):.4f}",
+                f"- min_recent_3fold_hit_rate: {float(promotion_gate['min_recent_3fold_hit_rate']):.2f}",
+                f"- min_recent_3fold_beat_universe_rate: {float(promotion_gate['min_recent_3fold_beat_universe_rate']):.2f}",
+                f"- min_recent_3fold_mean_target: {float(promotion_gate['min_recent_3fold_mean_target']):.4f}",
                 "",
             ]
         )

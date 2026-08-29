@@ -5,18 +5,9 @@ cd /home/zdrillings/code/SwingQuant
 
 run_date="$(date +%F)"
 
-if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  guarded_paths=(src tests ops config.yaml production_strategies.json pyproject.toml README.md AGENTS.md)
-  if ! git diff --quiet -- "${guarded_paths[@]}" || ! git diff --cached --quiet -- "${guarded_paths[@]}"; then
-    echo "Refusing to run nightly pipeline with uncommitted code/config changes." >&2
-    echo "Commit or stash changes under: ${guarded_paths[*]}" >&2
-    exit 2
-  fi
-fi
-
-notify_failure() {
-  local exit_code="$?"
-  local failed_command="${BASH_COMMAND}"
+send_failure_email() {
+  local exit_code="$1"
+  local failed_command="$2"
   python3 - "${exit_code}" "${failed_command}" <<'PY'
 from html import escape
 import sys
@@ -41,7 +32,23 @@ send_html_email(
 PY
 }
 
+notify_failure() {
+  local exit_code="$?"
+  local failed_command="${BASH_COMMAND}"
+  send_failure_email "${exit_code}" "${failed_command}" || true
+}
+
 trap notify_failure ERR
+
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  guarded_paths=(src tests ops config.yaml production_strategies.json pyproject.toml README.md AGENTS.md)
+  if ! git diff --quiet -- "${guarded_paths[@]}" || ! git diff --cached --quiet -- "${guarded_paths[@]}"; then
+    echo "Refusing to run nightly pipeline with uncommitted code/config changes." >&2
+    echo "Commit or stash changes under: ${guarded_paths[*]}" >&2
+    send_failure_email 2 "dirty working tree guard" || true
+    exit 2
+  fi
+fi
 
 echo "[$(date --iso-8601=seconds)] nightly pipeline start run_date=${run_date}"
 

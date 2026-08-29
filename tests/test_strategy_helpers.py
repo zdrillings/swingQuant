@@ -972,6 +972,34 @@ class StrategyHelperTests(unittest.TestCase):
         self.assertAlmostEqual(float(latest_materials.iloc[0]["sector_pct_above_50"]), 0.5)
         self.assertAlmostEqual(float(latest_materials.iloc[0]["sector_pct_above_200"]), 0.5)
 
+    def test_build_analysis_frame_uses_point_in_time_md_volume(self) -> None:
+        dates = pd.bdate_range("2026-01-01", periods=35)
+        rows = []
+        for index, day in enumerate(dates):
+            rows.append(
+                {
+                    "ticker": "AAA",
+                    "date": day.date(),
+                    "open": 10.0,
+                    "high": 11.0,
+                    "low": 9.0,
+                    "close": 10.0,
+                    "volume": 1_000 + index,
+                    "adj_close": 10.0,
+                }
+            )
+
+        with patch("src.utils.signal_engine.load_feature_config", return_value={"features": {}}):
+            frame, _ = build_analysis_frame(
+                pd.DataFrame(rows),
+                [{"ticker": "AAA", "sector": "Materials", "md_volume_30d": 999_999_999}],
+            )
+        aaa = frame[frame["ticker"] == "AAA"].sort_values("date")
+
+        self.assertAlmostEqual(float(aaa.iloc[0]["md_volume_30d"]), 10_000.0)
+        self.assertAlmostEqual(float(aaa.iloc[-1]["md_volume_30d"]), 10_195.0)
+        self.assertNotEqual(float(aaa.iloc[0]["md_volume_30d"]), float(aaa.iloc[-1]["md_volume_30d"]))
+
     def test_non_tech_sectors_default_to_spy_regime(self) -> None:
         self.assertEqual(regime_etf_for_sector("Industrials"), "SPY")
         self.assertEqual(regime_etf_for_sector("Information Technology"), "QQQ")

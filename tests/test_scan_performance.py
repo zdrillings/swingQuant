@@ -20,6 +20,7 @@ class ScanPerformanceServiceTests(unittest.TestCase):
 
             class FakeDB:
                 def __init__(self):
+                    self.updated_outcomes = []
                     self.paths = AppPaths(
                         root_dir=root,
                         data_dir=root / "data",
@@ -48,6 +49,9 @@ class ScanPerformanceServiceTests(unittest.TestCase):
                                 "selection_source": "shortlist_model",
                                 "model_name": "xgboost_model",
                                 "model_generated_at": "2026-06-02T20:08:10+00:00",
+                                "model_rank": 1,
+                                "selection_score": 0.70,
+                                "opportunity_score": 0.70,
                             },
                             {
                                 "scan_date": "2026-05-02",
@@ -60,6 +64,24 @@ class ScanPerformanceServiceTests(unittest.TestCase):
                                 "selection_source": "shortlist_model",
                                 "model_name": "xgboost_model",
                                 "model_generated_at": "2026-06-03T20:08:10+00:00",
+                                "model_rank": 2,
+                                "selection_score": 0.60,
+                                "opportunity_score": 0.60,
+                            },
+                            {
+                                "scan_date": "2026-05-02",
+                                "ticker": "DV",
+                                "strategy_slot": "technology",
+                                "strategy_sector": "Information Technology",
+                                "sector": "Information Technology",
+                                "selected": 0,
+                                "selected_rank": None,
+                                "selection_source": "shortlist_model",
+                                "model_name": "xgboost_model",
+                                "model_generated_at": "2026-06-03T20:08:10+00:00",
+                                "model_rank": 1,
+                                "selection_score": 0.95,
+                                "opportunity_score": 0.95,
                             },
                         ]
                     )
@@ -104,9 +126,17 @@ class ScanPerformanceServiceTests(unittest.TestCase):
                         ]
                     )
 
-            report = ScanPerformanceService(FakeDB()).run(recent_scan_dates=60, recent_picks=5, benchmark="sector")
+                def update_scan_candidate_outcomes(self, *, scan_date, rows):
+                    self.updated_outcomes.append((scan_date, list(rows)))
+                    return len(rows)
+
+            fake_db = FakeDB()
+            report = ScanPerformanceService(fake_db).run(recent_scan_dates=60, recent_picks=5, benchmark="sector")
 
             self.assertTrue(report.output_path.endswith("scan_performance.md"))
+            self.assertEqual([scan_date for scan_date, _rows in fake_db.updated_outcomes], ["2026-05-01", "2026-05-02"])
+            self.assertEqual(fake_db.updated_outcomes[0][1][0]["ticker"], "AAA")
+            self.assertAlmostEqual(fake_db.updated_outcomes[0][1][0]["fwd_return_1d"], 0.05)
             report_text = (reports_dir / "scan_performance.md").read_text(encoding="utf-8")
             self.assertIn("# Scan Performance", report_text)
             self.assertIn("- scope: latest_model_family", report_text)
@@ -115,6 +145,9 @@ class ScanPerformanceServiceTests(unittest.TestCase):
             self.assertIn("- scan_dates: 2", report_text)
             self.assertIn("## Selection Source Coverage", report_text)
             self.assertIn("- shortlist_model: 2 (100.0%)", report_text)
+            self.assertIn("## Latest Model Selection Audit", report_text)
+            self.assertIn("- BBB: selected_rank=1, model_rank=2", report_text)
+            self.assertIn("- DV: model_rank=1", report_text)
             self.assertIn("### 2d", report_text)
             self.assertIn("### 60d", report_text)
             self.assertIn("## 20d Timeframe Summary", report_text)
@@ -428,6 +461,46 @@ class ScanPerformanceServiceTests(unittest.TestCase):
         self.assertIn("- AAA: trades=1, realized_pnl=$20.00", report_text)
         self.assertIn("- CCC: shares=4", report_text)
         self.assertIn("latest=36.00 (2026-06-22)", report_text)
+
+    def test_portfolio_performance_skips_closed_trade_exit_outside_ohlc_range(self) -> None:
+        class FakeDB:
+            def list_closed_trades(self):
+                return [
+                    {
+                        "ticker": "CRWD",
+                        "entry_date": "2026-05-05",
+                        "entry_price": 483.78,
+                        "shares": 13,
+                        "exit_date": "2026-05-07",
+                        "exit_price": 13.0,
+                    },
+                    {
+                        "ticker": "AAA",
+                        "entry_date": "2026-05-05",
+                        "entry_price": 10.0,
+                        "shares": 10,
+                        "exit_date": "2026-05-07",
+                        "exit_price": 11.0,
+                    },
+                ]
+
+            def list_open_trades(self):
+                return []
+
+            def load_price_history(self, tickers):
+                return pd.DataFrame(
+                    [
+                        {"ticker": "CRWD", "date": "2026-05-07", "low": 486.09, "high": 506.79, "adj_close": 505.72},
+                        {"ticker": "AAA", "date": "2026-05-07", "low": 10.5, "high": 11.5, "adj_close": 11.0},
+                    ]
+                )
+
+        report_text = "\n".join(ScanPerformanceService(FakeDB())._render_portfolio_performance())
+
+        self.assertIn("- closed_trades: 1", report_text)
+        self.assertIn("- suspect_closed_trades_skipped: 1", report_text)
+        self.assertIn("realized_pnl=$10.00", report_text)
+        self.assertNotIn("CRWD:", report_text)
 
     def test_scan_performance_optionally_emails_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -468,6 +468,67 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertIsNone(context)
         self.assertEqual(fake_db.refresh_count, 0)
 
+    def test_runtime_loader_rejects_champion_with_negative_latest_fold(self) -> None:
+        class FakeDB:
+            def load_shortlist_model_runs(self, *, horizon_days, eligible_universe_mode=None, model_scope=None, xgboost_config="baseline", limit=1):
+                return pd.DataFrame(
+                    [
+                        {
+                            "generated_at": "2026-05-26T17:00:00+00:00",
+                            "champion_model": "lasso_model",
+                            "live_snapshot_date": "2026-05-22",
+                        }
+                    ]
+                )
+
+            def list_universe_daily_snapshot_dates(self):
+                return ["2026-05-22"]
+
+            def load_shortlist_model_predictions(self, *, dataset_split, model_name, **kwargs):
+                if model_name != "lasso_model":
+                    return pd.DataFrame()
+                if dataset_split == "live":
+                    return pd.DataFrame(
+                        [
+                            {
+                                "snapshot_date": "2026-05-22",
+                                "ticker": "AAA",
+                                "sector": "Energy",
+                                "md_volume_30d": 50_000_000.0,
+                                "predicted_alpha": 0.11,
+                            }
+                        ]
+                    )
+                rows = []
+                for snapshot_date, targets in [
+                    ("2026-05-18", (0.04, 0.03, -0.01)),
+                    ("2026-05-19", (0.05, 0.02, -0.01)),
+                    ("2026-05-20", (0.04, 0.01, -0.01)),
+                    ("2026-05-21", (-0.03, -0.02, -0.04)),
+                ]:
+                    for ticker, predicted_alpha, target in zip(("AAA", "BBB", "CCC"), (0.11, 0.08, 0.01), targets):
+                        rows.append(
+                            {
+                                "snapshot_date": snapshot_date,
+                                "ticker": ticker,
+                                "sector": "Energy",
+                                "md_volume_30d": 50_000_000.0,
+                                "predicted_alpha": predicted_alpha,
+                                "actual_alpha_vs_sector": target,
+                            }
+                        )
+                return pd.DataFrame(rows)
+
+        context = load_live_shortlist_model_context(
+            FakeDB(),
+            top_n=2,
+            refresh_if_stale=False,
+            eligible_universe_mode="passed_only",
+            model_scope="sector_specific",
+        )
+
+        self.assertIsNone(context)
+
     def test_champion_selection_refuses_models_that_fail_promotion_gate(self) -> None:
         service = ShortlistModelService(db_manager=object())
         full_summaries = pd.DataFrame(
@@ -492,6 +553,44 @@ class ShortlistModelServiceTests(unittest.TestCase):
             "min_recent_60d_hit_rate": 0.50,
             "min_recent_60d_beat_universe_rate": 0.50,
             "min_recent_60d_mean_target": 0.0,
+        }
+
+        with self.assertRaisesRegex(ValueError, "No shortlist model candidate passed the promotion gate"):
+            service._choose_champion_model(
+                full_summaries=full_summaries,
+                acceptance_summaries=acceptance_summaries,
+                promotion_gate=promotion_gate,
+            )
+
+    def test_champion_selection_refuses_models_with_negative_latest_fold(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        full_summaries = pd.DataFrame(
+            [
+                {"model": "lasso_model", "mean_target": 0.08, "beat_universe_rate": 0.80, "positive_date_rate": 0.80},
+            ]
+        )
+        acceptance_summaries = pd.DataFrame(
+            [
+                {"model": "lasso_model_20d", "hit_rate": 0.85, "beat_universe_rate": 0.85, "mean_target": 0.04},
+                {"model": "lasso_model_60d", "hit_rate": 0.85, "beat_universe_rate": 0.85, "mean_target": 0.04},
+                {"model": "lasso_model_last_1fold", "hit_rate": 0.0, "beat_universe_rate": 0.0, "mean_target": -0.03},
+                {"model": "lasso_model_last_3fold", "hit_rate": 0.67, "beat_universe_rate": 0.67, "mean_target": 0.01},
+            ]
+        )
+        promotion_gate = {
+            "enabled": True,
+            "min_recent_20d_hit_rate": 0.50,
+            "min_recent_20d_beat_universe_rate": 0.50,
+            "min_recent_20d_mean_target": 0.0,
+            "min_recent_60d_hit_rate": 0.50,
+            "min_recent_60d_beat_universe_rate": 0.50,
+            "min_recent_60d_mean_target": 0.0,
+            "min_recent_1fold_hit_rate": 0.50,
+            "min_recent_1fold_beat_universe_rate": 0.50,
+            "min_recent_1fold_mean_target": 0.0,
+            "min_recent_3fold_hit_rate": 0.50,
+            "min_recent_3fold_beat_universe_rate": 0.50,
+            "min_recent_3fold_mean_target": 0.0,
         }
 
         with self.assertRaisesRegex(ValueError, "No shortlist model candidate passed the promotion gate"):

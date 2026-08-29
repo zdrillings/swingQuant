@@ -365,6 +365,12 @@ scan_policy:
       min_recent_60d_hit_rate: 0.50
       min_recent_60d_beat_universe_rate: 0.50
       min_recent_60d_mean_target: 0.0
+      min_recent_1fold_hit_rate: 0.50
+      min_recent_1fold_beat_universe_rate: 0.50
+      min_recent_1fold_mean_target: 0.0
+      min_recent_3fold_hit_rate: 0.50
+      min_recent_3fold_beat_universe_rate: 0.50
+      min_recent_3fold_mean_target: 0.0
 monitor_policy:
   sell_signal:
     max_loss_pct: 0.15

@@ -22,6 +22,24 @@ class FakeMarketDataClient:
         raise RuntimeError("intraday unavailable")
 
 
+class CorruptIntradayMarketDataClient:
+    def download_intraday_history(self, tickers):
+        return pd.DataFrame(
+            [
+                {
+                    "ticker": "AAA",
+                    "date": pd.Timestamp("2026-07-01"),
+                    "open": 486.0,
+                    "high": 506.0,
+                    "low": 486.0,
+                    "close": 13.0,
+                    "volume": 100,
+                    "adj_close": 13.0,
+                }
+            ]
+        )
+
+
 class FakeDB:
     def __init__(self):
         self.open_trades = [
@@ -185,6 +203,37 @@ class SchwabLedgerSyncServiceTests(unittest.TestCase):
 
         self.assertEqual(report.closed, 2)
         self.assertEqual(len(db.closed), 2)
+
+    def test_close_missing_rejects_intraday_exit_price_outside_ohlc_range(self) -> None:
+        db = FakeDB()
+        db.open_trades = [
+            {
+                "rowid": 1,
+                "ticker": "AAA",
+                "entry_date": "2026-06-01",
+                "entry_price": 483.78,
+                "entry_atr": None,
+                "strategy_id": 1,
+                "strategy_slot": "technology",
+                "shares": 13,
+                "max_price_seen": 506.0,
+                "status": "open",
+                "exit_date": None,
+                "exit_price": None,
+            }
+        ]
+        schwab = FakeSchwabClient([])
+
+        with patch("src.schwab.ledger_sync.load_active_strategies", return_value={}):
+            report = SchwabLedgerSyncService(
+                db,
+                schwab_client=schwab,
+                market_data_client=CorruptIntradayMarketDataClient(),
+            ).run(close_missing=True)
+
+        self.assertEqual(report.closed, 1)
+        self.assertEqual(db.closed[0][2], 11.0)
+        self.assertTrue(any("source=stored_close" in message for message in report.messages))
 
     def test_sync_skips_etfs_by_default(self) -> None:
         db = FakeDB()

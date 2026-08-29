@@ -25,6 +25,12 @@ class LiveShortlistModelContext:
     recent_60d_beat_rate: float | None = None
     recent_60d_mean_target: float | None = None
     recent_60d_hit_rate: float | None = None
+    recent_1fold_beat_rate: float | None = None
+    recent_1fold_mean_target: float | None = None
+    recent_1fold_hit_rate: float | None = None
+    recent_3fold_beat_rate: float | None = None
+    recent_3fold_mean_target: float | None = None
+    recent_3fold_hit_rate: float | None = None
 
 
 def load_live_shortlist_model_context(
@@ -127,6 +133,8 @@ def load_live_shortlist_model_context(
     recent_metrics = {
         20: {"beat_rate": None, "mean_target": None, "hit_rate": None},
         60: {"beat_rate": None, "mean_target": None, "hit_rate": None},
+        1: {"beat_rate": None, "mean_target": None, "hit_rate": None},
+        3: {"beat_rate": None, "mean_target": None, "hit_rate": None},
     }
     try:
         oos_predictions = db_manager.load_shortlist_model_predictions(
@@ -146,7 +154,7 @@ def load_live_shortlist_model_context(
                     errors="coerce",
                 )
             oos_dates = sorted(oos_predictions["snapshot_date"].drop_duplicates().tolist())
-            for window in recent_metrics:
+            for window in (20, 60, 1, 3):
                 recent_oos_dates = oos_dates[-window:] if len(oos_dates) >= window else oos_dates
                 recent = oos_predictions[oos_predictions["snapshot_date"].isin(recent_oos_dates)].copy()
                 recent_metrics[window] = _score_recent_oos_basket(recent)
@@ -169,6 +177,12 @@ def load_live_shortlist_model_context(
         recent_60d_beat_rate=recent_metrics[60]["beat_rate"],
         recent_60d_mean_target=recent_metrics[60]["mean_target"],
         recent_60d_hit_rate=recent_metrics[60]["hit_rate"],
+        recent_1fold_beat_rate=recent_metrics[1]["beat_rate"],
+        recent_1fold_mean_target=recent_metrics[1]["mean_target"],
+        recent_1fold_hit_rate=recent_metrics[1]["hit_rate"],
+        recent_3fold_beat_rate=recent_metrics[3]["beat_rate"],
+        recent_3fold_mean_target=recent_metrics[3]["mean_target"],
+        recent_3fold_hit_rate=recent_metrics[3]["hit_rate"],
     )
 
 
@@ -221,6 +235,12 @@ def _runtime_promotion_gate() -> dict[str, float | bool]:
         "min_recent_60d_hit_rate": float(payload.get("min_recent_60d_hit_rate", 0.50)),
         "min_recent_60d_beat_universe_rate": float(payload.get("min_recent_60d_beat_universe_rate", 0.50)),
         "min_recent_60d_mean_target": float(payload.get("min_recent_60d_mean_target", 0.0)),
+        "min_recent_1fold_hit_rate": float(payload.get("min_recent_1fold_hit_rate", 0.50)),
+        "min_recent_1fold_beat_universe_rate": float(payload.get("min_recent_1fold_beat_universe_rate", 0.50)),
+        "min_recent_1fold_mean_target": float(payload.get("min_recent_1fold_mean_target", 0.0)),
+        "min_recent_3fold_hit_rate": float(payload.get("min_recent_3fold_hit_rate", 0.50)),
+        "min_recent_3fold_beat_universe_rate": float(payload.get("min_recent_3fold_beat_universe_rate", 0.50)),
+        "min_recent_3fold_mean_target": float(payload.get("min_recent_3fold_mean_target", 0.0)),
     }
 
 
@@ -237,6 +257,21 @@ def _passes_runtime_promotion_gate(
             (metrics.get("hit_rate"), gate[f"min_recent_{window}d_hit_rate"]),
             (metrics.get("beat_rate"), gate[f"min_recent_{window}d_beat_universe_rate"]),
             (metrics.get("mean_target"), gate[f"min_recent_{window}d_mean_target"]),
+        )
+        for value, threshold in checks:
+            try:
+                numeric = float(value)
+                required = float(threshold)
+            except (TypeError, ValueError):
+                return False
+            if not np.isfinite(numeric) or numeric < required:
+                return False
+    for folds in (1, 3):
+        metrics = recent_metrics.get(folds, {})
+        checks = (
+            (metrics.get("hit_rate"), gate[f"min_recent_{folds}fold_hit_rate"]),
+            (metrics.get("beat_rate"), gate[f"min_recent_{folds}fold_beat_universe_rate"]),
+            (metrics.get("mean_target"), gate[f"min_recent_{folds}fold_mean_target"]),
         )
         for value, threshold in checks:
             try:

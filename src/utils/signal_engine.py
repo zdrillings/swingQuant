@@ -40,6 +40,27 @@ def _compute_regime_frame(frame: pd.DataFrame, ticker: str) -> pd.DataFrame:
     return reference[["date", "sma_200", "regime_green"]]
 
 
+def _point_in_time_md_volume_30d(price_history: pd.DataFrame) -> pd.Series:
+    required = {"ticker", "date", "volume"}
+    if price_history.empty or not required.issubset(price_history.columns):
+        return pd.Series(dtype=float)
+    working = price_history.copy()
+    working["_original_index"] = working.index
+    working["date"] = pd.to_datetime(working["date"])
+    price_column = "adj_close" if "adj_close" in working.columns else "close"
+    if price_column not in working.columns:
+        return pd.Series(dtype=float)
+    working["_dollar_volume"] = pd.to_numeric(working[price_column], errors="coerce") * pd.to_numeric(
+        working["volume"],
+        errors="coerce",
+    )
+    working = working.sort_values(["ticker", "date", "_original_index"])
+    working["_md_volume_30d"] = working.groupby("ticker", sort=False)["_dollar_volume"].transform(
+        lambda series: series.rolling(window=30, min_periods=1).median()
+    )
+    return working.set_index("_original_index")["_md_volume_30d"].reindex(price_history.index)
+
+
 def build_analysis_frame(
     price_history: pd.DataFrame,
     universe_rows: list[dict] | list[pd.Series] | list,
@@ -72,7 +93,8 @@ def build_analysis_frame(
     }
     working_history["sector"] = working_history["ticker"].map(sector_map)
     working_history["sub_industry"] = working_history["ticker"].map(sub_industry_map)
-    working_history["md_volume_30d"] = working_history["ticker"].map(liquidity_map)
+    fallback_liquidity = working_history["ticker"].map(liquidity_map)
+    working_history["md_volume_30d"] = _point_in_time_md_volume_30d(working_history).fillna(fallback_liquidity)
     working_history["subindustry_benchmark"] = working_history.apply(
         lambda row: benchmark_etf_for_sub_industry(row.get("sector"), row.get("sub_industry"))
         if pd.notna(row.get("sector"))

@@ -14,7 +14,7 @@ from src.utils.logging import get_logger
 from src.utils.regime import benchmark_etf_for_sector
 
 
-DEFAULT_PERFORMANCE_HORIZONS = (2, 5, 10, 20, 60)
+DEFAULT_PERFORMANCE_HORIZONS = (1, 2, 3, 5, 10, 20, 60)
 
 
 @dataclass(frozen=True)
@@ -88,6 +88,7 @@ class ScanPerformanceService:
             raise ValueError("No selected scan picks matched the requested recent window.")
 
         enriched = self._attach_outcomes(selected, horizons=horizons)
+        self._persist_selected_outcomes(enriched)
 
         report_path = self.db_manager.paths.reports_dir / "scan_performance.md"
         lines = [
@@ -107,6 +108,7 @@ class ScanPerformanceService:
             "",
         ]
         lines.extend(self._render_selection_source_coverage(enriched))
+        lines.extend(self._render_latest_model_selection_audit(candidates))
         lines.extend(self._render_horizon_summary(enriched, horizons=horizons, benchmark=benchmark))
         lines.extend(self._render_20d_timeframe_summary(enriched, benchmark=benchmark))
         lines.extend(self._render_20d_score_bands(enriched, benchmark=benchmark))
@@ -139,6 +141,51 @@ class ScanPerformanceService:
             scan_dates=len(scoped_dates),
             benchmark=benchmark,
         )
+
+    def _persist_selected_outcomes(self, enriched: pd.DataFrame) -> None:
+        if enriched.empty or not hasattr(self.db_manager, "update_scan_candidate_outcomes"):
+            return
+        required_columns = {"scan_date", "ticker", "strategy_slot"}
+        if not required_columns.issubset(enriched.columns):
+            return
+        outcome_columns = [
+            "fwd_return_1d",
+            "fwd_return_3d",
+            "fwd_return_5d",
+            "fwd_return_10d",
+            "fwd_return_20d",
+            "alpha_vs_spy_1d",
+            "alpha_vs_spy_3d",
+            "alpha_vs_spy_5d",
+            "alpha_vs_spy_10d",
+            "alpha_vs_spy_20d",
+            "alpha_vs_sector_1d",
+            "alpha_vs_sector_3d",
+            "alpha_vs_sector_5d",
+            "alpha_vs_sector_10d",
+            "alpha_vs_sector_20d",
+            "mfe_20d",
+            "mae_20d",
+        ]
+        present_outcome_columns = [column for column in outcome_columns if column in enriched.columns]
+        if not present_outcome_columns:
+            return
+        for scan_date, group in enriched.groupby("scan_date", sort=True):
+            rows = []
+            for row in group.to_dict(orient="records"):
+                payload = {
+                    "ticker": row["ticker"],
+                    "strategy_slot": row["strategy_slot"],
+                }
+                for column in present_outcome_columns:
+                    value = row.get(column)
+                    payload[column] = None if pd.isna(value) else value
+                rows.append(payload)
+            if rows:
+                self.db_manager.update_scan_candidate_outcomes(
+                    scan_date=str(pd.Timestamp(scan_date).date()),
+                    rows=rows,
+                )
 
     def _resolve_scope(
         self,
@@ -230,6 +277,57 @@ class ScanPerformanceService:
             lines.append(f"- {source}: {int(count)} ({pct:.1%})")
         if "shortlist_model" not in counts.index:
             lines.append("- warning: no selected picks in this report window are model-attributed.")
+        lines.append("")
+        return lines
+
+    def _render_latest_model_selection_audit(self, candidates: pd.DataFrame) -> list[str]:
+        lines = ["## Latest Model Selection Audit", ""]
+        required = {"scan_date", "ticker", "selected", "selection_source", "model_rank"}
+        if candidates.empty or not required.issubset(candidates.columns):
+            lines.extend(["No model selection audit metadata is available.", ""])
+            return lines
+        working = candidates[candidates["selection_source"].astype(str) == "shortlist_model"].copy()
+        if working.empty:
+            lines.extend(["No model-attributed candidates are available.", ""])
+            return lines
+        working["scan_date"] = pd.to_datetime(working["scan_date"]).dt.normalize()
+        latest_date = working["scan_date"].max()
+        latest = working[working["scan_date"] == latest_date].copy()
+        latest["model_rank"] = pd.to_numeric(latest["model_rank"], errors="coerce")
+        selected = latest[latest["selected"].astype(int) == 1].sort_values(["selected_rank", "model_rank", "ticker"])
+        if selected.empty:
+            lines.extend([f"- scan_date: {latest_date.date()}", "- selected_model_picks: 0", ""])
+            return lines
+        worst_selected_model_rank = pd.to_numeric(selected["model_rank"], errors="coerce").max()
+        skipped = latest[
+            (latest["selected"].astype(int) == 0)
+            & latest["model_rank"].notna()
+            & (latest["model_rank"].astype(float) < float(worst_selected_model_rank))
+        ].sort_values(["model_rank", "ticker"])
+        lines.append(f"- scan_date: {latest_date.date()}")
+        lines.append(
+            "- note: final picks are chosen after opportunity floor, recent rotation, current holdings, and portfolio caps; this section surfaces model-rank divergences."
+        )
+        lines.append("- selected:")
+        for row in selected.head(10).itertuples(index=False):
+            lines.append(
+                f"  - {row.ticker}: selected_rank={self._fmt_int(getattr(row, 'selected_rank', None))}, "
+                f"model_rank={self._fmt_int(getattr(row, 'model_rank', None))}, "
+                f"slot={getattr(row, 'strategy_slot', 'n/a')}, "
+                f"selection_score={self._fmt_score(getattr(row, 'selection_score', float('nan')))}, "
+                f"opportunity={self._fmt_score(getattr(row, 'opportunity_score', float('nan')))}"
+            )
+        if skipped.empty:
+            lines.append("- higher_model_rank_unselected: none")
+        else:
+            lines.append("- higher_model_rank_unselected:")
+            for row in skipped.head(10).itertuples(index=False):
+                lines.append(
+                    f"  - {row.ticker}: model_rank={self._fmt_int(getattr(row, 'model_rank', None))}, "
+                    f"slot={getattr(row, 'strategy_slot', 'n/a')}, "
+                    f"selection_score={self._fmt_score(getattr(row, 'selection_score', float('nan')))}, "
+                    f"opportunity={self._fmt_score(getattr(row, 'opportunity_score', float('nan')))}"
+                )
         lines.append("")
         return lines
 
@@ -531,12 +629,17 @@ class ScanPerformanceService:
             lines.append("")
             return lines
 
+        exit_ohlc = self._exit_ohlc_for_closed_trades(closed_trades)
         realized_rows = []
+        suspect_closed_trades = 0
         for trade in closed_trades:
             entry_price = self._coerce_float(trade.get("entry_price"))
             exit_price = self._coerce_float(trade.get("exit_price"))
             shares = self._coerce_int(trade.get("shares"))
             if not (math.isfinite(entry_price) and entry_price > 0 and math.isfinite(exit_price) and shares > 0):
+                continue
+            if not self._closed_trade_exit_is_plausible(trade, exit_price=exit_price, exit_ohlc=exit_ohlc):
+                suspect_closed_trades += 1
                 continue
             cost = entry_price * shares
             pnl = (exit_price - entry_price) * shares
@@ -601,6 +704,8 @@ class ScanPerformanceService:
         total_pnl = realized_pnl + unrealized_pnl
 
         lines.append(f"- closed_trades: {len(realized_rows)}")
+        if suspect_closed_trades:
+            lines.append(f"- suspect_closed_trades_skipped: {suspect_closed_trades}")
         lines.append(f"- open_trades: {len(open_trades)}")
         lines.append(f"- realized_pnl: {self._fmt_dollars(realized_pnl)}")
         lines.append(f"- realized_return_on_cost: {self._fmt_pct(realized_pnl / realized_cost) if realized_cost > 0 else 'n/a'}")
@@ -613,6 +718,46 @@ class ScanPerformanceService:
         lines.extend(self._render_portfolio_realized_rows(realized_rows))
         lines.extend(self._render_portfolio_unrealized_rows(unrealized_rows))
         return lines
+
+    def _exit_ohlc_for_closed_trades(self, closed_trades: list[dict]) -> dict[tuple[str, str], dict[str, float]]:
+        if not closed_trades or not hasattr(self.db_manager, "load_price_history"):
+            return {}
+        tickers = sorted({str(trade.get("ticker") or "") for trade in closed_trades if trade.get("ticker")})
+        if not tickers:
+            return {}
+        history = self.db_manager.load_price_history(tickers)
+        if history.empty or not {"ticker", "date", "low", "high"}.issubset(history.columns):
+            return {}
+        working = history.copy()
+        working["date"] = pd.to_datetime(working["date"]).dt.normalize()
+        result: dict[tuple[str, str], dict[str, float]] = {}
+        for row in working.to_dict(orient="records"):
+            ticker = str(row.get("ticker") or "")
+            date_value = str(pd.Timestamp(row["date"]).date())
+            low = self._coerce_float(row.get("low"))
+            high = self._coerce_float(row.get("high"))
+            if math.isfinite(low) and math.isfinite(high) and low > 0 and high >= low:
+                result[(ticker, date_value)] = {"low": low, "high": high}
+        return result
+
+    def _closed_trade_exit_is_plausible(
+        self,
+        trade: dict,
+        *,
+        exit_price: float,
+        exit_ohlc: dict[tuple[str, str], dict[str, float]],
+        tolerance_pct: float = 0.01,
+    ) -> bool:
+        ticker = str(trade.get("ticker") or "")
+        exit_date = str(trade.get("exit_date") or "")
+        if not ticker or not exit_date:
+            return True
+        ohlc = exit_ohlc.get((ticker, exit_date))
+        if ohlc is None:
+            return True
+        low = float(ohlc["low"])
+        high = float(ohlc["high"])
+        return (low * (1.0 - float(tolerance_pct))) <= float(exit_price) <= (high * (1.0 + float(tolerance_pct)))
 
     def _latest_prices_for_open_trades(self, open_trades: list[dict]) -> dict[str, dict[str, object]]:
         tickers = sorted({str(trade.get("ticker") or "") for trade in open_trades if trade.get("ticker")})
@@ -1178,6 +1323,14 @@ class ScanPerformanceService:
         if value is None or not math.isfinite(float(value)):
             return "n/a"
         return f"{float(value):.4f}"
+
+    def _fmt_int(self, value) -> str:
+        if value is None or pd.isna(value):
+            return "n/a"
+        try:
+            return str(int(float(value)))
+        except (TypeError, ValueError):
+            return "n/a"
 
     def _coerce_float(self, value) -> float:
         try:
