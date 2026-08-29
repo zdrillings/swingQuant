@@ -162,7 +162,7 @@ class SyncServiceTests(unittest.TestCase):
         self.assertEqual(failed, {"AAA", "BBB"})
         self.assertEqual(db_manager.status_updates, [])
 
-    def test_final_retry_marks_ticker_inactive_after_last_attempt(self) -> None:
+    def test_final_retry_reports_failed_ticker_without_status_side_effect(self) -> None:
         db_manager = FakeDBManager()
         client = FakeMarketDataClient(
             {
@@ -180,7 +180,7 @@ class SyncServiceTests(unittest.TestCase):
 
         self.assertEqual(inserted, 0)
         self.assertEqual(failed, {"AAA"})
-        self.assertEqual(db_manager.status_updates, [{"ticker": "AAA", "is_active": False, "md_volume_30d": None}])
+        self.assertEqual(db_manager.status_updates, [])
 
     def test_final_retry_recovers_transient_failure_without_deactivation(self) -> None:
         db_manager = FakeDBManager()
@@ -216,6 +216,35 @@ class SyncServiceTests(unittest.TestCase):
         self.assertEqual(report.failed_tickers, ())
         self.assertEqual(report.inserted_rows, 2)
         final_retry.assert_called_once()
+
+    def test_run_marks_narrow_permanent_failures_inactive(self) -> None:
+        db_manager = FakeDBManager()
+        db_manager.all_tickers = ["AAA", "BBB", "CCC", "DDD"]
+        db_manager.liquidity_windows = {
+            "AAA": pd.DataFrame({"close": [100.0] * 30, "volume": [300000] * 30}),
+            "BBB": pd.DataFrame({"close": [100.0] * 30, "volume": [300000] * 30}),
+            "DDD": pd.DataFrame({"close": [100.0] * 30, "volume": [300000] * 30}),
+        }
+        service = SyncService(db_manager, market_data_client=FakeMarketDataClient({}))
+
+        with patch.object(service, "_sync_start_date_group", return_value=(2, {"CCC"})), \
+             patch.object(service, "_retry_failed_tickers", return_value=(0, {"CCC"})):
+            report = service.run()
+
+        self.assertEqual(report.failed_tickers, ("CCC",))
+        self.assertIn({"ticker": "CCC", "is_active": False, "md_volume_30d": None}, db_manager.status_updates)
+
+    def test_run_fails_closed_without_deactivating_universe_on_broad_zero_row_outage(self) -> None:
+        db_manager = FakeDBManager()
+        db_manager.all_tickers = ["AAA", "BBB", "CCC", "DDD"]
+        service = SyncService(db_manager, market_data_client=FakeMarketDataClient({}))
+
+        with patch.object(service, "_sync_start_date_group", return_value=(0, {"AAA", "BBB", "CCC", "DDD"})), \
+             patch.object(service, "_retry_failed_tickers", return_value=(0, {"AAA", "BBB", "CCC", "DDD"})):
+            with self.assertRaisesRegex(RuntimeError, "Market data sync failed broadly"):
+                service.run()
+
+        self.assertEqual(db_manager.status_updates, [])
 
     def test_liquidity_filter_deactivates_illiquid_names_and_stores_metric(self) -> None:
         db_manager = FakeDBManager()

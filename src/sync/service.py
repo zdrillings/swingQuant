@@ -121,6 +121,18 @@ class SyncService:
                 len(retry_tickers) - len(final_failed_tickers),
                 len(final_failed_tickers),
             )
+        if self._looks_like_market_data_outage(
+            fetch_tickers=fetch_tickers,
+            universe_tickers=universe_tickers,
+            inserted_rows=inserted_rows,
+            failed_tickers=final_failed_tickers,
+        ):
+            raise RuntimeError(
+                "Market data sync failed broadly with zero inserted rows; preserving universe active status."
+            )
+
+        for ticker in sorted(set(universe_tickers).intersection(final_failed_tickers)):
+            self.db_manager.set_ticker_status(ticker, is_active=False)
 
         self.logger.info("Applying liquidity filter to %s universe tickers", len(universe_tickers))
         inactive_for_liquidity = self._apply_liquidity_filter(
@@ -142,6 +154,22 @@ class SyncService:
             failed_tickers=tuple(sorted(final_failed_tickers)),
             inactive_for_liquidity=tuple(sorted(inactive_for_liquidity)),
         )
+
+    def _looks_like_market_data_outage(
+        self,
+        *,
+        fetch_tickers: list[str],
+        universe_tickers: list[str],
+        inserted_rows: int,
+        failed_tickers: set[str],
+        failure_ratio_threshold: float = 0.25,
+    ) -> bool:
+        if inserted_rows > 0 or not fetch_tickers or not failed_tickers:
+            return False
+        universe_set = set(universe_tickers)
+        if universe_set and universe_set.issubset(failed_tickers):
+            return True
+        return (len(failed_tickers) / len(fetch_tickers)) >= float(failure_ratio_threshold)
 
     def _sync_start_date_group(
         self,
@@ -251,8 +279,6 @@ class SyncService:
             except Exception as exc:
                 self.logger.error("Permanent sync failure for %s after final retry: %s", ticker, exc)
                 final_failed_tickers.add(ticker)
-                if ticker in universe_tickers:
-                    self.db_manager.set_ticker_status(ticker, is_active=False)
 
         return inserted_rows, final_failed_tickers
 
