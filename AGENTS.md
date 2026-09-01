@@ -93,7 +93,7 @@ The shortlist model is the core prediction engine. It evaluates multiple candida
 - **Binary target**: `alpha_vs_sector_20d_pos` — computed on-the-fly from matured `alpha_vs_sector_20d` if not yet backfilled, or stored in DuckDB; missing alpha stays missing
 - **Validation**: Expanding-window walk-forward, 252 min train dates, horizon-spaced OOS snapshot dates (`oos_evaluation_stride_dates=20` for 20d target), chronological split only
 - **Eligibility**: use historical `passed_slots_json` when available so the research universe reflects what passed on that snapshot date
-- **Calibration**: OOS predictions are calibrated to `calibrated_p_beat_sector`; live selection ranks by calibrated probability when available, then raw predicted alpha
+- **Calibration**: OOS predictions are calibrated to `calibrated_p_beat_sector` (kept for evaluation/audit). Since 2026-09-01 (00144e4), live selection ranks on raw `predicted_alpha` only — the calibration must not drive live ranking while its fold evidence is frozen or stale
 - **Model scopes**: `global` (single model), `sector_specific` (per-sector with fallback), `regime_specific` (2 regimes: trending when `spy_roc_20 > 1%` else choppy; uses `regime_green` when macro features unavailable)
 - **Champion selection**: selected from model summaries and recent acceptance windows; it must not be hardcoded to the latest experiment
 - **Feature purging**: For L1 models, zero-coefficient features are dropped and the model is re-fit on the reduced set (per-fold, honest)
@@ -116,7 +116,7 @@ The model's evaluation product is its **top-2 predictions**, not the full top-10
 - Uses explicit `production_model_name` only when configured; otherwise uses the persisted `champion_model`
 - Returns no model context when the selected model fails `scan_policy.shortlist_model.promotion_gate`
 - Heuristic fallback is a diagnostic escape hatch, not the production default.
-- Confidence metrics (`recent_20d_beat_rate`, `recent_20d_mean_target`) are computed from the top-2 OOS basket, sorted by calibrated probability when present, and threaded into the quality gate
+- Confidence metrics (`recent_20d_beat_rate`, `recent_20d_mean_target`) are computed from the top-2 OOS basket, sorted by raw `predicted_alpha`, and threaded into the quality gate
 - Model path selects at most 2 candidates; rotation exclusion removes the previous 3 scan dates' picks when the cap is below the configured total
 
 ## Command Behavior Expectations
