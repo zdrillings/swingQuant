@@ -1182,57 +1182,44 @@ class DatabaseManager:
         payload = list(rows)
         if not payload:
             return 0
+        outcome_columns = [
+            "fwd_return_1d",
+            "fwd_return_3d",
+            "fwd_return_5d",
+            "fwd_return_10d",
+            "fwd_return_20d",
+            "alpha_vs_spy_1d",
+            "alpha_vs_spy_3d",
+            "alpha_vs_spy_5d",
+            "alpha_vs_spy_10d",
+            "alpha_vs_spy_20d",
+            "alpha_vs_sector_1d",
+            "alpha_vs_sector_3d",
+            "alpha_vs_sector_5d",
+            "alpha_vs_sector_10d",
+            "alpha_vs_sector_20d",
+            "mfe_20d",
+            "mae_20d",
+        ]
+        updated = 0
         with self.sqlite_connection() as connection:
-            connection.executemany(
-                """
-                UPDATE Scan_Candidates
-                SET
-                    fwd_return_1d = ?,
-                    fwd_return_3d = ?,
-                    fwd_return_5d = ?,
-                    fwd_return_10d = ?,
-                    fwd_return_20d = ?,
-                    alpha_vs_spy_1d = ?,
-                    alpha_vs_spy_3d = ?,
-                    alpha_vs_spy_5d = ?,
-                    alpha_vs_spy_10d = ?,
-                    alpha_vs_spy_20d = ?,
-                    alpha_vs_sector_1d = ?,
-                    alpha_vs_sector_3d = ?,
-                    alpha_vs_sector_5d = ?,
-                    alpha_vs_sector_10d = ?,
-                    alpha_vs_sector_20d = ?,
-                    mfe_20d = ?,
-                    mae_20d = ?
-                WHERE scan_date = ? AND ticker = ? AND strategy_slot = ?
-                """,
-                [
-                    (
-                        row.get("fwd_return_1d"),
-                        row.get("fwd_return_3d"),
-                        row.get("fwd_return_5d"),
-                        row.get("fwd_return_10d"),
-                        row.get("fwd_return_20d"),
-                        row.get("alpha_vs_spy_1d"),
-                        row.get("alpha_vs_spy_3d"),
-                        row.get("alpha_vs_spy_5d"),
-                        row.get("alpha_vs_spy_10d"),
-                        row.get("alpha_vs_spy_20d"),
-                        row.get("alpha_vs_sector_1d"),
-                        row.get("alpha_vs_sector_3d"),
-                        row.get("alpha_vs_sector_5d"),
-                        row.get("alpha_vs_sector_10d"),
-                        row.get("alpha_vs_sector_20d"),
-                        row.get("mfe_20d"),
-                        row.get("mae_20d"),
-                        scan_date,
-                        str(row["ticker"]),
-                        str(row["strategy_slot"]),
-                    )
-                    for row in payload
-                ],
-            )
-        return len(payload)
+            for row in payload:
+                updates = [(column, row.get(column)) for column in outcome_columns if row.get(column) is not None]
+                if not updates:
+                    continue
+                set_clause = ", ".join(f"{column} = ?" for column, _value in updates)
+                values = [value for _column, value in updates]
+                values.extend([scan_date, str(row["ticker"]), str(row["strategy_slot"])])
+                cursor = connection.execute(
+                    f"""
+                    UPDATE Scan_Candidates
+                    SET {set_clause}
+                    WHERE scan_date = ? AND ticker = ? AND strategy_slot = ?
+                    """,
+                    values,
+                )
+                updated += int(cursor.rowcount if cursor.rowcount is not None else 0)
+        return updated
 
     def load_scan_candidates(self, scan_date: str | None = None):
         import pandas as pd
@@ -1830,6 +1817,24 @@ class DatabaseManager:
             "relative_strength_index_vs_subindustry",
             "rs_vs_spy_5d_change",
             "rs_vs_subindustry_5d_change",
+            "fwd_return_1d",
+            "fwd_return_3d",
+            "fwd_return_5d",
+            "fwd_return_10d",
+            "fwd_return_20d",
+            "alpha_vs_spy_1d",
+            "alpha_vs_spy_3d",
+            "alpha_vs_spy_5d",
+            "alpha_vs_spy_10d",
+            "alpha_vs_spy_20d",
+            "alpha_vs_sector_1d",
+            "alpha_vs_sector_3d",
+            "alpha_vs_sector_5d",
+            "alpha_vs_sector_10d",
+            "alpha_vs_sector_20d",
+            "alpha_vs_sector_20d_pos",
+            "mfe_20d",
+            "mae_20d",
         }
         invalid = [column for column in columns if column not in allowed_columns]
         if invalid:

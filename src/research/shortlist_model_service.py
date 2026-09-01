@@ -254,8 +254,8 @@ class ShortlistModelService:
         if live_predictions_all is None:
             raise ValueError(f"No live predictions available for champion_model={champion_model}.")
         live_predictions = live_predictions_all.sort_values(
-            ["calibrated_p_beat_sector", "predicted_alpha", "ticker"],
-            ascending=[False, False, True],
+            ["predicted_alpha", "ticker"],
+            ascending=[False, True],
         ).head(int(top_n)).reset_index(drop=True)
         combined_predictions.to_csv(oos_path, index=False)
         live_predictions_all.to_csv(live_path, index=False)

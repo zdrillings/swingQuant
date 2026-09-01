@@ -15,117 +15,117 @@
 - universe: passed_any_strategy or trend-qualified liquid names (green regime, above 200d, positive 63d momentum, RS vs SPY >= 60)
 - feature_matrix: raw features plus date-wise cross-sectional ranks and sector-relative ranks
 
-- eligible_rows: 268005
-- eligible_dates: 624
-- oos_prediction_dates: 19
+- eligible_rows: 256208
+- eligible_dates: 648
+- oos_prediction_dates: 20
 - champion_model: xgboost_model
 - oos_predictions_csv: /home/zdrillings/code/SwingQuant/reports/shortlist_model_oos_predictions.csv
 - live_predictions_csv: /home/zdrillings/code/SwingQuant/reports/shortlist_model_live_predictions.csv
-- generated_at: 2026-08-29T18:18:09+00:00
+- generated_at: 2026-09-01T15:05:56+00:00
 
 ## Full Walk-Forward Evaluation
 
 ### xgboost_model
-- dates: 19
-- avg_pick_count: 9.789474
-- mean_target: 0.202743
-- hit_rate: 0.850877
-- beat_universe_rate: 0.894737
-- positive_date_rate: 0.894737
-- ge_2pct_rate: 0.894737
-- ge_5pct_rate: 0.842105
+- dates: 20
+- avg_pick_count: 9.800000
+- mean_target: 0.194497
+- hit_rate: 0.858333
+- beat_universe_rate: 0.900000
+- positive_date_rate: 0.900000
+- ge_2pct_rate: 0.850000
+- ge_5pct_rate: 0.850000
 
 ### ensemble_model
-- dates: 19
-- avg_pick_count: 9.789474
-- mean_target: 0.118083
-- hit_rate: 0.719298
-- beat_universe_rate: 0.894737
-- positive_date_rate: 0.894737
-- ge_2pct_rate: 0.842105
-- ge_5pct_rate: 0.684211
+- dates: 20
+- avg_pick_count: 9.800000
+- mean_target: 0.116861
+- hit_rate: 0.723333
+- beat_universe_rate: 0.850000
+- positive_date_rate: 0.800000
+- ge_2pct_rate: 0.800000
+- ge_5pct_rate: 0.800000
 
 ### ridge_model
-- dates: 19
-- avg_pick_count: 9.789474
-- mean_target: 0.083305
-- hit_rate: 0.640351
-- beat_universe_rate: 0.736842
-- positive_date_rate: 0.789474
-- ge_2pct_rate: 0.684211
-- ge_5pct_rate: 0.684211
+- dates: 20
+- avg_pick_count: 9.800000
+- mean_target: 0.081731
+- hit_rate: 0.613333
+- beat_universe_rate: 0.800000
+- positive_date_rate: 0.750000
+- ge_2pct_rate: 0.650000
+- ge_5pct_rate: 0.600000
 
 ### lasso_model
-- dates: 19
-- avg_pick_count: 9.789474
-- mean_target: 0.081029
-- hit_rate: 0.650877
-- beat_universe_rate: 0.736842
-- positive_date_rate: 0.789474
-- ge_2pct_rate: 0.631579
-- ge_5pct_rate: 0.578947
+- dates: 20
+- avg_pick_count: 9.800000
+- mean_target: 0.076835
+- hit_rate: 0.628333
+- beat_universe_rate: 0.700000
+- positive_date_rate: 0.700000
+- ge_2pct_rate: 0.550000
+- ge_5pct_rate: 0.550000
 
 ### signal_proxy
-- dates: 19
-- avg_pick_count: 9.789474
-- mean_target: 0.017520
-- hit_rate: 0.514035
-- beat_universe_rate: 0.684211
-- positive_date_rate: 0.578947
-- ge_2pct_rate: 0.578947
-- ge_5pct_rate: 0.263158
+- dates: 20
+- avg_pick_count: 9.800000
+- mean_target: 0.009244
+- hit_rate: 0.488333
+- beat_universe_rate: 0.600000
+- positive_date_rate: 0.500000
+- ge_2pct_rate: 0.500000
+- ge_5pct_rate: 0.300000
 
-## Recent 19 Walk-Forward Dates
+## Recent 20 Walk-Forward Dates
 
 ### xgboost_model
-- dates: 19
-- avg_pick_count: 9.789474
-- mean_target: 0.202743
-- hit_rate: 0.850877
-- beat_universe_rate: 0.894737
-- positive_date_rate: 0.894737
-- ge_2pct_rate: 0.894737
-- ge_5pct_rate: 0.842105
+- dates: 20
+- avg_pick_count: 9.800000
+- mean_target: 0.194497
+- hit_rate: 0.858333
+- beat_universe_rate: 0.900000
+- positive_date_rate: 0.900000
+- ge_2pct_rate: 0.850000
+- ge_5pct_rate: 0.850000
 
 ### ensemble_model
-- dates: 19
-- avg_pick_count: 9.789474
-- mean_target: 0.118083
-- hit_rate: 0.719298
-- beat_universe_rate: 0.894737
-- positive_date_rate: 0.894737
-- ge_2pct_rate: 0.842105
-- ge_5pct_rate: 0.684211
+- dates: 20
+- avg_pick_count: 9.800000
+- mean_target: 0.116861
+- hit_rate: 0.723333
+- beat_universe_rate: 0.850000
+- positive_date_rate: 0.800000
+- ge_2pct_rate: 0.800000
+- ge_5pct_rate: 0.800000
 
 ### ridge_model
-- dates: 19
-- avg_pick_count: 9.789474
-- mean_target: 0.083305
-- hit_rate: 0.640351
-- beat_universe_rate: 0.736842
-- positive_date_rate: 0.789474
-- ge_2pct_rate: 0.684211
-- ge_5pct_rate: 0.684211
+- dates: 20
+- avg_pick_count: 9.800000
+- mean_target: 0.081731
+- hit_rate: 0.613333
+- beat_universe_rate: 0.800000
+- positive_date_rate: 0.750000
+- ge_2pct_rate: 0.650000
+- ge_5pct_rate: 0.600000
 
 ### lasso_model
-- dates: 19
-- avg_pick_count: 9.789474
-- mean_target: 0.081029
-- hit_rate: 0.650877
-- beat_universe_rate: 0.736842
-- positive_date_rate: 0.789474
-- ge_2pct_rate: 0.631579
-- ge_5pct_rate: 0.578947
+- dates: 20
+- avg_pick_count: 9.800000
+- mean_target: 0.076835
+- hit_rate: 0.628333
+- beat_universe_rate: 0.700000
+- positive_date_rate: 0.700000
+- ge_2pct_rate: 0.550000
+- ge_5pct_rate: 0.550000
 
 ### signal_proxy
-- dates: 19
-- avg_pick_count: 9.789474
-- mean_target: 0.017520
-- hit_rate: 0.514035
-- beat_universe_rate: 0.684211
-- positive_date_rate: 0.578947
-- ge_2pct_rate: 0.578947
-- ge_5pct_rate: 0.263158
+- dates: 20
+- avg_pick_count: 9.800000
+- mean_target: 0.009244
+- hit_rate: 0.488333
+- beat_universe_rate: 0.600000
+- positive_date_rate: 0.500000
+- ge_2pct_rate: 0.500000
+- ge_5pct_rate: 0.300000
 
 ## Promotion Gate
 
@@ -145,172 +145,152 @@
 
 ### Recent Acceptance Windows
 
+### xgboost_model_20d
+- dates: 20
+- avg_pick_count: 9.800000
+- mean_target: 0.194497
+- hit_rate: 0.858333
+- beat_universe_rate: 0.900000
+- positive_date_rate: 0.900000
+- ge_2pct_rate: 0.850000
+- ge_5pct_rate: 0.850000
+
+### xgboost_model_60d
+- dates: 20
+- avg_pick_count: 9.800000
+- mean_target: 0.194497
+- hit_rate: 0.858333
+- beat_universe_rate: 0.900000
+- positive_date_rate: 0.900000
+- ge_2pct_rate: 0.850000
+- ge_5pct_rate: 0.850000
+
 ### xgboost_model_last_3fold
 - dates: 3
 - avg_pick_count: 10.000000
-- mean_target: 0.278904
+- mean_target: 0.140923
 - hit_rate: 0.866667
 - beat_universe_rate: 1.000000
 - positive_date_rate: 1.000000
 - ge_2pct_rate: 1.000000
 - ge_5pct_rate: 1.000000
 
-### xgboost_model_20d
-- dates: 19
-- avg_pick_count: 9.789474
-- mean_target: 0.202743
-- hit_rate: 0.850877
-- beat_universe_rate: 0.894737
-- positive_date_rate: 0.894737
-- ge_2pct_rate: 0.894737
-- ge_5pct_rate: 0.842105
-
-### xgboost_model_60d
-- dates: 19
-- avg_pick_count: 9.789474
-- mean_target: 0.202743
-- hit_rate: 0.850877
-- beat_universe_rate: 0.894737
-- positive_date_rate: 0.894737
-- ge_2pct_rate: 0.894737
-- ge_5pct_rate: 0.842105
-
-### ensemble_model_last_3fold
-- dates: 3
-- avg_pick_count: 10.000000
-- mean_target: 0.133723
-- hit_rate: 0.666667
-- beat_universe_rate: 1.000000
-- positive_date_rate: 1.000000
-- ge_2pct_rate: 0.666667
-- ge_5pct_rate: 0.666667
-
 ### ensemble_model_20d
-- dates: 19
-- avg_pick_count: 9.789474
-- mean_target: 0.118083
-- hit_rate: 0.719298
-- beat_universe_rate: 0.894737
-- positive_date_rate: 0.894737
-- ge_2pct_rate: 0.842105
-- ge_5pct_rate: 0.684211
+- dates: 20
+- avg_pick_count: 9.800000
+- mean_target: 0.116861
+- hit_rate: 0.723333
+- beat_universe_rate: 0.850000
+- positive_date_rate: 0.800000
+- ge_2pct_rate: 0.800000
+- ge_5pct_rate: 0.800000
 
 ### ensemble_model_60d
-- dates: 19
-- avg_pick_count: 9.789474
-- mean_target: 0.118083
-- hit_rate: 0.719298
-- beat_universe_rate: 0.894737
-- positive_date_rate: 0.894737
-- ge_2pct_rate: 0.842105
-- ge_5pct_rate: 0.684211
-
-### ridge_model_20d
-- dates: 19
-- avg_pick_count: 9.789474
-- mean_target: 0.083305
-- hit_rate: 0.640351
-- beat_universe_rate: 0.736842
-- positive_date_rate: 0.789474
-- ge_2pct_rate: 0.684211
-- ge_5pct_rate: 0.684211
-
-### ridge_model_60d
-- dates: 19
-- avg_pick_count: 9.789474
-- mean_target: 0.083305
-- hit_rate: 0.640351
-- beat_universe_rate: 0.736842
-- positive_date_rate: 0.789474
-- ge_2pct_rate: 0.684211
-- ge_5pct_rate: 0.684211
-
-### lasso_model_20d
-- dates: 19
-- avg_pick_count: 9.789474
-- mean_target: 0.081029
-- hit_rate: 0.650877
-- beat_universe_rate: 0.736842
-- positive_date_rate: 0.789474
-- ge_2pct_rate: 0.631579
-- ge_5pct_rate: 0.578947
-
-### lasso_model_60d
-- dates: 19
-- avg_pick_count: 9.789474
-- mean_target: 0.081029
-- hit_rate: 0.650877
-- beat_universe_rate: 0.736842
-- positive_date_rate: 0.789474
-- ge_2pct_rate: 0.631579
-- ge_5pct_rate: 0.578947
+- dates: 20
+- avg_pick_count: 9.800000
+- mean_target: 0.116861
+- hit_rate: 0.723333
+- beat_universe_rate: 0.850000
+- positive_date_rate: 0.800000
+- ge_2pct_rate: 0.800000
+- ge_5pct_rate: 0.800000
 
 ### xgboost_model_last_1fold
 - dates: 1
 - avg_pick_count: 10.000000
-- mean_target: 0.075968
+- mean_target: 0.110040
+- hit_rate: 0.800000
+- beat_universe_rate: 1.000000
+- positive_date_rate: 1.000000
+- ge_2pct_rate: 1.000000
+- ge_5pct_rate: 1.000000
+
+### ridge_model_20d
+- dates: 20
+- avg_pick_count: 9.800000
+- mean_target: 0.081731
+- hit_rate: 0.613333
+- beat_universe_rate: 0.800000
+- positive_date_rate: 0.750000
+- ge_2pct_rate: 0.650000
+- ge_5pct_rate: 0.600000
+
+### ridge_model_60d
+- dates: 20
+- avg_pick_count: 9.800000
+- mean_target: 0.081731
+- hit_rate: 0.613333
+- beat_universe_rate: 0.800000
+- positive_date_rate: 0.750000
+- ge_2pct_rate: 0.650000
+- ge_5pct_rate: 0.600000
+
+### lasso_model_20d
+- dates: 20
+- avg_pick_count: 9.800000
+- mean_target: 0.076835
+- hit_rate: 0.628333
+- beat_universe_rate: 0.700000
+- positive_date_rate: 0.700000
+- ge_2pct_rate: 0.550000
+- ge_5pct_rate: 0.550000
+
+### lasso_model_60d
+- dates: 20
+- avg_pick_count: 9.800000
+- mean_target: 0.076835
+- hit_rate: 0.628333
+- beat_universe_rate: 0.700000
+- positive_date_rate: 0.700000
+- ge_2pct_rate: 0.550000
+- ge_5pct_rate: 0.550000
+
+### ensemble_model_last_1fold
+- dates: 1
+- avg_pick_count: 10.000000
+- mean_target: 0.064903
 - hit_rate: 0.700000
 - beat_universe_rate: 1.000000
 - positive_date_rate: 1.000000
 - ge_2pct_rate: 1.000000
 - ge_5pct_rate: 1.000000
 
-### lasso_model_last_3fold
+### ensemble_model_last_3fold
 - dates: 3
 - avg_pick_count: 10.000000
-- mean_target: 0.018713
-- hit_rate: 0.533333
-- beat_universe_rate: 0.333333
+- mean_target: 0.036929
+- hit_rate: 0.600000
+- beat_universe_rate: 1.000000
 - positive_date_rate: 0.666667
-- ge_2pct_rate: 0.333333
-- ge_5pct_rate: 0.333333
+- ge_2pct_rate: 0.666667
+- ge_5pct_rate: 0.666667
 
 ### signal_proxy_20d
-- dates: 19
-- avg_pick_count: 9.789474
-- mean_target: 0.017520
-- hit_rate: 0.514035
-- beat_universe_rate: 0.684211
-- positive_date_rate: 0.578947
-- ge_2pct_rate: 0.578947
-- ge_5pct_rate: 0.263158
+- dates: 20
+- avg_pick_count: 9.800000
+- mean_target: 0.009244
+- hit_rate: 0.488333
+- beat_universe_rate: 0.600000
+- positive_date_rate: 0.500000
+- ge_2pct_rate: 0.500000
+- ge_5pct_rate: 0.300000
 
 ### signal_proxy_60d
-- dates: 19
-- avg_pick_count: 9.789474
-- mean_target: 0.017520
-- hit_rate: 0.514035
-- beat_universe_rate: 0.684211
-- positive_date_rate: 0.578947
-- ge_2pct_rate: 0.578947
-- ge_5pct_rate: 0.263158
-
-### ensemble_model_last_1fold
-- dates: 1
-- avg_pick_count: 10.000000
-- mean_target: 0.007338
-- hit_rate: 0.400000
-- beat_universe_rate: 1.000000
-- positive_date_rate: 1.000000
-- ge_2pct_rate: 0.000000
-- ge_5pct_rate: 0.000000
+- dates: 20
+- avg_pick_count: 9.800000
+- mean_target: 0.009244
+- hit_rate: 0.488333
+- beat_universe_rate: 0.600000
+- positive_date_rate: 0.500000
+- ge_2pct_rate: 0.500000
+- ge_5pct_rate: 0.300000
 
 ### ridge_model_last_3fold
 - dates: 3
 - avg_pick_count: 10.000000
-- mean_target: -0.000460
-- hit_rate: 0.466667
-- beat_universe_rate: 0.333333
-- positive_date_rate: 0.666667
-- ge_2pct_rate: 0.333333
-- ge_5pct_rate: 0.333333
-
-### signal_proxy_last_3fold
-- dates: 3
-- avg_pick_count: 10.000000
-- mean_target: -0.019533
-- hit_rate: 0.400000
-- beat_universe_rate: 0.333333
+- mean_target: -0.002292
+- hit_rate: 0.566667
+- beat_universe_rate: 0.666667
 - positive_date_rate: 0.333333
 - ge_2pct_rate: 0.333333
 - ge_5pct_rate: 0.333333
@@ -318,9 +298,9 @@
 ### lasso_model_last_1fold
 - dates: 1
 - avg_pick_count: 10.000000
-- mean_target: -0.074030
-- hit_rate: 0.400000
-- beat_universe_rate: 0.000000
+- mean_target: -0.002460
+- hit_rate: 0.700000
+- beat_universe_rate: 1.000000
 - positive_date_rate: 0.000000
 - ge_2pct_rate: 0.000000
 - ge_5pct_rate: 0.000000
@@ -328,18 +308,38 @@
 ### ridge_model_last_1fold
 - dates: 1
 - avg_pick_count: 10.000000
-- mean_target: -0.078409
-- hit_rate: 0.400000
-- beat_universe_rate: 0.000000
+- mean_target: -0.016764
+- hit_rate: 0.500000
+- beat_universe_rate: 1.000000
 - positive_date_rate: 0.000000
 - ge_2pct_rate: 0.000000
 - ge_5pct_rate: 0.000000
 
+### lasso_model_last_3fold
+- dates: 3
+- avg_pick_count: 10.000000
+- mean_target: -0.018101
+- hit_rate: 0.533333
+- beat_universe_rate: 0.333333
+- positive_date_rate: 0.333333
+- ge_2pct_rate: 0.000000
+- ge_5pct_rate: 0.000000
+
+### signal_proxy_last_3fold
+- dates: 3
+- avg_pick_count: 10.000000
+- mean_target: -0.049715
+- hit_rate: 0.266667
+- beat_universe_rate: 0.333333
+- positive_date_rate: 0.333333
+- ge_2pct_rate: 0.333333
+- ge_5pct_rate: 0.333333
+
 ### signal_proxy_last_1fold
 - dates: 1
 - avg_pick_count: 10.000000
-- mean_target: -0.096234
-- hit_rate: 0.100000
+- mean_target: -0.125253
+- hit_rate: 0.200000
 - beat_universe_rate: 0.000000
 - positive_date_rate: 0.000000
 - ge_2pct_rate: 0.000000
@@ -347,51 +347,51 @@
 
 ## Champion Rolling Acceptance Windows
 
+### xgboost_model_20d
+- dates: 20
+- avg_pick_count: 9.800000
+- mean_target: 0.194497
+- hit_rate: 0.858333
+- beat_universe_rate: 0.900000
+- positive_date_rate: 0.900000
+- ge_2pct_rate: 0.850000
+- ge_5pct_rate: 0.850000
+
+### xgboost_model_40d
+- dates: 20
+- avg_pick_count: 9.800000
+- mean_target: 0.194497
+- hit_rate: 0.858333
+- beat_universe_rate: 0.900000
+- positive_date_rate: 0.900000
+- ge_2pct_rate: 0.850000
+- ge_5pct_rate: 0.850000
+
+### xgboost_model_60d
+- dates: 20
+- avg_pick_count: 9.800000
+- mean_target: 0.194497
+- hit_rate: 0.858333
+- beat_universe_rate: 0.900000
+- positive_date_rate: 0.900000
+- ge_2pct_rate: 0.850000
+- ge_5pct_rate: 0.850000
+
 ### xgboost_model_last_3fold
 - dates: 3
 - avg_pick_count: 10.000000
-- mean_target: 0.278904
+- mean_target: 0.140923
 - hit_rate: 0.866667
 - beat_universe_rate: 1.000000
 - positive_date_rate: 1.000000
 - ge_2pct_rate: 1.000000
 - ge_5pct_rate: 1.000000
 
-### xgboost_model_20d
-- dates: 19
-- avg_pick_count: 9.789474
-- mean_target: 0.202743
-- hit_rate: 0.850877
-- beat_universe_rate: 0.894737
-- positive_date_rate: 0.894737
-- ge_2pct_rate: 0.894737
-- ge_5pct_rate: 0.842105
-
-### xgboost_model_40d
-- dates: 19
-- avg_pick_count: 9.789474
-- mean_target: 0.202743
-- hit_rate: 0.850877
-- beat_universe_rate: 0.894737
-- positive_date_rate: 0.894737
-- ge_2pct_rate: 0.894737
-- ge_5pct_rate: 0.842105
-
-### xgboost_model_60d
-- dates: 19
-- avg_pick_count: 9.789474
-- mean_target: 0.202743
-- hit_rate: 0.850877
-- beat_universe_rate: 0.894737
-- positive_date_rate: 0.894737
-- ge_2pct_rate: 0.894737
-- ge_5pct_rate: 0.842105
-
 ### xgboost_model_last_1fold
 - dates: 1
 - avg_pick_count: 10.000000
-- mean_target: 0.075968
-- hit_rate: 0.700000
+- mean_target: 0.110040
+- hit_rate: 0.800000
 - beat_universe_rate: 1.000000
 - positive_date_rate: 1.000000
 - ge_2pct_rate: 1.000000
@@ -400,58 +400,46 @@
 ## Champion Sector Contribution
 
 ### Information Technology
-- dates: 13
-- avg_pick_count: 3.846154
-- mean_target: 0.327741
-- hit_rate: 0.924359
+- dates: 17
+- avg_pick_count: 3.294118
+- mean_target: 0.263558
+- hit_rate: 0.857843
 
 ### Health Care
-- dates: 10
-- avg_pick_count: 1.500000
-- mean_target: 0.278882
-- hit_rate: 0.933333
-
-### Consumer Discretionary
-- dates: 5
-- avg_pick_count: 3.600000
-- mean_target: 0.187500
-- hit_rate: 0.942857
-
-### Consumer Staples
-- dates: 6
-- avg_pick_count: 1.166667
-- mean_target: 0.184156
-- hit_rate: 0.833333
-
-### Industrials
-- dates: 11
-- avg_pick_count: 2.000000
-- mean_target: 0.183582
-- hit_rate: 0.840909
+- dates: 13
+- avg_pick_count: 1.461538
+- mean_target: 0.227442
+- hit_rate: 0.923077
 
 ### Materials
-- dates: 11
-- avg_pick_count: 1.636364
-- mean_target: 0.160243
-- hit_rate: 0.772727
+- dates: 13
+- avg_pick_count: 1.692308
+- mean_target: 0.191870
+- hit_rate: 0.807692
 
-### Financials
-- dates: 9
-- avg_pick_count: 1.666667
-- mean_target: 0.155023
-- hit_rate: 0.888889
+### Industrials
+- dates: 12
+- avg_pick_count: 2.000000
+- mean_target: 0.177618
+- hit_rate: 0.937500
+
+### Consumer Staples
+- dates: 5
+- avg_pick_count: 1.200000
+- mean_target: 0.157948
+- hit_rate: 0.800000
 
 ### Energy
-- dates: 11
-- avg_pick_count: 1.818182
-- mean_target: 0.150668
-- hit_rate: 0.877273
+- dates: 12
+- avg_pick_count: 1.916667
+- mean_target: 0.155290
+- hit_rate: 0.887500
 
-### Communication Services
-- dates: 9
-- avg_pick_count: 1.555556
-- mean_target: 0.149014
-- hit_rate: 0.777778
+### Financials
+- dates: 8
+- avg_pick_count: 1.500000
+- mean_target: 0.151630
+- hit_rate: 0.875000
 
 ### Real Estate
 - dates: 2
@@ -459,93 +447,105 @@
 - mean_target: 0.143059
 - hit_rate: 1.000000
 
+### Communication Services
+- dates: 9
+- avg_pick_count: 1.555556
+- mean_target: 0.126994
+- hit_rate: 0.722222
+
+### Consumer Discretionary
+- dates: 5
+- avg_pick_count: 2.600000
+- mean_target: 0.115922
+- hit_rate: 0.813333
+
 ### Utilities
 - dates: 3
 - avg_pick_count: 1.666667
-- mean_target: 0.097400
-- hit_rate: 0.666667
+- mean_target: 0.088460
+- hit_rate: 0.833333
 
 ## Live Top Candidates
 
 - champion_model: xgboost_model
-- snapshot_date: 2026-08-28
-
-### CDW
-- sector: Information Technology
-- predicted_alpha: 0.146837
-- calibrated_p_beat_sector: 95.83%
-- why: limited recent downside gap risk, strong earnings gap, earnings breakout open
-- md_volume_30d: 206323352
-- chart: https://www.tradingview.com/chart/?symbol=CDW
-
-### GDDY
-- sector: Information Technology
-- predicted_alpha: 0.128910
-- calibrated_p_beat_sector: 89.80%
-- why: limited recent downside gap risk, strong earnings gap, strong sector momentum backdrop
-- md_volume_30d: 143300870
-- chart: https://www.tradingview.com/chart/?symbol=GDDY
-
-### PANW
-- sector: Information Technology
-- predicted_alpha: 0.100816
-- calibrated_p_beat_sector: 88.00%
-- why: strong earnings gap, well above 200d trend, strong sector momentum backdrop
-- md_volume_30d: 1906183268
-- chart: https://www.tradingview.com/chart/?symbol=PANW
-
-### CBRL
-- sector: Consumer Discretionary
-- predicted_alpha: 0.099965
-- calibrated_p_beat_sector: 88.00%
-- why: dollar volume ratio 20 60, supportive distance above 200d, healthy 200d sector breadth
-- md_volume_30d: 39846797
-- chart: https://www.tradingview.com/chart/?symbol=CBRL
+- snapshot_date: 2026-08-31
 
 ### DV
 - sector: Communication Services
-- predicted_alpha: 0.093119
-- calibrated_p_beat_sector: 84.48%
-- why: strong earnings volume, constructive ATR profile, volume dry-up into setup
-- md_volume_30d: 26037013
+- predicted_alpha: 0.160437
+- calibrated_p_beat_sector: 95.52%
+- why: supportive atr 14, strong earnings volume, dollar volume ratio 20 60
+- md_volume_30d: 26326594
 - chart: https://www.tradingview.com/chart/?symbol=DV
 
-### PATH
+### GDDY
 - sector: Information Technology
-- predicted_alpha: 0.091434
-- calibrated_p_beat_sector: 84.48%
-- why: supportive atr 14, supportive within-sector atr 14, supportive days since earnings
-- md_volume_30d: 933239678
-- chart: https://www.tradingview.com/chart/?symbol=PATH
+- predicted_alpha: 0.145508
+- calibrated_p_beat_sector: 94.83%
+- why: limited recent downside gap risk, strong sector momentum backdrop, strong earnings gap
+- md_volume_30d: 146550705
+- chart: https://www.tradingview.com/chart/?symbol=GDDY
 
-### HOOD
-- sector: Financials
-- predicted_alpha: 0.090273
-- calibrated_p_beat_sector: 84.48%
-- why: distance from 52w high, supportive avg gap, atr pct 14
-- md_volume_30d: 1682588823
-- chart: https://www.tradingview.com/chart/?symbol=HOOD
+### CDW
+- sector: Information Technology
+- predicted_alpha: 0.140561
+- calibrated_p_beat_sector: 93.55%
+- why: limited recent downside gap risk, earnings breakout open, strong sector momentum backdrop
+- md_volume_30d: 206323352
+- chart: https://www.tradingview.com/chart/?symbol=CDW
+
+### RNG
+- sector: Information Technology
+- predicted_alpha: 0.115326
+- calibrated_p_beat_sector: 93.55%
+- why: well above 200d trend, strong sector momentum backdrop, holding above earnings close
+- md_volume_30d: 95635922
+- chart: https://www.tradingview.com/chart/?symbol=RNG
+
+### CBRL
+- sector: Consumer Discretionary
+- predicted_alpha: 0.109398
+- calibrated_p_beat_sector: 93.55%
+- why: dollar volume ratio 20 60, holding above earnings close, healthy 50d sector breadth
+- md_volume_30d: 39846797
+- chart: https://www.tradingview.com/chart/?symbol=CBRL
 
 ### ZD
 - sector: Communication Services
-- predicted_alpha: 0.084124
-- calibrated_p_beat_sector: 84.48%
-- why: strong earnings volume, strong 126d momentum, earnings breakout open
+- predicted_alpha: 0.097118
+- calibrated_p_beat_sector: 92.00%
+- why: earnings breakout open, strong earnings volume, supportive atr pct 14 percentile 252
 - md_volume_30d: 25224560
 - chart: https://www.tradingview.com/chart/?symbol=ZD
 
-### HPE
+### ONTO
 - sector: Information Technology
-- predicted_alpha: 0.075403
-- calibrated_p_beat_sector: 84.48%
-- why: well above 200d trend, strong sector momentum backdrop, atr pct 14
-- md_volume_30d: 688614736
-- chart: https://www.tradingview.com/chart/?symbol=HPE
+- predicted_alpha: 0.095936
+- calibrated_p_beat_sector: 92.00%
+- why: strong earnings gap, supportive atr pct 14, earnings breakout open
+- md_volume_30d: 290275196
+- chart: https://www.tradingview.com/chart/?symbol=ONTO
 
-### COTY
-- sector: Consumer Staples
-- predicted_alpha: 0.071057
-- calibrated_p_beat_sector: 84.48%
-- why: limited recent downside gap risk, supportive atr pct 14, holding above earnings close
-- md_volume_30d: 20756282
-- chart: https://www.tradingview.com/chart/?symbol=COTY
+### NEO
+- sector: Health Care
+- predicted_alpha: 0.090776
+- calibrated_p_beat_sector: 90.38%
+- why: supportive days to earnings, constructive ATR profile, supportive atr pct 14
+- md_volume_30d: 27007983
+- chart: https://www.tradingview.com/chart/?symbol=NEO
+
+### PANW
+- sector: Information Technology
+- predicted_alpha: 0.088124
+- calibrated_p_beat_sector: 90.38%
+- why: well above 200d trend, strong earnings gap, strong sector momentum backdrop
+- md_volume_30d: 1922599834
+- chart: https://www.tradingview.com/chart/?symbol=PANW
+
+### PATH
+- sector: Information Technology
+- predicted_alpha: 0.080778
+- calibrated_p_beat_sector: 90.38%
+- why: supportive atr 14, supportive earnings open vs 20d high, supportive days since earnings
+- md_volume_30d: 933239678
+- chart: https://www.tradingview.com/chart/?symbol=PATH

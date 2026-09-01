@@ -28,6 +28,89 @@ class EmailCall:
 
 
 class ScanServiceTests(unittest.TestCase):
+    def test_shortlist_model_candidates_use_predicted_alpha_for_selection_score(self) -> None:
+        service = ScanService(db_manager=None)
+        strategy = ProductionStrategy(
+            strategy_id=1,
+            promoted_at="2026-05-01T00:00:00",
+            indicators={"signal_score_min": 30.0},
+            exit_rules=ExitRules(0.05, 0.12, 20),
+            slot="technology",
+            sector="Information Technology",
+        )
+        snapshot = pd.DataFrame(
+            [
+                {
+                    "ticker": "AAA",
+                    "sector": "Information Technology",
+                    "regime_etf": "QQQ",
+                    "adj_close": 100.0,
+                    "atr_14": 2.0,
+                    "signal_score": 45.0,
+                    "relative_strength_index_vs_spy": 85.0,
+                    "roc_63": 0.15,
+                    "vol_alpha": 1.2,
+                    "sma_200_dist": 0.10,
+                    "sector_pct_above_50": 0.70,
+                    "sector_pct_above_200": 0.65,
+                    "sector_median_roc_63": 0.08,
+                    "rsi_14": 50.0,
+                },
+            ]
+        )
+        context = SimpleNamespace(
+            live_predictions=pd.DataFrame(
+                [
+                    {
+                        "ticker": "AAA",
+                        "predicted_alpha": 0.123,
+                        "model_rank": 1,
+                        "calibrated_p_beat_sector": 0.88,
+                    }
+                ]
+            ),
+            generated_at="2026-08-31T23:40:00+00:00",
+            champion_model="xgboost_model",
+        )
+        scan_policy = SimpleNamespace(
+            signal_score_weight=0.25,
+            expected_alpha_weight=0.35,
+            freshness_weight=0.20,
+            breadth_weight=0.20,
+            same_ticker_penalty=0.0,
+            same_slot_penalty=0.0,
+            same_sector_penalty=0.0,
+            same_regime_penalty=0.0,
+        )
+        settings = RuntimeSettings(
+            paths=AppPaths(
+                root_dir=Path("/tmp"),
+                data_dir=Path("/tmp"),
+                duckdb_path=Path("/tmp/market_data.duckdb"),
+                sqlite_path=Path("/tmp/ledger.sqlite"),
+                reports_dir=Path("/tmp"),
+                logs_dir=Path("/tmp"),
+                config_path=Path("/tmp/config.yaml"),
+                env_path=Path("/tmp/.env"),
+                production_strategy_path=Path("/tmp/production_strategy.json"),
+            ),
+            env={},
+            total_capital=100_000.0,
+            risk_per_trade=0.01,
+        )
+
+        candidates = service._build_shortlist_model_candidates(
+            snapshot=snapshot,
+            strategies={"technology": strategy},
+            shortlist_model_context=context,
+            scan_policy=scan_policy,
+            overlap_context={"tickers": set(), "slots": set(), "sectors": set(), "regimes": set()},
+            settings=settings,
+        )
+
+        self.assertAlmostEqual(float(candidates.loc[0, "selection_score"]), 0.123, places=6)
+        self.assertAlmostEqual(float(candidates.loc[0, "calibrated_p_beat_sector"]), 0.88, places=6)
+
     def test_scan_filters_out_in_progress_daily_bar_before_close(self) -> None:
         service = ScanService(db_manager=None)
         frame = pd.DataFrame(
@@ -2508,20 +2591,33 @@ class ScanServiceTests(unittest.TestCase):
         class FakeDB:
             def __init__(self):
                 self.persisted_by_date = {}
+                self.refresh_columns = None
             def initialize(self): return None
             def list_universe_rows(self, active_only=True):
                 return [{"ticker": "AAA", "sector": "Information Technology", "sub_industry": "Semiconductors", "md_volume_30d": 30_000_000}]
             def load_price_history(self, tickers):
-                return pd.DataFrame(
-                    [
-                        {"ticker": "AAA", "date": pd.Timestamp("2026-05-01"), "open": 10.0, "high": 11.0, "low": 9.0, "close": 10.0, "volume": 1_000_000, "adj_close": 10.0},
-                        {"ticker": "SMH", "date": pd.Timestamp("2026-05-01"), "open": 20.0, "high": 21.0, "low": 19.0, "close": 20.0, "volume": 1_000_000, "adj_close": 20.0},
-                        {"ticker": "SPY", "date": pd.Timestamp("2026-05-01"), "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0, "volume": 1_000_000, "adj_close": 100.0},
-                    ]
-                )
+                rows = [
+                    {"ticker": "AAA", "date": pd.Timestamp("2026-05-01"), "open": 10.0, "high": 11.0, "low": 9.0, "close": 10.0, "volume": 1_000_000, "adj_close": 10.0},
+                    {"ticker": "SMH", "date": pd.Timestamp("2026-05-01"), "open": 20.0, "high": 21.0, "low": 19.0, "close": 20.0, "volume": 1_000_000, "adj_close": 20.0},
+                ]
+                for index, day in enumerate(pd.bdate_range("2026-05-01", periods=21)):
+                    rows.append(
+                        {
+                            "ticker": "SPY",
+                            "date": day,
+                            "open": 100.0 + index,
+                            "high": 101.0 + index,
+                            "low": 99.0 + index,
+                            "close": 100.0 + index,
+                            "volume": 1_000_000,
+                            "adj_close": 100.0 + index,
+                        }
+                    )
+                return pd.DataFrame(rows)
             def list_universe_daily_snapshot_dates(self):
                 return ["2026-05-01"]
             def universe_daily_snapshot_date_needs_refresh(self, *, snapshot_date, required_non_null_columns):
+                self.refresh_columns = tuple(required_non_null_columns)
                 return snapshot_date == "2026-05-01"
             def replace_universe_daily_snapshots(self, *, snapshot_date, rows):
                 self.persisted_by_date[snapshot_date] = list(rows)
@@ -2575,6 +2671,40 @@ class ScanServiceTests(unittest.TestCase):
         self.assertEqual(db.persisted_by_date["2026-05-01"][0]["sub_industry"], "Semiconductors")
         self.assertEqual(db.persisted_by_date["2026-05-01"][0]["subindustry_benchmark"], "SMH")
         self.assertEqual(db.persisted_by_date["2026-05-01"][0]["relative_strength_index_vs_subindustry"], 90.0)
+        self.assertIn("alpha_vs_sector_20d", db.refresh_columns)
+        self.assertIn("fwd_return_5d", db.refresh_columns)
+
+    def test_universe_backfill_preserves_missing_binary_target_for_immature_alpha(self) -> None:
+        service = UniverseSnapshotBackfillService(db_manager=None)
+
+        payload = service._outcome_payload(
+            snapshot_date="2026-05-01",
+            ticker="AAA",
+            sector="Industrials",
+            history_context={
+                "AAA": {
+                    "frame": pd.DataFrame(
+                        [
+                            {"date": pd.Timestamp("2026-05-01"), "adj_close": 10.0, "high": 10.0, "low": 10.0},
+                            {"date": pd.Timestamp("2026-05-02"), "adj_close": 11.0, "high": 11.0, "low": 11.0},
+                        ]
+                    ),
+                    "index_by_date": {"2026-05-01": 0, "2026-05-02": 1},
+                },
+                "SPY": {
+                    "frame": pd.DataFrame(
+                        [
+                            {"date": pd.Timestamp("2026-05-01"), "adj_close": 100.0, "high": 100.0, "low": 100.0},
+                            {"date": pd.Timestamp("2026-05-02"), "adj_close": 101.0, "high": 101.0, "low": 101.0},
+                        ]
+                    ),
+                    "index_by_date": {"2026-05-01": 0, "2026-05-02": 1},
+                },
+            },
+        )
+
+        self.assertIsNone(payload["alpha_vs_sector_20d"])
+        self.assertIsNone(payload["alpha_vs_sector_20d_pos"])
 
 
 class MonitorServiceTests(unittest.TestCase):

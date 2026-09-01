@@ -20,6 +20,15 @@ SNAPSHOT_REFRESH_COLUMNS = (
     "rs_vs_spy_5d_change",
     "rs_vs_subindustry_5d_change",
 )
+SNAPSHOT_OUTCOME_COLUMNS = tuple(
+    column
+    for horizon in OUTCOME_HORIZONS
+    for column in (
+        f"fwd_return_{horizon}d",
+        f"alpha_vs_spy_{horizon}d",
+        f"alpha_vs_sector_{horizon}d",
+    )
+) + ("alpha_vs_sector_20d_pos", "mfe_20d", "mae_20d")
 SNAPSHOT_FEATURE_COLUMNS = [
     "md_volume_30d",
     "adj_close",
@@ -140,10 +149,14 @@ class UniverseSnapshotBackfillService:
                 needs_refresh = False
                 refresh_probe = getattr(self.db_manager, "universe_daily_snapshot_date_needs_refresh", None)
                 if callable(refresh_probe):
+                    required_columns = self._required_refresh_columns_for_snapshot(
+                        snapshot_date=snapshot_date_str,
+                        history_context=history_context,
+                    )
                     needs_refresh = bool(
                         refresh_probe(
                             snapshot_date=snapshot_date_str,
-                            required_non_null_columns=SNAPSHOT_REFRESH_COLUMNS,
+                            required_non_null_columns=required_columns,
                         )
                     )
                 if not needs_refresh:
@@ -266,6 +279,34 @@ class UniverseSnapshotBackfillService:
             }
         return context
 
+    def _required_refresh_columns_for_snapshot(
+        self,
+        *,
+        snapshot_date: str,
+        history_context: dict[str, dict[str, object]],
+    ) -> tuple[str, ...]:
+        required = list(SNAPSHOT_REFRESH_COLUMNS)
+        spy_context = history_context.get("SPY")
+        if spy_context is None:
+            return tuple(required)
+        index = spy_context["index_by_date"].get(snapshot_date)
+        if index is None:
+            return tuple(required)
+        available_forward_sessions = len(spy_context["frame"].index) - int(index) - 1
+        for horizon in OUTCOME_HORIZONS:
+            if available_forward_sessions < horizon:
+                continue
+            required.extend(
+                [
+                    f"fwd_return_{horizon}d",
+                    f"alpha_vs_spy_{horizon}d",
+                    f"alpha_vs_sector_{horizon}d",
+                ]
+            )
+        if available_forward_sessions >= 20:
+            required.extend(["alpha_vs_sector_20d_pos", "mfe_20d", "mae_20d"])
+        return tuple(required)
+
     def _outcome_payload(
         self,
         *,
@@ -302,9 +343,10 @@ class UniverseSnapshotBackfillService:
                 benchmark_ticker=benchmark_ticker,
             )
         alpha_20d = payload.get("alpha_vs_sector_20d")
-        payload["alpha_vs_sector_20d_pos"] = (
-            1 if alpha_20d is not None and float(alpha_20d) > 0.02 else 0
-        )
+        if alpha_20d is None:
+            payload["alpha_vs_sector_20d_pos"] = None
+        else:
+            payload["alpha_vs_sector_20d_pos"] = 1 if float(alpha_20d) > 0.02 else 0
         payload["mfe_20d"] = self._excursion(
             ticker_frame=ticker_frame,
             index=int(index),

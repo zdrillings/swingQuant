@@ -125,8 +125,8 @@ def load_live_shortlist_model_context(
     if "calibrated_p_beat_sector" not in live_predictions.columns:
         live_predictions["calibrated_p_beat_sector"] = np.nan
     live_predictions = live_predictions.sort_values(
-        ["calibrated_p_beat_sector", "predicted_alpha", "ticker"],
-        ascending=[False, False, True],
+        ["predicted_alpha", "ticker"],
+        ascending=[False, True],
     ).reset_index(drop=True)
     live_predictions["model_rank"] = range(1, len(live_predictions.index) + 1)
     live_predictions = _annotate_live_prediction_comparisons(live_predictions, top_n=int(top_n))

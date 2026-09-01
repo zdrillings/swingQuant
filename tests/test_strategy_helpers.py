@@ -387,6 +387,16 @@ class StrategyHelperTests(unittest.TestCase):
             rows.extend(
                 [
                     {
+                        "ticker": "SPY",
+                        "date": day.date(),
+                        "open": 100 + index * 0.2,
+                        "high": 100 + index * 0.2,
+                        "low": 100 + index * 0.2,
+                        "close": 100 + index * 0.2,
+                        "volume": 1_000_000,
+                        "adj_close": 100 + index * 0.2,
+                    },
+                    {
                         "ticker": "QQQ",
                         "date": day.date(),
                         "open": 100 + index,
@@ -434,6 +444,12 @@ class StrategyHelperTests(unittest.TestCase):
                 "features": {
                     "momentum": [
                         {
+                            "name": "relative_strength_index_vs_spy",
+                            "ticker": "SPY",
+                            "type": "relative_strength_percentile",
+                            "params": {"window": 63},
+                        },
+                        {
                             "name": "relative_strength_index_vs_qqq",
                             "ticker": "QQQ",
                             "type": "relative_strength_percentile",
@@ -459,6 +475,15 @@ class StrategyHelperTests(unittest.TestCase):
             float(latest.loc["AAA", "relative_strength_index_vs_xlk"]),
             float(latest.loc["BBB", "relative_strength_index_vs_xlk"]),
         )
+        self.assertNotEqual(
+            float(latest.loc["AAA", "relative_strength_index_vs_spy"]),
+            float(latest.loc["AAA", "relative_strength_index_vs_qqq"]),
+        )
+        self.assertNotEqual(
+            float(latest.loc["AAA", "relative_strength_index_vs_qqq"]),
+            float(latest.loc["AAA", "relative_strength_index_vs_xlk"]),
+        )
+        self.assertTrue(pd.isna(latest.loc["SPY", "relative_strength_index_vs_spy"]))
         self.assertTrue(pd.isna(latest.loc["QQQ", "relative_strength_index_vs_qqq"]))
         self.assertTrue(pd.isna(latest.loc["XLK", "relative_strength_index_vs_xlk"]))
 

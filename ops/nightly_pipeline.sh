@@ -4,6 +4,7 @@ set -euo pipefail
 cd /home/zdrillings/code/SwingQuant
 
 run_date="$(date +%F)"
+universe_refresh_start="$(date -d "${run_date} - 120 days" +%F)"
 
 send_failure_email() {
   local exit_code="$1"
@@ -55,8 +56,8 @@ echo "[$(date --iso-8601=seconds)] nightly pipeline start run_date=${run_date}"
 echo "[$(date --iso-8601=seconds)] sync"
 ./sq sync
 
-echo "[$(date --iso-8601=seconds)] universe-backfill ${run_date}"
-./sq universe-backfill --date-from "${run_date}" --date-to "${run_date}" --skip-existing
+echo "[$(date --iso-8601=seconds)] universe-backfill ${universe_refresh_start}..${run_date}"
+./sq universe-backfill --date-from "${universe_refresh_start}" --date-to "${run_date}" --skip-existing
 
 echo "[$(date --iso-8601=seconds)] shortlist-model"
 ./sq shortlist-model \

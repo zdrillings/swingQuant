@@ -150,6 +150,76 @@ class DatabaseManagerInitializationTests(unittest.TestCase):
             self.assertAlmostEqual(float(frame.loc[0, "model_predicted_alpha"]), 0.123, places=6)
             self.assertAlmostEqual(float(frame.loc[0, "selection_score"]), 0.123, places=6)
 
+    def test_update_scan_candidate_outcomes_preserves_existing_values_when_new_payload_is_null(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            paths = AppPaths(
+                root_dir=root,
+                data_dir=root / "data",
+                duckdb_path=root / "data" / "market_data.duckdb",
+                sqlite_path=root / "data" / "ledger.sqlite",
+                reports_dir=root / "reports",
+                logs_dir=root / "logs",
+                config_path=root / "config.yaml",
+                env_path=root / ".env",
+                production_strategy_path=root / "production_strategy.json",
+            )
+            manager = DatabaseManager(paths)
+            fake_duckdb = FakeDuckDBConnection()
+
+            with patch.object(manager, "duckdb_connection", return_value=fake_duckdb):
+                manager.initialize()
+
+            manager.replace_scan_candidates(
+                scan_date="2026-05-01",
+                rows=[
+                    {
+                        "ticker": "AAA",
+                        "strategy_slot": "technology",
+                        "strategy_sector": "Information Technology",
+                        "sector": "Information Technology",
+                        "signal_score": 0.0,
+                        "setup_quality_score": 0.0,
+                        "expected_alpha_score": 0.0,
+                        "breadth_score": 0.0,
+                        "freshness_score": 0.0,
+                        "overlap_penalty": 0.0,
+                        "opportunity_score": 0.0,
+                        "selected": True,
+                        "selected_rank": 1,
+                        "shares": 10,
+                        "selection_score": 0.123,
+                        "selection_source": "shortlist_model",
+                        "model_predicted_alpha": 0.123,
+                        "model_rank": 4,
+                        "model_generated_at": "2026-06-02T20:08:10+00:00",
+                        "model_name": "xgboost_model",
+                        "fwd_return_1d": 0.01,
+                        "fwd_return_5d": 0.05,
+                        "details": {},
+                    }
+                ],
+            )
+
+            updated = manager.update_scan_candidate_outcomes(
+                scan_date="2026-05-01",
+                rows=[
+                    {
+                        "ticker": "AAA",
+                        "strategy_slot": "technology",
+                        "fwd_return_1d": None,
+                        "fwd_return_5d": 0.07,
+                        "alpha_vs_sector_5d": 0.03,
+                    }
+                ],
+            )
+
+            frame = manager.load_scan_candidates()
+            self.assertEqual(updated, 1)
+            self.assertAlmostEqual(float(frame.loc[0, "fwd_return_1d"]), 0.01, places=6)
+            self.assertAlmostEqual(float(frame.loc[0, "fwd_return_5d"]), 0.07, places=6)
+            self.assertAlmostEqual(float(frame.loc[0, "alpha_vs_sector_5d"]), 0.03, places=6)
+
     def test_replace_universe_daily_snapshots_builds_matching_insert_placeholders(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

@@ -599,12 +599,7 @@ class ScanService:
         merged["model_predicted_alpha"] = pd.to_numeric(merged["model_predicted_alpha"], errors="coerce")
         if "calibrated_p_beat_sector" in merged.columns:
             merged["calibrated_p_beat_sector"] = pd.to_numeric(merged["calibrated_p_beat_sector"], errors="coerce")
-            merged["selection_score"] = merged["calibrated_p_beat_sector"].where(
-                merged["calibrated_p_beat_sector"].notna(),
-                merged["model_predicted_alpha"],
-            )
-        else:
-            merged["selection_score"] = merged["model_predicted_alpha"]
+        merged["selection_score"] = merged["model_predicted_alpha"]
         merged["selection_source"] = "shortlist_model"
         merged["model_generated_at"] = shortlist_model_context.generated_at
         merged["model_name"] = shortlist_model_context.champion_model
@@ -1282,9 +1277,7 @@ class ScanService:
         merged = scored.merge(predictions, on="ticker", how="left")
         if "calibrated_p_beat_sector" in merged.columns:
             merged["calibrated_p_beat_sector"] = pd.to_numeric(merged["calibrated_p_beat_sector"], errors="coerce")
-            merged["selection_score"] = merged["calibrated_p_beat_sector"]
-        else:
-            merged["selection_score"] = pd.to_numeric(merged["model_predicted_alpha"], errors="coerce")
+        merged["selection_score"] = pd.to_numeric(merged["model_predicted_alpha"], errors="coerce")
         fallback_selection = merged.get("selection_score")
         if fallback_selection is None:
             if "signal_score" in merged.columns:

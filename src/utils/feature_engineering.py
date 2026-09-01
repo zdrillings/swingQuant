@@ -346,13 +346,9 @@ def add_relative_strength_percentile_feature(
     )
     frame["reference_roc"] = frame["date"].map(reference.set_index("date")["reference_roc"])
     frame["rs_excess_return"] = frame["roc_value"] - frame["reference_roc"]
-    eligible_mask = frame["ticker"] != reference_ticker
-    frame.loc[eligible_mask, feature_name] = (
-        frame.loc[eligible_mask]
-        .groupby("date")["rs_excess_return"]
-        .rank(method="average", pct=True)
-        * 100.0
-    )
+    eligible_mask = (frame["ticker"] != reference_ticker) & frame["rs_excess_return"].notna()
+    excess = pd.to_numeric(frame.loc[eligible_mask, "rs_excess_return"], errors="coerce")
+    frame.loc[eligible_mask, feature_name] = 100.0 / (1.0 + np.exp(-(excess / 0.08)))
     frame.loc[~eligible_mask, feature_name] = pd.NA
     frame.drop(columns=["roc_value", "reference_roc", "rs_excess_return"], inplace=True)
 
