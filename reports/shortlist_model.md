@@ -15,21 +15,21 @@
 - universe: passed_any_strategy or trend-qualified liquid names (green regime, above 200d, positive 63d momentum, RS vs SPY >= 60)
 - feature_matrix: raw features plus date-wise cross-sectional ranks and sector-relative ranks
 
-- eligible_rows: 256208
-- eligible_dates: 648
+- eligible_rows: 256752
+- eligible_dates: 649
 - oos_prediction_dates: 20
 - champion_model: xgboost_model
 - oos_predictions_csv: /home/zdrillings/code/SwingQuant/reports/shortlist_model_oos_predictions.csv
 - live_predictions_csv: /home/zdrillings/code/SwingQuant/reports/shortlist_model_live_predictions.csv
-- generated_at: 2026-09-01T15:05:56+00:00
+- generated_at: 2026-09-02T00:28:32+00:00
 
 ## Full Walk-Forward Evaluation
 
 ### xgboost_model
 - dates: 20
 - avg_pick_count: 9.800000
-- mean_target: 0.194497
-- hit_rate: 0.858333
+- mean_target: 0.194660
+- hit_rate: 0.863333
 - beat_universe_rate: 0.900000
 - positive_date_rate: 0.900000
 - ge_2pct_rate: 0.850000
@@ -38,8 +38,8 @@
 ### ensemble_model
 - dates: 20
 - avg_pick_count: 9.800000
-- mean_target: 0.116861
-- hit_rate: 0.723333
+- mean_target: 0.116939
+- hit_rate: 0.728333
 - beat_universe_rate: 0.850000
 - positive_date_rate: 0.800000
 - ge_2pct_rate: 0.800000
@@ -58,9 +58,9 @@
 ### lasso_model
 - dates: 20
 - avg_pick_count: 9.800000
-- mean_target: 0.076835
+- mean_target: 0.075755
 - hit_rate: 0.628333
-- beat_universe_rate: 0.700000
+- beat_universe_rate: 0.650000
 - positive_date_rate: 0.700000
 - ge_2pct_rate: 0.550000
 - ge_5pct_rate: 0.550000
@@ -80,8 +80,8 @@
 ### xgboost_model
 - dates: 20
 - avg_pick_count: 9.800000
-- mean_target: 0.194497
-- hit_rate: 0.858333
+- mean_target: 0.194660
+- hit_rate: 0.863333
 - beat_universe_rate: 0.900000
 - positive_date_rate: 0.900000
 - ge_2pct_rate: 0.850000
@@ -90,8 +90,8 @@
 ### ensemble_model
 - dates: 20
 - avg_pick_count: 9.800000
-- mean_target: 0.116861
-- hit_rate: 0.723333
+- mean_target: 0.116939
+- hit_rate: 0.728333
 - beat_universe_rate: 0.850000
 - positive_date_rate: 0.800000
 - ge_2pct_rate: 0.800000
@@ -110,9 +110,9 @@
 ### lasso_model
 - dates: 20
 - avg_pick_count: 9.800000
-- mean_target: 0.076835
+- mean_target: 0.075755
 - hit_rate: 0.628333
-- beat_universe_rate: 0.700000
+- beat_universe_rate: 0.650000
 - positive_date_rate: 0.700000
 - ge_2pct_rate: 0.550000
 - ge_5pct_rate: 0.550000
@@ -148,8 +148,8 @@
 ### xgboost_model_20d
 - dates: 20
 - avg_pick_count: 9.800000
-- mean_target: 0.194497
-- hit_rate: 0.858333
+- mean_target: 0.194660
+- hit_rate: 0.863333
 - beat_universe_rate: 0.900000
 - positive_date_rate: 0.900000
 - ge_2pct_rate: 0.850000
@@ -158,8 +158,8 @@
 ### xgboost_model_60d
 - dates: 20
 - avg_pick_count: 9.800000
-- mean_target: 0.194497
-- hit_rate: 0.858333
+- mean_target: 0.194660
+- hit_rate: 0.863333
 - beat_universe_rate: 0.900000
 - positive_date_rate: 0.900000
 - ge_2pct_rate: 0.850000
@@ -168,8 +168,8 @@
 ### xgboost_model_last_3fold
 - dates: 3
 - avg_pick_count: 10.000000
-- mean_target: 0.140923
-- hit_rate: 0.866667
+- mean_target: 0.142016
+- hit_rate: 0.900000
 - beat_universe_rate: 1.000000
 - positive_date_rate: 1.000000
 - ge_2pct_rate: 1.000000
@@ -178,8 +178,8 @@
 ### ensemble_model_20d
 - dates: 20
 - avg_pick_count: 9.800000
-- mean_target: 0.116861
-- hit_rate: 0.723333
+- mean_target: 0.116939
+- hit_rate: 0.728333
 - beat_universe_rate: 0.850000
 - positive_date_rate: 0.800000
 - ge_2pct_rate: 0.800000
@@ -188,8 +188,8 @@
 ### ensemble_model_60d
 - dates: 20
 - avg_pick_count: 9.800000
-- mean_target: 0.116861
-- hit_rate: 0.723333
+- mean_target: 0.116939
+- hit_rate: 0.728333
 - beat_universe_rate: 0.850000
 - positive_date_rate: 0.800000
 - ge_2pct_rate: 0.800000
@@ -198,8 +198,8 @@
 ### xgboost_model_last_1fold
 - dates: 1
 - avg_pick_count: 10.000000
-- mean_target: 0.110040
-- hit_rate: 0.800000
+- mean_target: 0.113319
+- hit_rate: 0.900000
 - beat_universe_rate: 1.000000
 - positive_date_rate: 1.000000
 - ge_2pct_rate: 1.000000
@@ -228,9 +228,9 @@
 ### lasso_model_20d
 - dates: 20
 - avg_pick_count: 9.800000
-- mean_target: 0.076835
+- mean_target: 0.075755
 - hit_rate: 0.628333
-- beat_universe_rate: 0.700000
+- beat_universe_rate: 0.650000
 - positive_date_rate: 0.700000
 - ge_2pct_rate: 0.550000
 - ge_5pct_rate: 0.550000
@@ -238,9 +238,9 @@
 ### lasso_model_60d
 - dates: 20
 - avg_pick_count: 9.800000
-- mean_target: 0.076835
+- mean_target: 0.075755
 - hit_rate: 0.628333
-- beat_universe_rate: 0.700000
+- beat_universe_rate: 0.650000
 - positive_date_rate: 0.700000
 - ge_2pct_rate: 0.550000
 - ge_5pct_rate: 0.550000
@@ -248,8 +248,8 @@
 ### ensemble_model_last_1fold
 - dates: 1
 - avg_pick_count: 10.000000
-- mean_target: 0.064903
-- hit_rate: 0.700000
+- mean_target: 0.066471
+- hit_rate: 0.800000
 - beat_universe_rate: 1.000000
 - positive_date_rate: 1.000000
 - ge_2pct_rate: 1.000000
@@ -258,8 +258,8 @@
 ### ensemble_model_last_3fold
 - dates: 3
 - avg_pick_count: 10.000000
-- mean_target: 0.036929
-- hit_rate: 0.600000
+- mean_target: 0.037451
+- hit_rate: 0.633333
 - beat_universe_rate: 1.000000
 - positive_date_rate: 0.666667
 - ge_2pct_rate: 0.666667
@@ -295,16 +295,6 @@
 - ge_2pct_rate: 0.333333
 - ge_5pct_rate: 0.333333
 
-### lasso_model_last_1fold
-- dates: 1
-- avg_pick_count: 10.000000
-- mean_target: -0.002460
-- hit_rate: 0.700000
-- beat_universe_rate: 1.000000
-- positive_date_rate: 0.000000
-- ge_2pct_rate: 0.000000
-- ge_5pct_rate: 0.000000
-
 ### ridge_model_last_1fold
 - dates: 1
 - avg_pick_count: 10.000000
@@ -315,12 +305,22 @@
 - ge_2pct_rate: 0.000000
 - ge_5pct_rate: 0.000000
 
+### lasso_model_last_1fold
+- dates: 1
+- avg_pick_count: 10.000000
+- mean_target: -0.024060
+- hit_rate: 0.700000
+- beat_universe_rate: 0.000000
+- positive_date_rate: 0.000000
+- ge_2pct_rate: 0.000000
+- ge_5pct_rate: 0.000000
+
 ### lasso_model_last_3fold
 - dates: 3
 - avg_pick_count: 10.000000
-- mean_target: -0.018101
+- mean_target: -0.025301
 - hit_rate: 0.533333
-- beat_universe_rate: 0.333333
+- beat_universe_rate: 0.000000
 - positive_date_rate: 0.333333
 - ge_2pct_rate: 0.000000
 - ge_5pct_rate: 0.000000
@@ -350,8 +350,8 @@
 ### xgboost_model_20d
 - dates: 20
 - avg_pick_count: 9.800000
-- mean_target: 0.194497
-- hit_rate: 0.858333
+- mean_target: 0.194660
+- hit_rate: 0.863333
 - beat_universe_rate: 0.900000
 - positive_date_rate: 0.900000
 - ge_2pct_rate: 0.850000
@@ -360,8 +360,8 @@
 ### xgboost_model_40d
 - dates: 20
 - avg_pick_count: 9.800000
-- mean_target: 0.194497
-- hit_rate: 0.858333
+- mean_target: 0.194660
+- hit_rate: 0.863333
 - beat_universe_rate: 0.900000
 - positive_date_rate: 0.900000
 - ge_2pct_rate: 0.850000
@@ -370,8 +370,8 @@
 ### xgboost_model_60d
 - dates: 20
 - avg_pick_count: 9.800000
-- mean_target: 0.194497
-- hit_rate: 0.858333
+- mean_target: 0.194660
+- hit_rate: 0.863333
 - beat_universe_rate: 0.900000
 - positive_date_rate: 0.900000
 - ge_2pct_rate: 0.850000
@@ -380,8 +380,8 @@
 ### xgboost_model_last_3fold
 - dates: 3
 - avg_pick_count: 10.000000
-- mean_target: 0.140923
-- hit_rate: 0.866667
+- mean_target: 0.142016
+- hit_rate: 0.900000
 - beat_universe_rate: 1.000000
 - positive_date_rate: 1.000000
 - ge_2pct_rate: 1.000000
@@ -390,8 +390,8 @@
 ### xgboost_model_last_1fold
 - dates: 1
 - avg_pick_count: 10.000000
-- mean_target: 0.110040
-- hit_rate: 0.800000
+- mean_target: 0.113319
+- hit_rate: 0.900000
 - beat_universe_rate: 1.000000
 - positive_date_rate: 1.000000
 - ge_2pct_rate: 1.000000
@@ -401,9 +401,9 @@
 
 ### Information Technology
 - dates: 17
-- avg_pick_count: 3.294118
-- mean_target: 0.263558
-- hit_rate: 0.857843
+- avg_pick_count: 3.352941
+- mean_target: 0.277922
+- hit_rate: 0.916667
 
 ### Health Care
 - dates: 13
@@ -419,8 +419,8 @@
 
 ### Industrials
 - dates: 12
-- avg_pick_count: 2.000000
-- mean_target: 0.177618
+- avg_pick_count: 1.916667
+- mean_target: 0.169609
 - hit_rate: 0.937500
 
 ### Consumer Staples
@@ -468,84 +468,84 @@
 ## Live Top Candidates
 
 - champion_model: xgboost_model
-- snapshot_date: 2026-08-31
+- snapshot_date: 2026-09-01
+
+### ACHC
+- sector: Health Care
+- predicted_alpha: 0.202830
+- calibrated_p_beat_sector: 95.52%
+- why: supportive distance from 52w high, supportive within-sector distance above 20d high, supportive sector breadth 50d
+- md_volume_30d: 51532426
+- chart: https://www.tradingview.com/chart/?symbol=ACHC
+
+### GDDY
+- sector: Information Technology
+- predicted_alpha: 0.162819
+- calibrated_p_beat_sector: 95.52%
+- why: limited recent downside gap risk, strong sector momentum backdrop, strong earnings gap
+- md_volume_30d: 149124893
+- chart: https://www.tradingview.com/chart/?symbol=GDDY
 
 ### DV
 - sector: Communication Services
-- predicted_alpha: 0.160437
+- predicted_alpha: 0.148438
 - calibrated_p_beat_sector: 95.52%
 - why: supportive atr 14, strong earnings volume, dollar volume ratio 20 60
 - md_volume_30d: 26326594
 - chart: https://www.tradingview.com/chart/?symbol=DV
 
-### GDDY
-- sector: Information Technology
-- predicted_alpha: 0.145508
-- calibrated_p_beat_sector: 94.83%
-- why: limited recent downside gap risk, strong sector momentum backdrop, strong earnings gap
-- md_volume_30d: 146550705
-- chart: https://www.tradingview.com/chart/?symbol=GDDY
-
-### CDW
-- sector: Information Technology
-- predicted_alpha: 0.140561
-- calibrated_p_beat_sector: 93.55%
-- why: limited recent downside gap risk, earnings breakout open, strong sector momentum backdrop
-- md_volume_30d: 206323352
-- chart: https://www.tradingview.com/chart/?symbol=CDW
-
-### RNG
-- sector: Information Technology
-- predicted_alpha: 0.115326
-- calibrated_p_beat_sector: 93.55%
-- why: well above 200d trend, strong sector momentum backdrop, holding above earnings close
-- md_volume_30d: 95635922
-- chart: https://www.tradingview.com/chart/?symbol=RNG
-
 ### CBRL
 - sector: Consumer Discretionary
-- predicted_alpha: 0.109398
-- calibrated_p_beat_sector: 93.55%
-- why: dollar volume ratio 20 60, holding above earnings close, healthy 50d sector breadth
+- predicted_alpha: 0.147014
+- calibrated_p_beat_sector: 95.42%
+- why: dollar volume ratio 20 60, healthy 50d sector breadth, holding above earnings close
 - md_volume_30d: 39846797
 - chart: https://www.tradingview.com/chart/?symbol=CBRL
 
-### ZD
-- sector: Communication Services
-- predicted_alpha: 0.097118
-- calibrated_p_beat_sector: 92.00%
-- why: earnings breakout open, strong earnings volume, supportive atr pct 14 percentile 252
-- md_volume_30d: 25224560
-- chart: https://www.tradingview.com/chart/?symbol=ZD
-
-### ONTO
+### CDW
 - sector: Information Technology
-- predicted_alpha: 0.095936
-- calibrated_p_beat_sector: 92.00%
-- why: strong earnings gap, supportive atr pct 14, earnings breakout open
-- md_volume_30d: 290275196
-- chart: https://www.tradingview.com/chart/?symbol=ONTO
+- predicted_alpha: 0.128667
+- calibrated_p_beat_sector: 93.68%
+- why: limited recent downside gap risk, strong sector momentum backdrop, strong earnings gap
+- md_volume_30d: 206452265
+- chart: https://www.tradingview.com/chart/?symbol=CDW
 
 ### NEO
 - sector: Health Care
-- predicted_alpha: 0.090776
-- calibrated_p_beat_sector: 90.38%
-- why: supportive days to earnings, constructive ATR profile, supportive atr pct 14
+- predicted_alpha: 0.104675
+- calibrated_p_beat_sector: 93.68%
+- why: supportive atr pct 14, constructive ATR profile, supportive days to earnings
 - md_volume_30d: 27007983
 - chart: https://www.tradingview.com/chart/?symbol=NEO
 
-### PANW
-- sector: Information Technology
-- predicted_alpha: 0.088124
-- calibrated_p_beat_sector: 90.38%
-- why: well above 200d trend, strong earnings gap, strong sector momentum backdrop
-- md_volume_30d: 1922599834
-- chart: https://www.tradingview.com/chart/?symbol=PANW
+### UGI
+- sector: Utilities
+- predicted_alpha: 0.093741
+- calibrated_p_beat_sector: 91.67%
+- why: healthy 200d sector breadth, supportive 126d momentum, active price discovery
+- md_volume_30d: 44625746
+- chart: https://www.tradingview.com/chart/?symbol=UGI
 
-### PATH
-- sector: Information Technology
-- predicted_alpha: 0.080778
+### WEN
+- sector: Consumer Discretionary
+- predicted_alpha: 0.076847
 - calibrated_p_beat_sector: 90.38%
-- why: supportive atr 14, supportive earnings open vs 20d high, supportive days since earnings
-- md_volume_30d: 933239678
-- chart: https://www.tradingview.com/chart/?symbol=PATH
+- why: dollar volume ratio 20 60, healthy 50d sector breadth, healthy 200d sector breadth
+- md_volume_30d: 50380780
+- chart: https://www.tradingview.com/chart/?symbol=WEN
+
+### KMX
+- sector: Consumer Discretionary
+- predicted_alpha: 0.073096
+- calibrated_p_beat_sector: 82.86%
+- why: dollar volume ratio 20 60, healthy 50d sector breadth, healthy 200d sector breadth
+- md_volume_30d: 95943530
+- chart: https://www.tradingview.com/chart/?symbol=KMX
+
+### VIRT
+- sector: Financials
+- predicted_alpha: 0.068860
+- calibrated_p_beat_sector: 82.86%
+- why: supportive 126d momentum, earnings breakout open, healthy 200d sector breadth
+- md_volume_30d: 60252464
+- chart: https://www.tradingview.com/chart/?symbol=VIRT

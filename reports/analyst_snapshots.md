@@ -1,6 +1,6 @@
 # Analyst Snapshot Capture
 
-- snapshot_date: 2026-08-31
+- snapshot_date: 2026-09-01
 - provider: yfinance
 - source: research
 - requested_tickers: 250
@@ -24,8 +24,8 @@
 | AMD | 613.84 | 610.00 | 365.00 | 1250.00 |  | 4 strong buy, 39 buy, 11 hold |
 | INTC | 114.88 | 110.00 | 75.00 | 200.00 |  | 2 strong buy, 12 buy, 32 hold, 1 sell, 1 strong sell |
 | AMZN | 327.67 | 325.50 | 230.00 | 405.00 |  | 15 strong buy, 44 buy, 2 hold |
-| GOOGL | 428.07 | 429.00 | 340.00 | 515.00 |  | 13 strong buy, 46 buy, 5 hold |
 | META | 754.77 | 750.00 | 580.00 | 1000.00 |  | 8 strong buy, 47 buy, 7 hold |
+| GOOGL | 428.07 | 429.00 | 340.00 | 515.00 |  | 13 strong buy, 46 buy, 5 hold |
 | AVGO | 525.97 | 527.50 | 215.88 | 675.00 |  | 8 strong buy, 37 buy, 4 hold |
 | GOOG | 422.34 | 430.00 | 340.00 | 475.00 |  | 13 strong buy, 45 buy, 5 hold |
 | PLTR | 191.68 | 204.00 | 80.00 | 255.00 |  | 1 strong buy, 20 buy, 9 hold, 1 sell, 1 strong sell |
@@ -39,34 +39,34 @@
 | LRCX | 371.19 | 367.00 | 290.00 | 500.00 |  | 4 strong buy, 25 buy, 6 hold |
 | NFLX | 93.66 | 93.00 | 70.00 | 135.00 |  | 7 strong buy, 28 buy, 16 hold |
 | NOW | 142.23 | 140.00 | 72.00 | 248.00 |  | 10 strong buy, 35 buy, 2 hold, 1 sell, 1 strong sell |
-| APP | 522.29 | 550.00 | 325.00 | 790.00 |  | 6 strong buy, 20 buy, 7 hold |
+| DELL | 510.26 | 500.00 | 360.00 | 700.00 |  | 5 strong buy, 14 buy, 8 hold |
 
 ## Estimate/Revision Sample Rows
 
 | ticker | earnings estimate rows | revenue estimate rows | eps trend rows | eps revision rows | upgrade/downgrade rows |
 |---|---:|---:|---:|---:|---:|
 | MU | 4 | 4 | 4 | 4 | 880 |
-| NVDA | 4 | 4 | 4 | 4 | 988 |
+| NVDA | 4 | 4 | 4 | 4 | 983 |
 | SNDK | 4 | 4 | 4 | 4 | 102 |
-| AAPL | 4 | 4 | 4 | 4 | 974 |
+| AAPL | 4 | 4 | 4 | 4 | 970 |
 | MSFT | 4 | 4 | 4 | 4 | 929 |
-| TSLA | 4 | 4 | 4 | 4 | 983 |
+| TSLA | 4 | 4 | 4 | 4 | 982 |
 | AMD | 4 | 4 | 4 | 4 | 762 |
 | INTC | 4 | 4 | 4 | 4 | 748 |
-| AMZN | 4 | 4 | 4 | 4 | 989 |
-| GOOGL | 4 | 4 | 4 | 4 | 992 |
+| AMZN | 4 | 4 | 4 | 4 | 988 |
 | META | 4 | 4 | 4 | 4 | 413 |
-| AVGO | 4 | 4 | 4 | 4 | 616 |
+| GOOGL | 4 | 4 | 4 | 4 | 992 |
+| AVGO | 4 | 4 | 4 | 4 | 617 |
 | GOOG | 4 | 4 | 4 | 4 | 702 |
 | PLTR | 4 | 4 | 4 | 4 | 226 |
 | STX | 4 | 4 | 4 | 4 | 308 |
-| LITE | 4 | 4 | 4 | 4 | 343 |
+| LITE | 4 | 4 | 4 | 4 | 344 |
 | WDC | 4 | 4 | 4 | 4 | 574 |
-| AMAT | 4 | 4 | 4 | 4 | 654 |
-| ORCL | 4 | 4 | 4 | 4 | 648 |
+| AMAT | 4 | 4 | 4 | 4 | 655 |
+| ORCL | 4 | 4 | 4 | 4 | 649 |
 | LLY | 4 | 4 | 4 | 4 | 451 |
-| WMT | 4 | 4 | 4 | 4 | 751 |
-| LRCX | 4 | 4 | 4 | 4 | 535 |
-| NFLX | 4 | 4 | 4 | 4 | 953 |
+| WMT | 4 | 4 | 4 | 4 | 752 |
+| LRCX | 4 | 4 | 4 | 4 | 536 |
+| NFLX | 4 | 4 | 4 | 4 | 952 |
 | NOW | 4 | 4 | 4 | 4 | 744 |
-| APP | 4 | 4 | 4 | 4 | 288 |
+| DELL | 4 | 4 | 4 | 4 | 341 |
