@@ -119,7 +119,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
             paths.reports_dir.mkdir(parents=True, exist_ok=True)
             paths.logs_dir.mkdir(parents=True, exist_ok=True)
 
-            dates = pd.bdate_range("2026-01-02", periods=12)
+            dates = pd.bdate_range("2026-01-02", periods=32)
             tickers = [
                 ("AAA", "Energy"),
                 ("BBB", "Materials"),
@@ -358,6 +358,63 @@ class ShortlistModelServiceTests(unittest.TestCase):
         assert predictions is not None
         self.assertEqual(len(predictions["snapshot_date"].drop_duplicates()), 3)
 
+    def test_walk_forward_predictions_embargo_overlapping_training_labels(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        dates = pd.bdate_range("2026-01-02", periods=18)
+        rows = []
+        for date_index, snapshot_date in enumerate(dates):
+            for ticker in ("AAA", "BBB"):
+                rows.append(
+                    {
+                        "snapshot_date": snapshot_date,
+                        "ticker": ticker,
+                        "sector": "Energy",
+                        "md_volume_30d": 50_000_000.0,
+                        "relative_strength_index_vs_spy": 70.0 + date_index,
+                        "roc_63": 0.1,
+                        "sma_200_dist": 0.1,
+                        "vol_alpha": 1.0,
+                        "alpha_vs_sector_20d": 0.01,
+                    }
+                )
+        frame = pd.DataFrame(rows)
+        seen_folds: list[tuple[pd.Timestamp, pd.Timestamp]] = []
+
+        def fake_score_model(**kwargs):
+            train_frame = kwargs["train_frame"]
+            test_frame = kwargs["test_frame"]
+            seen_folds.append(
+                (
+                    pd.to_datetime(train_frame["snapshot_date"]).max(),
+                    pd.to_datetime(test_frame["snapshot_date"]).min(),
+                )
+            )
+            scored = test_frame.copy()
+            scored["predicted_alpha"] = 0.0
+            scored["model_top_reasons"] = [[] for _ in range(len(scored.index))]
+            scored["model_reason_summary"] = None
+            return scored
+
+        with patch.object(service, "_score_model", side_effect=fake_score_model):
+            predictions = service._walk_forward_predictions(
+                frame,
+                target_column="alpha_vs_sector_20d",
+                model_name="ridge_model",
+                min_train_dates=5,
+                test_window_dates=2,
+                model_scope="global",
+                evaluation_stride_dates=5,
+                label_horizon_dates=5,
+            )
+
+        self.assertIsNotNone(predictions)
+        self.assertTrue(seen_folds)
+        for train_end, test_start in seen_folds:
+            self.assertLessEqual(
+                dates.get_loc(train_end),
+                dates.get_loc(test_start) - 5 - 1,
+            )
+
     def test_shortlist_model_writes_failure_report_when_no_candidate_passes_gate(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -375,7 +432,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
             )
             paths.reports_dir.mkdir(parents=True, exist_ok=True)
             paths.logs_dir.mkdir(parents=True, exist_ok=True)
-            dates = pd.bdate_range("2026-01-02", periods=10)
+            dates = pd.bdate_range("2026-01-02", periods=30)
             rows = []
             for date_index, snapshot_date in enumerate(dates):
                 for ticker_index, ticker in enumerate(("AAA", "BBB")):

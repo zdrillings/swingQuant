@@ -114,6 +114,7 @@ class ShortlistModelService:
                 min_train_dates=int(min_train_dates),
                 test_window_dates=int(test_window_dates),
                 evaluation_stride_dates=max(int(horizon_days), 1),
+                label_horizon_dates=max(int(horizon_days), 1),
                 model_scope=model_scope,
                 xgboost_params=xgboost_params if model_name == "xgboost_model" else None,
             )
@@ -438,6 +439,7 @@ class ShortlistModelService:
         test_window_dates: int,
         model_scope: str,
         evaluation_stride_dates: int | None = None,
+        label_horizon_dates: int | None = None,
         xgboost_params: dict[str, float | int] | None = None,
         feature_columns_override: list[str] | None = None,
     ) -> pd.DataFrame | None:
@@ -445,14 +447,19 @@ class ShortlistModelService:
         folds: list[pd.DataFrame] = []
         start_index = int(min_train_dates)
         stride = max(int(evaluation_stride_dates or test_window_dates), 1)
+        label_embargo = max(int(label_horizon_dates or 0), 0)
         while start_index < len(dates):
-            train_dates = set(dates[:start_index])
             if evaluation_stride_dates is not None:
                 test_dates = [dates[start_index]]
             else:
                 test_dates = dates[start_index : start_index + max(int(test_window_dates), 1)]
             if not test_dates:
                 break
+            train_end_index = max(0, start_index - label_embargo)
+            train_dates = set(dates[:train_end_index])
+            if len(train_dates) < int(min_train_dates):
+                start_index += stride
+                continue
             train_frame = frame[frame["snapshot_date"].isin(train_dates)].copy()
             test_frame = frame[frame["snapshot_date"].isin(test_dates)].copy()
             scored = self._score_model(

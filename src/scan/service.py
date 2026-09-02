@@ -32,6 +32,8 @@ from src.utils.strategy import (
     trailing_stop_price,
 )
 
+OPPORTUNITY_SELECTION_CAP = 0.45
+
 
 @dataclass(frozen=True)
 class ScanReport:
@@ -900,8 +902,8 @@ class ScanService:
 
     def _selection_opportunity_floor(self, *, scan_policy: ScanPolicy, shortlist_model_context) -> float:
         if shortlist_model_context is not None:
-            return float(scan_policy.shortlist_model.min_opportunity_score)
-        return float(scan_policy.min_opportunity_score)
+            return min(float(scan_policy.shortlist_model.min_opportunity_score), OPPORTUNITY_SELECTION_CAP)
+        return min(float(scan_policy.min_opportunity_score), OPPORTUNITY_SELECTION_CAP)
 
     def _candidate_quality_throttle_diagnostics(
         self,
@@ -1381,6 +1383,7 @@ class ScanService:
                     "freshness_score": float(row.get("freshness_score", 0.0)),
                     "overlap_penalty": float(row.get("overlap_penalty", 0.0)),
                     "opportunity_score": float(row.get("opportunity_score", 0.0)),
+                    "raw_opportunity_score": float(row.get("raw_opportunity_score", row.get("opportunity_score", 0.0))),
                     "selected": (str(row["ticker"]), str(row["strategy_slot"])) in selection_keys,
                     "selected_rank": selection_ranks.get((str(row["ticker"]), str(row["strategy_slot"]))),
                     "shares": int(row["shares"]),
@@ -1412,6 +1415,7 @@ class ScanService:
                             "freshness_score": float(row.get("freshness_score", 0.0)),
                             "overlap_penalty": float(row.get("overlap_penalty", 0.0)),
                             "opportunity_score": float(row.get("opportunity_score", 0.0)),
+                            "raw_opportunity_score": float(row.get("raw_opportunity_score", row.get("opportunity_score", 0.0))),
                             "selection_score": float(row.get("selection_score", row.get("signal_score", 0.0))),
                             "selection_source": row.get("selection_source"),
                             "model_predicted_alpha": float(row.get("model_predicted_alpha", 0.0)) if pd.notna(row.get("model_predicted_alpha")) else None,
@@ -3177,13 +3181,14 @@ class ScanService:
             overlap_components["same_regime"] = scan_policy.same_regime_penalty
             overlap_penalty += scan_policy.same_regime_penalty
         overlap_penalty = min(overlap_penalty, 1.0)
-        opportunity_score = (
+        raw_opportunity_score = (
             (setup_quality_score * scan_policy.signal_score_weight)
             + (expected_alpha_score * scan_policy.expected_alpha_weight)
             + (freshness_score * scan_policy.freshness_weight)
             + (breadth_score * scan_policy.breadth_weight)
             - overlap_penalty
         )
+        opportunity_score = min(raw_opportunity_score, OPPORTUNITY_SELECTION_CAP)
         return {
             "ticker": ticker,
             "strategy_slot": strategy_slot,
@@ -3195,6 +3200,7 @@ class ScanService:
             "overlap_penalty": overlap_penalty,
             "overlap_components": overlap_components,
             "opportunity_score": opportunity_score,
+            "raw_opportunity_score": raw_opportunity_score,
             "already_owned": already_owned,
         }
 

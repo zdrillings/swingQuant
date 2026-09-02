@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date as date_type, datetime
 
 import pandas as pd
 
@@ -173,7 +174,7 @@ class UniverseSnapshotBackfillService:
             rows = self._build_rows_for_date(
                 snapshot_date=snapshot_date_str,
                 day_frame=day_frame,
-                strategies=strategies,
+                strategies=self._strategies_effective_on(strategies, snapshot_date_str),
                 history_context=history_context,
             )
             self.db_manager.replace_universe_daily_snapshots(snapshot_date=snapshot_date_str, rows=rows)
@@ -263,6 +264,26 @@ class UniverseSnapshotBackfillService:
             )
             rows.append(snapshot_row)
         return rows
+
+    def _strategies_effective_on(self, strategies: dict, snapshot_date: str) -> dict:
+        effective: dict = {}
+        for slot, strategy in strategies.items():
+            promoted_at = getattr(strategy, "promoted_at", None)
+            promoted_date = self._promoted_date(promoted_at)
+            if promoted_date is None or promoted_date <= pd.Timestamp(snapshot_date).date():
+                effective[slot] = strategy
+        return effective
+
+    def _promoted_date(self, value) -> date_type | None:
+        if value in (None, ""):
+            return None
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00")).date()
+        except ValueError:
+            try:
+                return pd.Timestamp(value).date()
+            except Exception:
+                return None
 
     def _history_context(self, history: pd.DataFrame) -> dict[str, dict[str, object]]:
         working = history.copy()

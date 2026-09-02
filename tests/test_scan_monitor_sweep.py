@@ -28,6 +28,45 @@ class EmailCall:
 
 
 class ScanServiceTests(unittest.TestCase):
+    def test_score_candidate_caps_selection_opportunity_but_preserves_raw_score(self) -> None:
+        service = ScanService(db_manager=None)
+        strategy = ProductionStrategy(
+            strategy_id=1,
+            promoted_at="2026-05-01T00:00:00",
+            indicators={"signal_score_min": 30.0},
+            exit_rules=ExitRules(0.05, 0.12, 20),
+            slot="technology",
+            sector="Information Technology",
+        )
+        policy = ScanPolicy.from_config({"scan_policy": {"min_opportunity_score": 0.30}})
+
+        scored = service._score_candidate(
+            row={
+                "ticker": "AAA",
+                "sector": "Information Technology",
+                "regime_etf": "QQQ",
+                "signal_score": 90.0,
+                "indicator_details": {},
+                "relative_strength_index_vs_spy": 95.0,
+                "roc_63": 0.30,
+                "vol_alpha": 2.0,
+                "sma_200_dist": 0.30,
+                "sector_pct_above_50": 0.90,
+                "sector_pct_above_200": 0.90,
+                "sector_median_roc_63": 0.20,
+                "rsi_14": 50.0,
+                "sma_50_dist": 0.0,
+                "avg_abs_gap_pct_20": 0.0,
+            },
+            strategy_slot="technology",
+            strategy=strategy,
+            scan_policy=policy,
+            overlap_context={"tickers": set(), "slots": set(), "sectors": set(), "regimes": set()},
+        )
+
+        self.assertGreater(scored["raw_opportunity_score"], 0.45)
+        self.assertEqual(scored["opportunity_score"], 0.45)
+
     def test_shortlist_model_candidates_use_predicted_alpha_for_selection_score(self) -> None:
         service = ScanService(db_manager=None)
         strategy = ProductionStrategy(
@@ -1028,7 +1067,7 @@ class ScanServiceTests(unittest.TestCase):
         policy = ScanPolicy.from_config({"scan_policy": {"max_candidates_total": 2, "min_opportunity_score": 0.0}})
         strategy = ProductionStrategy(
             strategy_id=1,
-            promoted_at="2026-05-05T17:00:00",
+            promoted_at="2026-04-30T17:00:00",
             indicators={"signal_score_min": 30.0},
             exit_rules=ExitRules(0.05, 0.12, 20),
             slot="materials",
@@ -2469,7 +2508,7 @@ class ScanServiceTests(unittest.TestCase):
         )
         strategy = ProductionStrategy(
             strategy_id=1,
-            promoted_at="2026-05-05T17:00:00",
+            promoted_at="2026-04-30T17:00:00",
             indicators={"signal_score_min": 30.0},
             exit_rules=ExitRules(0.05, 0.12, 20),
             slot="industrials",
@@ -2568,7 +2607,7 @@ class ScanServiceTests(unittest.TestCase):
         )
         strategy = ProductionStrategy(
             strategy_id=1,
-            promoted_at="2026-05-05T17:00:00",
+            promoted_at="2026-04-30T17:00:00",
             indicators={"signal_score_min": 30.0},
             exit_rules=ExitRules(0.05, 0.12, 20),
             slot="industrials",
@@ -2586,6 +2625,44 @@ class ScanServiceTests(unittest.TestCase):
         self.assertEqual(db.persisted_by_date["2026-05-01"][0]["passed_slots"], ["industrials"])
         self.assertEqual(db.persisted_by_date["2026-05-02"][0]["passed_slots"], [])
         self.assertAlmostEqual(db.persisted_by_date["2026-05-01"][0]["fwd_return_1d"], 1.0)
+
+    def test_universe_backfill_does_not_apply_future_promoted_strategy_to_historical_snapshot(self) -> None:
+        service = UniverseSnapshotBackfillService(db_manager=None)
+        analysis_frame = pd.DataFrame(
+            [
+                {
+                    "ticker": "AAA",
+                    "date": pd.Timestamp("2026-05-01"),
+                    "sector": "Industrials",
+                    "regime_green": True,
+                    "regime_etf": "SPY",
+                    "adj_close": 10.0,
+                    "atr_14": 1.0,
+                    "md_volume_30d": 30_000_000,
+                    "signal_score": 99.0,
+                },
+            ]
+        )
+        future_strategy = ProductionStrategy(
+            strategy_id=1,
+            promoted_at="2026-05-05T17:00:00",
+            indicators={"signal_score_min": 30.0},
+            exit_rules=ExitRules(0.05, 0.12, 20),
+            slot="industrials",
+            sector="Industrials",
+        )
+
+        with patch("src.research.universe_snapshot_service.filter_signal_candidates", return_value=analysis_frame.copy()) as gate:
+            rows = service._build_rows_for_date(
+                snapshot_date="2026-05-01",
+                day_frame=analysis_frame,
+                strategies=service._strategies_effective_on({"industrials": future_strategy}, "2026-05-01"),
+                history_context={},
+            )
+
+        gate.assert_not_called()
+        self.assertEqual(rows[0]["passed_slots"], [])
+        self.assertFalse(rows[0]["passed_any_strategy"])
 
     def test_universe_backfill_refreshes_stale_existing_dates_even_when_skip_existing_is_true(self) -> None:
         class FakeDB:

@@ -71,7 +71,8 @@ class SyncService:
             self.logger.info("Universe table already populated; reusing existing constituents")
 
         universe_tickers = self.db_manager.list_universe_tickers(active_only=False)
-        fetch_tickers = sorted(set(universe_tickers).union(REFERENCE_TICKERS))
+        ledger_tickers = self._ledger_trade_tickers()
+        fetch_tickers = sorted(set(universe_tickers).union(REFERENCE_TICKERS).union(ledger_tickers))
         fetch_plan = self.db_manager.build_fetch_plan(fetch_tickers)
         fetch_groups = sorted(fetch_plan.items(), key=lambda item: item[0])
         total_batches = sum(math.ceil(len(tickers) / BATCH_SIZE) for _, tickers in fetch_groups)
@@ -154,6 +155,26 @@ class SyncService:
             failed_tickers=tuple(sorted(final_failed_tickers)),
             inactive_for_liquidity=tuple(sorted(inactive_for_liquidity)),
         )
+
+    def _ledger_trade_tickers(self) -> set[str]:
+        tickers: set[str] = set()
+        for loader_name in ("list_open_trades", "list_closed_trades"):
+            loader = getattr(self.db_manager, loader_name, None)
+            if not callable(loader):
+                continue
+            for trade in loader():
+                ticker = self._trade_value(trade, "ticker")
+                if ticker not in (None, ""):
+                    tickers.add(str(ticker).upper())
+        return tickers
+
+    def _trade_value(self, trade, key: str):
+        if isinstance(trade, dict):
+            return trade.get(key)
+        try:
+            return trade[key]
+        except Exception:
+            return getattr(trade, key, None)
 
     def _looks_like_market_data_outage(
         self,

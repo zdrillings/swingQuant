@@ -41,6 +41,12 @@ class FakeDBManager:
     def list_universe_tickers(self, active_only: bool = True) -> list[str]:
         return list(self.all_tickers)
 
+    def list_open_trades(self):
+        return []
+
+    def list_closed_trades(self):
+        return []
+
     def build_fetch_plan(self, tickers, lookback_years: int = 5):
         return {date(2024, 1, 1): list(tickers)}
 
@@ -111,6 +117,35 @@ class SyncServiceTests(unittest.TestCase):
         self.assertIn("Starting OHLCV sync:", joined_messages)
         self.assertIn("Applying liquidity filter to 1 universe tickers", joined_messages)
         self.assertIn("Sync complete:", joined_messages)
+
+    def test_sync_includes_ledger_trade_tickers_in_fetch_plan(self) -> None:
+        db_manager = FakeDBManager()
+        db_manager.all_tickers = ["AAA"]
+        db_manager.liquidity_windows = {
+            "AAA": pd.DataFrame({"close": [100.0] * 30, "volume": [300000] * 30}),
+        }
+        db_manager.list_open_trades = lambda: [{"ticker": "MRVL"}]
+        db_manager.list_closed_trades = lambda: [{"ticker": "SLS"}]
+        seen_fetch_tickers = []
+
+        def capture_fetch_plan(tickers, lookback_years: int = 5):
+            seen_fetch_tickers.extend(tickers)
+            return {}
+
+        db_manager.build_fetch_plan = capture_fetch_plan
+        service = SyncService(db_manager, market_data_client=FakeMarketDataClient({}))
+
+        report = service.run()
+
+        self.assertIn("AAA", seen_fetch_tickers)
+        self.assertIn("MRVL", seen_fetch_tickers)
+        self.assertIn("SLS", seen_fetch_tickers)
+        self.assertIn("SPY", seen_fetch_tickers)
+        self.assertEqual(report.universe_size, 1)
+        self.assertEqual(
+            [update["ticker"] for update in db_manager.status_updates],
+            ["AAA"],
+        )
 
     def test_sync_batch_falls_back_to_single_ticker_requests(self) -> None:
         db_manager = FakeDBManager()
