@@ -67,6 +67,32 @@ class ScanServiceTests(unittest.TestCase):
         self.assertGreater(scored["raw_opportunity_score"], 0.45)
         self.assertEqual(scored["opportunity_score"], 0.45)
 
+        custom_policy = ScanPolicy.from_config({"scan_policy": {"min_opportunity_score": 0.30, "opportunity_selection_cap": 0.40}})
+        custom_scored = service._score_candidate(
+            row={
+                "ticker": "AAA",
+                "sector": "Information Technology",
+                "regime_etf": "QQQ",
+                "signal_score": 90.0,
+                "indicator_details": {},
+                "relative_strength_index_vs_spy": 95.0,
+                "roc_63": 0.30,
+                "vol_alpha": 2.0,
+                "sma_200_dist": 0.30,
+                "sector_pct_above_50": 0.90,
+                "sector_pct_above_200": 0.90,
+                "sector_median_roc_63": 0.20,
+                "rsi_14": 50.0,
+                "sma_50_dist": 0.0,
+                "avg_abs_gap_pct_20": 0.0,
+            },
+            strategy_slot="technology",
+            strategy=strategy,
+            scan_policy=custom_policy,
+            overlap_context={"tickers": set(), "slots": set(), "sectors": set(), "regimes": set()},
+        )
+        self.assertEqual(custom_scored["opportunity_score"], 0.40)
+
     def test_shortlist_model_candidates_use_predicted_alpha_for_selection_score(self) -> None:
         service = ScanService(db_manager=None)
         strategy = ProductionStrategy(

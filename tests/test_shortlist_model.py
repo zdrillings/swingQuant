@@ -415,6 +415,188 @@ class ShortlistModelServiceTests(unittest.TestCase):
                 dates.get_loc(test_start) - 5 - 1,
             )
 
+    def test_walk_forward_predictions_strides_training_labels_by_horizon(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        dates = pd.bdate_range("2026-01-02", periods=24)
+        rows = []
+        for date_index, snapshot_date in enumerate(dates):
+            for ticker in ("AAA", "BBB"):
+                rows.append(
+                    {
+                        "snapshot_date": snapshot_date,
+                        "ticker": ticker,
+                        "sector": "Energy",
+                        "md_volume_30d": 50_000_000.0,
+                        "relative_strength_index_vs_spy": 70.0 + date_index,
+                        "roc_63": 0.1,
+                        "sma_200_dist": 0.1,
+                        "vol_alpha": 1.0,
+                        "alpha_vs_sector_20d": 0.01,
+                    }
+                )
+        frame = pd.DataFrame(rows)
+        observed_train_dates: list[list[pd.Timestamp]] = []
+
+        def fake_score_model(**kwargs):
+            train_frame = kwargs["train_frame"]
+            observed_train_dates.append(sorted(pd.to_datetime(train_frame["snapshot_date"]).drop_duplicates().tolist()))
+            scored = kwargs["test_frame"].copy()
+            scored["predicted_alpha"] = 0.0
+            scored["model_top_reasons"] = [[] for _ in range(len(scored.index))]
+            scored["model_reason_summary"] = None
+            return scored
+
+        with patch.object(service, "_score_model", side_effect=fake_score_model):
+            predictions = service._walk_forward_predictions(
+                frame,
+                target_column="alpha_vs_sector_20d",
+                model_name="ridge_model",
+                min_train_dates=5,
+                test_window_dates=2,
+                model_scope="global",
+                evaluation_stride_dates=5,
+                label_horizon_dates=5,
+            )
+
+        self.assertIsNotNone(predictions)
+        self.assertTrue(observed_train_dates)
+        for fold_dates in observed_train_dates:
+            indexes = [dates.get_loc(date_value) for date_value in fold_dates]
+            self.assertTrue(all((right - left) >= 5 for left, right in zip(indexes, indexes[1:])))
+
+    def test_prepare_model_matrices_accepts_rank_feature_ic_survivors(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        frame = pd.DataFrame(
+            [
+                {
+                    "snapshot_date": "2026-01-02",
+                    "ticker": "AAA",
+                    "sector": "Energy",
+                    "md_volume_30d": 50_000_000.0,
+                    "roc_63": 0.10,
+                    "relative_strength_index_vs_spy": 70.0,
+                },
+                {
+                    "snapshot_date": "2026-01-02",
+                    "ticker": "BBB",
+                    "sector": "Energy",
+                    "md_volume_30d": 50_000_000.0,
+                    "roc_63": 0.20,
+                    "relative_strength_index_vs_spy": 80.0,
+                },
+            ]
+        )
+
+        _train, _test, feature_names, _standardized = service._prepare_model_matrices(
+            frame,
+            frame,
+            feature_columns_override=["roc_63__rank_all"],
+        )
+
+        self.assertIn("roc_63__rank_all", feature_names)
+        self.assertNotIn("relative_strength_index_vs_spy", feature_names)
+
+    def test_walk_forward_predictions_stride_training_labels_on_horizon_grid(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        dates = pd.bdate_range("2026-01-02", periods=25)
+        rows = []
+        for date_index, snapshot_date in enumerate(dates):
+            for ticker in ("AAA", "BBB"):
+                rows.append(
+                    {
+                        "snapshot_date": snapshot_date,
+                        "ticker": ticker,
+                        "sector": "Energy",
+                        "md_volume_30d": 50_000_000.0,
+                        "relative_strength_index_vs_spy": 70.0 + date_index,
+                        "roc_63": 0.1,
+                        "sma_200_dist": 0.1,
+                        "vol_alpha": 1.0,
+                        "alpha_vs_sector_20d": 0.01,
+                    }
+                )
+        frame = pd.DataFrame(rows)
+        train_date_counts: list[int] = []
+
+        def fake_score_model(**kwargs):
+            train_frame = kwargs["train_frame"]
+            test_frame = kwargs["test_frame"]
+            train_date_counts.append(int(train_frame["snapshot_date"].nunique()))
+            scored = test_frame.copy()
+            scored["predicted_alpha"] = 0.0
+            scored["model_top_reasons"] = [[] for _ in range(len(scored.index))]
+            scored["model_reason_summary"] = None
+            return scored
+
+        with patch.object(service, "_score_model", side_effect=fake_score_model):
+            predictions = service._walk_forward_predictions(
+                frame,
+                target_column="alpha_vs_sector_20d",
+                model_name="ridge_model",
+                min_train_dates=5,
+                test_window_dates=2,
+                model_scope="global",
+                evaluation_stride_dates=5,
+                label_horizon_dates=5,
+            )
+
+        self.assertIsNotNone(predictions)
+        self.assertEqual(train_date_counts, [1, 2, 3])
+
+    def test_feature_ic_report_writes_ranked_survivor_table(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            paths = AppPaths(
+                root_dir=root,
+                data_dir=root / "data",
+                duckdb_path=root / "data" / "market_data.duckdb",
+                sqlite_path=root / "data" / "ledger.sqlite",
+                reports_dir=root / "reports",
+                logs_dir=root / "logs",
+                config_path=root / "config.yaml",
+                env_path=root / ".env",
+                production_strategy_path=root / "production_strategy.json",
+                production_strategies_path=root / "production_strategies.json",
+            )
+            paths.reports_dir.mkdir(parents=True, exist_ok=True)
+            db_manager = type("FakeDB", (), {"paths": paths})()
+            service = ShortlistModelService(db_manager=db_manager)
+            dates = pd.bdate_range("2026-01-02", periods=25)
+            rows = []
+            for date_index, snapshot_date in enumerate(dates):
+                for ticker_index, ticker in enumerate(("AAA", "BBB", "CCC")):
+                    signal = float(date_index + ticker_index)
+                    rows.append(
+                        {
+                            "snapshot_date": snapshot_date,
+                            "ticker": ticker,
+                            "sector": "Energy",
+                            "md_volume_30d": 50_000_000.0,
+                            "relative_strength_index_vs_spy": signal,
+                            "roc_63": 1.0,
+                            "sma_200_dist": 1.0,
+                            "vol_alpha": 1.0,
+                            "alpha_vs_sector_20d": signal,
+                        }
+                    )
+            frame = pd.DataFrame(rows)
+
+            result = service._feature_ic_report(
+                frame,
+                target_column="alpha_vs_sector_20d",
+                min_train_dates=5,
+                test_window_dates=2,
+                evaluation_stride_dates=5,
+                label_horizon_dates=5,
+                min_feature_ic=0.50,
+            )
+
+            report_text = (paths.reports_dir / "feature_ic_report.md").read_text(encoding="utf-8")
+            self.assertIn("# Feature IC Report", report_text)
+            self.assertIn("| relative_strength_index_vs_spy |", report_text)
+            self.assertIn("true", report_text)
+            self.assertIn("relative_strength_index_vs_spy", result["surviving_features"])
+
     def test_shortlist_model_writes_failure_report_when_no_candidate_passes_gate(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -462,6 +644,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
             gate = {
                 "scan_policy": {
                     "shortlist_model": {
+                        "min_feature_ic": 0.0,
                         "promotion_gate": {
                             "enabled": True,
                             "min_recent_20d_hit_rate": 1.01,
@@ -485,7 +668,10 @@ class ShortlistModelServiceTests(unittest.TestCase):
             self.assertIn("## Promotion Failure", report_text)
             self.assertIn("- selected_model: n/a", report_text)
             self.assertIn("- oos_evaluation_stride_dates: 20", report_text)
+            self.assertIn("- training_label_policy: horizon-strided non-overlapping dates after label embargo", report_text)
+            self.assertIn("- days_since_last_champion: n/a", report_text)
             self.assertTrue((paths.reports_dir / "shortlist_model_oos_predictions.csv").exists())
+            self.assertTrue((paths.reports_dir / "feature_ic_report.md").exists())
 
     def test_runtime_loader_does_not_refresh_stale_model_without_explicit_permission(self) -> None:
         class FakeDB:

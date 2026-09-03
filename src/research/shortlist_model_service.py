@@ -104,6 +104,23 @@ class ShortlistModelService:
         xgboost_config = self._normalize_xgboost_config(xgboost_config)
         xgboost_params = self._xgboost_params_for_config(xgboost_config)
         candidate_models = ("signal_proxy", "ridge_model", "lasso_model", "xgboost_model")
+        min_feature_ic = self._load_min_feature_ic()
+        feature_ic_report = self._feature_ic_report(
+            matured,
+            target_column=target_column,
+            min_train_dates=int(min_train_dates),
+            test_window_dates=int(test_window_dates),
+            evaluation_stride_dates=max(int(horizon_days), 1),
+            label_horizon_dates=max(int(horizon_days), 1),
+            min_feature_ic=min_feature_ic,
+        )
+        feature_columns_override = feature_ic_report["surviving_features"]
+        if not feature_columns_override:
+            raise ValueError(
+                "No shortlist model features survived "
+                f"scan_policy.shortlist_model.min_feature_ic={min_feature_ic:.4f}; "
+                "inspect reports/feature_ic_report.md."
+            )
 
         model_predictions: dict[str, pd.DataFrame] = {}
         for model_name in candidate_models:
@@ -117,6 +134,7 @@ class ShortlistModelService:
                 label_horizon_dates=max(int(horizon_days), 1),
                 model_scope=model_scope,
                 xgboost_params=xgboost_params if model_name == "xgboost_model" else None,
+                feature_columns_override=feature_columns_override,
             )
             if predicted is not None and not predicted.empty:
                 model_predictions[model_name] = predicted
@@ -207,6 +225,10 @@ class ShortlistModelService:
                 min_train_dates=int(min_train_dates),
                 test_window_dates=int(test_window_dates),
                 evaluation_stride_dates=max(int(horizon_days), 1),
+                label_horizon_dates=max(int(horizon_days), 1),
+                feature_ic_path=self.db_manager.paths.reports_dir / "feature_ic_report.md",
+                min_feature_ic=min_feature_ic,
+                surviving_features=feature_columns_override,
                 eligible_rows=len(matured.index),
                 eligible_dates=int(matured["snapshot_date"].nunique()),
                 oos_prediction_dates=int(combined_predictions["snapshot_date"].nunique()),
@@ -219,6 +241,10 @@ class ShortlistModelService:
                 promotion_gate=promotion_gate,
                 acceptance_summaries=acceptance_summaries,
                 failure_reason=str(exc),
+                days_since_last_champion=self._days_since_last_champion(
+                    generated_at=generated_at,
+                    horizon_days=int(horizon_days),
+                ),
             )
             report_path.write_text("\n".join(lines), encoding="utf-8")
             raise
@@ -235,6 +261,7 @@ class ShortlistModelService:
                 eligible_universe_mode=eligible_universe_mode,
                 model_scope=model_scope,
                 xgboost_params=xgboost_params if model_name == "xgboost_model" else None,
+                feature_columns_override=feature_columns_override,
             )
             if scored is not None and not scored.empty:
                 scored = self._apply_calibration_from_oos(
@@ -273,6 +300,10 @@ class ShortlistModelService:
             min_train_dates=int(min_train_dates),
             test_window_dates=int(test_window_dates),
             evaluation_stride_dates=max(int(horizon_days), 1),
+            label_horizon_dates=max(int(horizon_days), 1),
+            feature_ic_path=self.db_manager.paths.reports_dir / "feature_ic_report.md",
+            min_feature_ic=min_feature_ic,
+            surviving_features=feature_columns_override,
             eligible_rows=len(matured.index),
             eligible_dates=int(matured["snapshot_date"].nunique()),
             oos_prediction_dates=int(combined_predictions["snapshot_date"].nunique()),
@@ -461,6 +492,19 @@ class ShortlistModelService:
                 start_index += stride
                 continue
             train_frame = frame[frame["snapshot_date"].isin(train_dates)].copy()
+            raw_train_rows = len(train_frame.index)
+            train_frame = self._stride_training_labels(
+                train_frame,
+                dates=dates,
+                anchor_index=start_index,
+                label_horizon_dates=label_embargo,
+            )
+            self.logger.info(
+                "Walk-forward fold %s train_rows=%d after label stride from raw_train_rows=%d",
+                pd.Timestamp(test_dates[0]).date(),
+                len(train_frame.index),
+                raw_train_rows,
+            )
             test_frame = frame[frame["snapshot_date"].isin(test_dates)].copy()
             scored = self._score_model(
                 model_name=model_name,
@@ -491,6 +535,26 @@ class ShortlistModelService:
             return None
         return pd.concat(folds, axis=0, ignore_index=True)
 
+    def _stride_training_labels(
+        self,
+        train_frame: pd.DataFrame,
+        *,
+        dates: list,
+        anchor_index: int,
+        label_horizon_dates: int,
+    ) -> pd.DataFrame:
+        horizon = max(int(label_horizon_dates or 0), 0)
+        if horizon <= 1 or train_frame.empty:
+            return train_frame
+        date_index = {date_value: index for index, date_value in enumerate(dates)}
+        working = train_frame.copy()
+        working["_snapshot_date_index"] = working["snapshot_date"].map(date_index)
+        keep_mask = (
+            working["_snapshot_date_index"].notna()
+            & ((((int(anchor_index) - 1) - working["_snapshot_date_index"].astype(int)) % horizon) == 0)
+        )
+        return working.loc[keep_mask].drop(columns=["_snapshot_date_index"]).copy()
+
     def _score_live_snapshot(
         self,
         *,
@@ -514,6 +578,14 @@ class ShortlistModelService:
         safe_train = matured[matured["snapshot_date"] < latest_date].copy()
         if safe_train.empty:
             safe_train = matured
+        safe_train_dates = sorted(safe_train["snapshot_date"].drop_duplicates().tolist())
+        if len(safe_train_dates) > 1:
+            safe_train = self._stride_training_labels(
+                safe_train,
+                dates=safe_train_dates,
+                anchor_index=len(safe_train_dates),
+                label_horizon_dates=self._target_horizon_dates(target_column),
+            )
         scored = self._score_model(
             model_name=model_name,
             train_frame=safe_train,
@@ -526,6 +598,12 @@ class ShortlistModelService:
         if scored is None or scored.empty:
             return live_snapshot.assign(predicted_alpha=pd.Series(dtype=float))
         return scored
+
+    def _target_horizon_dates(self, target_column: str) -> int:
+        for piece in str(target_column).split("_"):
+            if piece.endswith("d") and piece[:-1].isdigit():
+                return max(int(piece[:-1]), 1)
+        return 1
 
     def _score_model(
         self,
@@ -971,6 +1049,155 @@ class ShortlistModelService:
         train_matrix = standardized_train.to_numpy(dtype=float)
         test_matrix = standardized_test.to_numpy(dtype=float)
         return train_matrix, test_matrix, list(train_features.columns), standardized_test
+
+    def _load_min_feature_ic(self) -> float:
+        config = load_feature_config()
+        payload = (
+            config.get("scan_policy", {})
+            .get("shortlist_model", {})
+            if isinstance(config, dict)
+            else {}
+        )
+        return float(payload.get("min_feature_ic", 0.03))
+
+    def _days_since_last_champion(self, *, generated_at: str, horizon_days: int) -> int | None:
+        loader = getattr(self.db_manager, "load_shortlist_model_runs", None)
+        if loader is None:
+            return None
+        try:
+            runs = loader(horizon_days=int(horizon_days), limit=1)
+        except TypeError:
+            try:
+                runs = loader(horizon_days=int(horizon_days), eligible_universe_mode=None, model_scope=None, limit=1)
+            except Exception:
+                return None
+        except Exception:
+            return None
+        if runs is None or runs.empty or "generated_at" not in runs.columns:
+            return None
+        last_generated = pd.to_datetime(runs.iloc[0].get("generated_at"), errors="coerce", utc=True)
+        current_generated = pd.to_datetime(generated_at, errors="coerce", utc=True)
+        if pd.isna(last_generated) or pd.isna(current_generated):
+            return None
+        return max(int((current_generated.date() - last_generated.date()).days), 0)
+
+    def _feature_ic_report(
+        self,
+        frame: pd.DataFrame,
+        *,
+        target_column: str,
+        min_train_dates: int,
+        test_window_dates: int,
+        evaluation_stride_dates: int,
+        label_horizon_dates: int,
+        min_feature_ic: float,
+    ) -> dict[str, object]:
+        dates = sorted(frame["snapshot_date"].drop_duplicates().tolist())
+        oos_dates: list = []
+        start_index = int(min_train_dates)
+        stride = max(int(evaluation_stride_dates or test_window_dates), 1)
+        label_embargo = max(int(label_horizon_dates or 0), 0)
+        while start_index < len(dates):
+            if evaluation_stride_dates is not None:
+                test_dates = [dates[start_index]]
+            else:
+                test_dates = dates[start_index : start_index + max(int(test_window_dates), 1)]
+            train_end_index = max(0, start_index - label_embargo)
+            if len(dates[:train_end_index]) >= int(min_train_dates):
+                oos_dates.extend(test_dates)
+            start_index += stride
+
+        report_path = self.db_manager.paths.reports_dir / "feature_ic_report.md"
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        if not oos_dates:
+            report_path.write_text(
+                "\n".join(
+                    [
+                        "# Feature IC Report",
+                        "",
+                        f"- target_column: {target_column}",
+                        f"- min_feature_ic: {float(min_feature_ic):.4f}",
+                        "- oos_dates: 0",
+                        "- surviving_features: 0",
+                        "",
+                        "No embargoed OOS feature rows were available.",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            return {"surviving_features": [], "report": pd.DataFrame()}
+
+        oos_frame = frame[frame["snapshot_date"].isin(oos_dates)].copy()
+        available_columns = ["snapshot_date", "sector"] + [
+            col for col in MODEL_FEATURE_COLUMNS if col in oos_frame.columns
+        ]
+        feature_frame = oos_frame[available_columns].copy()
+        for col in MODEL_FEATURE_COLUMNS:
+            if col not in feature_frame.columns:
+                feature_frame[col] = np.nan
+        feature_frame, feature_columns = build_rank_augmented_feature_frame(feature_frame)
+        target = pd.to_numeric(oos_frame[target_column], errors="coerce")
+        rows: list[dict[str, object]] = []
+        for feature_name in feature_columns:
+            values = pd.to_numeric(feature_frame[feature_name], errors="coerce")
+            valid = values.notna() & target.notna()
+            if int(valid.sum()) < 2 or values[valid].nunique(dropna=True) < 2 or target[valid].nunique(dropna=True) < 2:
+                ic = float("nan")
+            else:
+                ic = float(values[valid].corr(target[valid], method="spearman"))
+            rows.append(
+                {
+                    "feature": feature_name,
+                    "rank_ic": ic,
+                    "abs_rank_ic": abs(ic) if math.isfinite(ic) else float("nan"),
+                    "observations": int(valid.sum()),
+                }
+            )
+        report = pd.DataFrame(rows)
+        report = report.sort_values(
+            ["abs_rank_ic", "feature"],
+            ascending=[False, True],
+            na_position="last",
+        ).reset_index(drop=True)
+        surviving_features = [
+            str(row.feature)
+            for row in report.itertuples(index=False)
+            if pd.notna(row.abs_rank_ic) and float(row.abs_rank_ic) >= float(min_feature_ic)
+        ]
+        lines = [
+            "# Feature IC Report",
+            "",
+            f"- target_column: {target_column}",
+            f"- min_feature_ic: {float(min_feature_ic):.4f}",
+            f"- oos_dates: {len(set(oos_dates))}",
+            f"- oos_rows: {len(oos_frame.index)}",
+            f"- surviving_features: {len(surviving_features)}",
+            f"- surviving_feature_names: {', '.join(surviving_features) if surviving_features else 'none'}",
+            "",
+            "| feature | rank_ic | abs_rank_ic | observations | survives |",
+            "|---|---:|---:|---:|---|",
+        ]
+        for row in report.itertuples(index=False):
+            abs_ic = float(row.abs_rank_ic) if pd.notna(row.abs_rank_ic) else float("nan")
+            survives = abs_ic >= float(min_feature_ic) if math.isfinite(abs_ic) else False
+            lines.append(
+                "| "
+                f"{row.feature} | "
+                f"{self._fmt(row.rank_ic)} | "
+                f"{self._fmt(row.abs_rank_ic)} | "
+                f"{int(row.observations)} | "
+                f"{str(survives).lower()} |"
+            )
+        lines.append("")
+        report_path.write_text("\n".join(lines), encoding="utf-8")
+        self.logger.info(
+            "Feature IC screen kept %d/%d features at min_feature_ic=%.4f",
+            len(surviving_features),
+            len(feature_columns),
+            float(min_feature_ic),
+        )
+        return {"surviving_features": surviving_features, "report": report}
 
     def _annotate_calibrated_probabilities(self, frame: pd.DataFrame, *, target_column: str) -> pd.DataFrame:
         if frame.empty or "predicted_alpha" not in frame.columns or target_column not in frame.columns:
@@ -1489,6 +1716,10 @@ class ShortlistModelService:
         min_train_dates: int,
         test_window_dates: int,
         evaluation_stride_dates: int,
+        label_horizon_dates: int,
+        feature_ic_path,
+        min_feature_ic: float,
+        surviving_features: list[str],
         eligible_rows: int,
         eligible_dates: int,
         oos_prediction_dates: int,
@@ -1501,6 +1732,7 @@ class ShortlistModelService:
         promotion_gate: dict[str, float | int],
         acceptance_summaries: pd.DataFrame,
         failure_reason: str | None = None,
+        days_since_last_champion: int | None = None,
     ) -> list[str]:
         lines = [
             "# Shortlist Model",
@@ -1516,9 +1748,14 @@ class ShortlistModelService:
             f"- min_train_dates: {int(min_train_dates)}",
             f"- test_window_dates: {int(test_window_dates)}",
             f"- oos_evaluation_stride_dates: {int(evaluation_stride_dates)}",
+            f"- label_horizon_dates: {int(label_horizon_dates)}",
+            "- training_label_policy: horizon-strided non-overlapping dates after label embargo",
             "- objective: walk-forward cross-sectional ranking of the eligible universe on forward sector-relative alpha",
             f"- universe: {eligible_universe_mode_description(eligible_universe_mode)}",
             "- feature_matrix: raw features plus date-wise cross-sectional ranks and sector-relative ranks",
+            f"- feature_ic_report: {feature_ic_path}",
+            f"- min_feature_ic: {float(min_feature_ic):.4f}",
+            f"- surviving_features: {len(surviving_features)}",
             "",
             f"- eligible_rows: {int(eligible_rows)}",
             f"- eligible_dates: {int(eligible_dates)}",
@@ -1536,6 +1773,7 @@ class ShortlistModelService:
                     "",
                     f"- reason: {failure_reason}",
                     "- action: no champion was persisted and live scan must fail closed.",
+                    f"- days_since_last_champion: {days_since_last_champion if days_since_last_champion is not None else 'n/a'}",
                     "",
                 ]
             )

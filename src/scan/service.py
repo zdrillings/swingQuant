@@ -32,9 +32,6 @@ from src.utils.strategy import (
     trailing_stop_price,
 )
 
-OPPORTUNITY_SELECTION_CAP = 0.45
-
-
 @dataclass(frozen=True)
 class ScanReport:
     candidate_count: int
@@ -80,6 +77,7 @@ class ScanPolicy:
     pre_cap_candidates_per_slot: int
     max_snapshot_age_days: int | None
     min_opportunity_score: float
+    opportunity_selection_cap: float
     signal_score_weight: float
     expected_alpha_weight: float
     freshness_weight: float
@@ -141,6 +139,7 @@ class ScanPolicy:
                 else None
             ),
             min_opportunity_score=float(policy.get("min_opportunity_score", 0.55)),
+            opportunity_selection_cap=float(policy.get("opportunity_selection_cap", 0.45)),
             signal_score_weight=float(ranking_weights.get("signal_score", 0.35)),
             expected_alpha_weight=float(ranking_weights.get("expected_alpha", 0.30)),
             freshness_weight=float(ranking_weights.get("freshness", 0.20)),
@@ -902,8 +901,11 @@ class ScanService:
 
     def _selection_opportunity_floor(self, *, scan_policy: ScanPolicy, shortlist_model_context) -> float:
         if shortlist_model_context is not None:
-            return min(float(scan_policy.shortlist_model.min_opportunity_score), OPPORTUNITY_SELECTION_CAP)
-        return min(float(scan_policy.min_opportunity_score), OPPORTUNITY_SELECTION_CAP)
+            return min(
+                float(scan_policy.shortlist_model.min_opportunity_score),
+                float(getattr(scan_policy, "opportunity_selection_cap", 0.45)),
+            )
+        return min(float(scan_policy.min_opportunity_score), float(getattr(scan_policy, "opportunity_selection_cap", 0.45)))
 
     def _candidate_quality_throttle_diagnostics(
         self,
@@ -3188,7 +3190,7 @@ class ScanService:
             + (breadth_score * scan_policy.breadth_weight)
             - overlap_penalty
         )
-        opportunity_score = min(raw_opportunity_score, OPPORTUNITY_SELECTION_CAP)
+        opportunity_score = min(raw_opportunity_score, float(getattr(scan_policy, "opportunity_selection_cap", 0.45)))
         return {
             "ticker": ticker,
             "strategy_slot": strategy_slot,
