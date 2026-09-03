@@ -44,10 +44,41 @@ class ScanServiceTests(unittest.TestCase):
             )
         )
 
-        self.assertIn("P(>2% Alpha)", html)
-        self.assertIn("91.0%", html)
-        self.assertNotIn("+91.00%", html)
+        self.assertIn("Model Score", html)
+        self.assertIn("+91.00%", html)
+        self.assertNotIn("P(&gt;2% Alpha)", html)
         self.assertNotIn("Pred Alpha", html)
+
+    def test_shortlist_model_selection_prefers_calibrated_probability_score(self) -> None:
+        service = ScanService(db_manager=None)
+        context = type(
+            "ModelContext",
+            (),
+            {
+                "generated_at": "2026-09-03T18:00:00+00:00",
+                "champion_model": "ensemble_model",
+                "target_column": "alpha_vs_sector_20d_pos",
+                "live_predictions": pd.DataFrame(
+                    [
+                        {"ticker": "AAA", "predicted_alpha": 0.95, "calibrated_p_beat_sector": 0.51, "model_rank": 1},
+                        {"ticker": "BBB", "predicted_alpha": 0.80, "calibrated_p_beat_sector": 0.62, "model_rank": 2},
+                    ]
+                ),
+            },
+        )()
+        candidates = pd.DataFrame(
+            [
+                {"ticker": "AAA", "strategy_slot": "energy", "strategy_sector": "Energy", "signal_score": 10.0},
+                {"ticker": "BBB", "strategy_slot": "energy", "strategy_sector": "Energy", "signal_score": 10.0},
+            ]
+        )
+
+        scored = service._apply_shortlist_model_selection(candidates, context)
+
+        scores = dict(zip(scored["ticker"], scored["selection_score"], strict=True))
+        self.assertAlmostEqual(scores["AAA"], 0.51)
+        self.assertAlmostEqual(scores["BBB"], 0.62)
+        self.assertTrue((scored["model_score_label"] == "Model Score").all())
 
     def test_score_candidate_caps_selection_opportunity_but_preserves_raw_score(self) -> None:
         service = ScanService(db_manager=None)
@@ -114,7 +145,7 @@ class ScanServiceTests(unittest.TestCase):
         )
         self.assertEqual(custom_scored["opportunity_score"], 0.40)
 
-    def test_shortlist_model_candidates_use_predicted_alpha_for_selection_score(self) -> None:
+    def test_shortlist_model_candidates_use_calibrated_probability_for_selection_score(self) -> None:
         service = ScanService(db_manager=None)
         strategy = ProductionStrategy(
             strategy_id=1,
@@ -157,6 +188,7 @@ class ScanServiceTests(unittest.TestCase):
             ),
             generated_at="2026-08-31T23:40:00+00:00",
             champion_model="xgboost_model",
+            target_column="alpha_vs_sector_20d_pos",
         )
         scan_policy = SimpleNamespace(
             signal_score_weight=0.25,
@@ -194,8 +226,9 @@ class ScanServiceTests(unittest.TestCase):
             settings=settings,
         )
 
-        self.assertAlmostEqual(float(candidates.loc[0, "selection_score"]), 0.123, places=6)
+        self.assertAlmostEqual(float(candidates.loc[0, "selection_score"]), 0.88, places=6)
         self.assertAlmostEqual(float(candidates.loc[0, "calibrated_p_beat_sector"]), 0.88, places=6)
+        self.assertEqual(candidates.loc[0, "model_score_label"], "Model Score")
 
     def test_scan_filters_out_in_progress_daily_bar_before_close(self) -> None:
         service = ScanService(db_manager=None)

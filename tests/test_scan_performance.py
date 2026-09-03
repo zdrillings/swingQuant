@@ -50,9 +50,9 @@ class ScanPerformanceServiceTests(unittest.TestCase):
             forward_predictions=forward_predictions,
         )
 
-        self.assertIn("P(>2% Alpha)", html)
-        self.assertIn("91.0%", html)
-        self.assertNotIn("+91.0%", html)
+        self.assertIn("Model Score", html)
+        self.assertIn("+91.0%", html)
+        self.assertNotIn("P(&gt;2% Alpha)", html)
         self.assertNotIn("Forward Predictions (20d alpha)", html)
 
     def test_scan_performance_writes_report(self) -> None:

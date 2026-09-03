@@ -600,10 +600,19 @@ class ScanService:
         merged["model_predicted_alpha"] = pd.to_numeric(merged["model_predicted_alpha"], errors="coerce")
         if "calibrated_p_beat_sector" in merged.columns:
             merged["calibrated_p_beat_sector"] = pd.to_numeric(merged["calibrated_p_beat_sector"], errors="coerce")
-        merged["selection_score"] = merged["model_predicted_alpha"]
+        merged["selection_score"] = pd.to_numeric(
+            merged.get("calibrated_p_beat_sector", merged["model_predicted_alpha"]),
+            errors="coerce",
+        )
+        merged["selection_score"] = merged["selection_score"].where(
+            merged["selection_score"].notna(),
+            merged["model_predicted_alpha"],
+        )
         merged["selection_source"] = "shortlist_model"
         merged["model_generated_at"] = shortlist_model_context.generated_at
         merged["model_name"] = shortlist_model_context.champion_model
+        merged["model_target_column"] = getattr(shortlist_model_context, "target_column", None)
+        merged["model_score_label"] = self._model_score_label(merged)
         if "signal_score" not in merged.columns:
             merged["signal_score"] = 0.0
         fallback_strategy = strategy_map.get("__fallback__")
@@ -1283,7 +1292,14 @@ class ScanService:
         merged = scored.merge(predictions, on="ticker", how="left")
         if "calibrated_p_beat_sector" in merged.columns:
             merged["calibrated_p_beat_sector"] = pd.to_numeric(merged["calibrated_p_beat_sector"], errors="coerce")
-        merged["selection_score"] = pd.to_numeric(merged["model_predicted_alpha"], errors="coerce")
+        merged["selection_score"] = pd.to_numeric(
+            merged.get("calibrated_p_beat_sector", merged["model_predicted_alpha"]),
+            errors="coerce",
+        )
+        merged["selection_score"] = merged["selection_score"].where(
+            merged["selection_score"].notna(),
+            pd.to_numeric(merged["model_predicted_alpha"], errors="coerce"),
+        )
         fallback_selection = merged.get("selection_score")
         if fallback_selection is None:
             if "signal_score" in merged.columns:
@@ -2095,14 +2111,12 @@ class ScanService:
                 return str(label)
             target_column = getattr(frame_or_candidate, "model_target_column", None)
         if str(target_column or "").endswith("_pos"):
-            return "P(>2% Alpha)"
+            return "Model Score"
         return "Pred Alpha"
 
     def _format_model_score(self, value, frame_or_candidate=None) -> str:
         if not self._is_finite(value):
             return "n/a"
-        if frame_or_candidate is not None and self._model_score_label(frame_or_candidate) == "P(>2% Alpha)":
-            return f"{float(value) * 100.0:.1f}%"
         return self._format_pct_cell(value)
 
     def _format_price_cell(self, value) -> str:

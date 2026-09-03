@@ -1560,15 +1560,15 @@ class ScanPerformanceService:
             top_n = forward_predictions.head(6)
             score_label = self._forward_prediction_score_label(top_n)
             score_description = (
-                "Top model-ranked candidates and their probability of clearing the positive sector-relative alpha target."
-                if score_label == "P(>2% Alpha)"
+                "Top model-ranked candidates and their model score for clearing the positive sector-relative alpha target."
+                if score_label == "Model Score"
                 else "Top model-ranked candidates and their predicted sector-relative alpha over the next 20 trading days."
             )
             fp_rows = ""
             for _, row in top_n.iterrows():
                 alpha = float(row["predicted_alpha"])
                 alpha_color = "#28a745" if alpha > 0 else "#dc3545"
-                alpha_text = f"{alpha:.1%}" if score_label == "P(>2% Alpha)" else f"{alpha:+.1%}"
+                alpha_text = f"{alpha:+.1%}"
                 fp_rows += f"""
                 <tr>
                     <td style="padding:4px 10px;font-weight:600;">{row['ticker']}</td>
@@ -1623,5 +1623,5 @@ class ScanPerformanceService:
         targets = predictions["model_target_column"].dropna().astype(str)
         targets = targets[targets != ""]
         if not targets.empty and str(targets.iloc[0]).endswith("_pos"):
-            return "P(>2% Alpha)"
+            return "Model Score"
         return "Pred Alpha"
