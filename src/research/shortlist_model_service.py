@@ -22,6 +22,8 @@ from src.settings import load_feature_config
 from src.utils.db_manager import DatabaseManager
 from src.utils.logging import get_logger
 
+PROMOTION_BASKET_SIZE = 2
+
 
 @dataclass(frozen=True)
 class ShortlistModelReport:
@@ -103,7 +105,14 @@ class ShortlistModelService:
 
         xgboost_config = self._normalize_xgboost_config(xgboost_config)
         xgboost_params = self._xgboost_params_for_config(xgboost_config)
-        candidate_models = ("signal_proxy", "ridge_model", "lasso_model", "xgboost_model")
+        candidate_models = (
+            "signal_proxy",
+            "ridge_model",
+            "lasso_model",
+            "elastic_net_model",
+            "ic_sign_model",
+            "xgboost_model",
+        )
         min_feature_ic = self._load_min_feature_ic()
         feature_ic_report = self._feature_ic_report(
             matured,
@@ -148,6 +157,7 @@ class ShortlistModelService:
         report_path = self.db_manager.paths.reports_dir / "shortlist_model.md"
         oos_path = self.db_manager.paths.reports_dir / "shortlist_model_oos_predictions.csv"
         live_path = self.db_manager.paths.reports_dir / "shortlist_model_live_predictions.csv"
+        promotion_top_n = PROMOTION_BASKET_SIZE
         generated_at = datetime.now(UTC).replace(microsecond=0).isoformat()
         combined_predictions = pd.concat(
             [
@@ -170,7 +180,7 @@ class ShortlistModelService:
             [
                 self._evaluate_predictions(
                     predictions=predictions,
-                    top_n=int(top_n),
+                    top_n=promotion_top_n,
                     target_column=target_column,
                     model_name=model_name,
                 )
@@ -184,7 +194,7 @@ class ShortlistModelService:
             recent_summary_rows.append(
                 self._evaluate_predictions(
                     predictions=recent_predictions,
-                    top_n=int(top_n),
+                    top_n=promotion_top_n,
                     target_column=target_column,
                     model_name=model_name,
                 )
@@ -199,7 +209,7 @@ class ShortlistModelService:
                     predictions=predictions,
                     target_column=target_column,
                     model_name=model_name,
-                    top_n=int(top_n),
+                    top_n=promotion_top_n,
                     windows=(20, 60),
                     fold_windows=(1, 3),
                 ).to_dict(orient="records")
@@ -216,6 +226,7 @@ class ShortlistModelService:
             lines = self._build_report_lines(
                 target_column=target_column,
                 top_n=int(top_n),
+                promotion_top_n=promotion_top_n,
                 eligible_universe_mode=eligible_universe_mode,
                 model_scope=model_scope,
                 candidate_models=tuple(model_predictions.keys()),
@@ -291,6 +302,7 @@ class ShortlistModelService:
         lines = self._build_report_lines(
             target_column=target_column,
             top_n=int(top_n),
+            promotion_top_n=promotion_top_n,
             eligible_universe_mode=eligible_universe_mode,
             model_scope=model_scope,
             candidate_models=tuple(model_predictions.keys()),
@@ -322,7 +334,7 @@ class ShortlistModelService:
                     predictions=model_predictions[champion_model],
                     target_column=target_column,
                     model_name=champion_model,
-                    top_n=int(top_n),
+                    top_n=promotion_top_n,
                     windows=(20, 40, 60),
                     fold_windows=(1, 3),
                 ),
@@ -652,6 +664,20 @@ class ShortlistModelService:
                 target_column=target_column,
                 feature_columns_override=feature_columns_override,
             )
+        if model_name == "elastic_net_model":
+            return self._score_elastic_net_model(
+                train_frame,
+                test_frame,
+                target_column=target_column,
+                feature_columns_override=feature_columns_override,
+            )
+        if model_name == "ic_sign_model":
+            return self._score_ic_sign_model(
+                train_frame,
+                test_frame,
+                target_column=target_column,
+                feature_columns_override=feature_columns_override,
+            )
         if model_name == "xgboost_model":
             return self._score_xgboost_model(
                 train_frame,
@@ -858,6 +884,88 @@ class ShortlistModelService:
                 scored["predicted_alpha"] = test_matrix @ weights
             contribution_frame = standardized_test.mul(weights, axis=1)
 
+        scored["model_top_reasons"] = [
+            self._top_reason_names(contribution_frame.iloc[index].to_dict())
+            for index in range(len(contribution_frame.index))
+        ]
+        scored["model_reason_summary"] = scored["model_top_reasons"].apply(self._format_reason_summary)
+        return scored
+
+    def _score_elastic_net_model(
+        self,
+        train_frame: pd.DataFrame,
+        test_frame: pd.DataFrame,
+        *,
+        target_column: str,
+        feature_columns_override: list[str] | None = None,
+    ) -> pd.DataFrame:
+        try:
+            from sklearn.linear_model import ElasticNet
+        except ModuleNotFoundError:
+            self.logger.warning("scikit-learn unavailable; falling back to closed-form ridge.")
+            return self._score_ridge_closed_form(
+                train_frame,
+                test_frame,
+                target_column=target_column,
+                feature_columns_override=feature_columns_override,
+            )
+        train_matrix, test_matrix, feature_names, standardized_test = self._prepare_model_matrices(
+            train_frame,
+            test_frame,
+            feature_columns_override=feature_columns_override,
+        )
+        train_target = pd.to_numeric(train_frame[target_column], errors="coerce").to_numpy(dtype=float)
+        finite_mask = np.isfinite(train_target)
+        if not finite_mask.all():
+            train_matrix = train_matrix[finite_mask]
+            train_target = train_target[finite_mask]
+        train_matrix = np.nan_to_num(train_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+        test_matrix = np.nan_to_num(test_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+        model = ElasticNet(alpha=0.001, l1_ratio=0.25, max_iter=10000, random_state=42, selection="cyclic")
+        model.fit(train_matrix, train_target)
+        weights = model.coef_
+        scored = test_frame.copy()
+        scored["predicted_alpha"] = test_matrix @ weights
+        contribution_frame = standardized_test.mul(weights, axis=1)
+        scored["model_top_reasons"] = [
+            self._top_reason_names(contribution_frame.iloc[index].to_dict())
+            for index in range(len(contribution_frame.index))
+        ]
+        scored["model_reason_summary"] = scored["model_top_reasons"].apply(self._format_reason_summary)
+        return scored
+
+    def _score_ic_sign_model(
+        self,
+        train_frame: pd.DataFrame,
+        test_frame: pd.DataFrame,
+        *,
+        target_column: str,
+        feature_columns_override: list[str] | None = None,
+    ) -> pd.DataFrame:
+        train_matrix, test_matrix, feature_names, standardized_test = self._prepare_model_matrices(
+            train_frame,
+            test_frame,
+            feature_columns_override=feature_columns_override,
+        )
+        train_target = pd.to_numeric(train_frame[target_column], errors="coerce").to_numpy(dtype=float)
+        finite_target = np.isfinite(train_target)
+        train_matrix = np.nan_to_num(train_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+        test_matrix = np.nan_to_num(test_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+        weights = np.zeros(len(feature_names), dtype=float)
+        for index in range(len(feature_names)):
+            values = train_matrix[:, index]
+            valid = finite_target & np.isfinite(values)
+            if int(valid.sum()) < 40 or np.nanstd(values[valid]) == 0.0:
+                continue
+            ic = pd.Series(values[valid]).corr(pd.Series(train_target[valid]), method="spearman")
+            if pd.notna(ic) and math.isfinite(float(ic)) and abs(float(ic)) >= 0.01:
+                weights[index] = float(ic)
+        norm = float(np.sum(np.abs(weights)))
+        if norm > 0.0:
+            weights = weights / norm
+        scored = test_frame.copy()
+        scored["predicted_alpha"] = test_matrix @ weights
+        contribution_frame = standardized_test.mul(weights, axis=1)
         scored["model_top_reasons"] = [
             self._top_reason_names(contribution_frame.iloc[index].to_dict())
             for index in range(len(contribution_frame.index))
@@ -1733,12 +1841,14 @@ class ShortlistModelService:
         acceptance_summaries: pd.DataFrame,
         failure_reason: str | None = None,
         days_since_last_champion: int | None = None,
+        promotion_top_n: int = PROMOTION_BASKET_SIZE,
     ) -> list[str]:
         lines = [
             "# Shortlist Model",
             "",
             f"- target_column: {target_column}",
-            f"- top_n: {int(top_n)}",
+            f"- live_output_top_n: {int(top_n)}",
+            f"- promotion_top_n: {int(promotion_top_n)}",
             f"- eligible_universe_mode: {eligible_universe_mode}",
             f"- model_scope: {model_scope}",
             f"- candidate_models: {', '.join(candidate_models)}",
