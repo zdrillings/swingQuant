@@ -9,12 +9,20 @@ class NightlyPipelineScriptTests(unittest.TestCase):
         script = Path("ops/nightly_pipeline.sh").read_text(encoding="utf-8")
 
         self.assertIn("shortlist_status=\"${PIPESTATUS[0]}\"", script)
+        self.assertIn("trap - ERR", script)
+        self.assertIn("trap notify_failure ERR", script)
         self.assertIn("No shortlist model candidate passed the promotion gate", script)
         self.assertIn("continuing with previously persisted model context", script)
+        self.assertIn("shortlist_promotion_failed=1", script)
+        self.assertIn("scan skipped because shortlist-model produced no promotable champion", script)
         self.assertIn("exit \"${shortlist_status}\"", script)
         self.assertLess(
             script.index("No shortlist model candidate passed the promotion gate"),
             script.index("echo \"[$(date --iso-8601=seconds)] analyst-snapshot\""),
+        )
+        self.assertLess(
+            script.index("shortlist_promotion_failed=1"),
+            script.index("echo \"[$(date --iso-8601=seconds)] scan skipped"),
         )
 
 

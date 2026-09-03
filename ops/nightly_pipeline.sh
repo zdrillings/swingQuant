@@ -61,6 +61,8 @@ echo "[$(date --iso-8601=seconds)] universe-backfill ${universe_refresh_start}..
 
 echo "[$(date --iso-8601=seconds)] shortlist-model"
 shortlist_log="$(mktemp)"
+shortlist_promotion_failed=0
+trap - ERR
 set +e
 ./sq shortlist-model \
   --top 10 \
@@ -73,8 +75,10 @@ set +e
   --xgboost-config balanced_depth4 2>&1 | tee "${shortlist_log}"
 shortlist_status="${PIPESTATUS[0]}"
 set -e
+trap notify_failure ERR
 if [[ "${shortlist_status}" -ne 0 ]]; then
   if grep -Fq "No shortlist model candidate passed the promotion gate" "${shortlist_log}"; then
+    shortlist_promotion_failed=1
     echo "[$(date --iso-8601=seconds)] shortlist-model produced no promotable champion; continuing with previously persisted model context"
   else
     rm -f "${shortlist_log}"
@@ -89,8 +93,12 @@ echo "[$(date --iso-8601=seconds)] analyst-snapshot"
 echo "[$(date --iso-8601=seconds)] extended-hours-snapshot"
 ./sq extended-hours-snapshot --source all
 
-echo "[$(date --iso-8601=seconds)] scan"
-./sq scan
+if [[ "${shortlist_promotion_failed}" -eq 0 ]]; then
+  echo "[$(date --iso-8601=seconds)] scan"
+  ./sq scan
+else
+  echo "[$(date --iso-8601=seconds)] scan skipped because shortlist-model produced no promotable champion"
+fi
 
 echo "[$(date --iso-8601=seconds)] scan-performance"
 ./sq scan-performance --all-sources --email
