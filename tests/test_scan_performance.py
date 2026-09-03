@@ -584,6 +584,74 @@ class ScanPerformanceServiceTests(unittest.TestCase):
             self.assertIn("<html>", html_body)
             self.assertIn("Horizon Summary", html_body)
 
+    def test_scan_performance_email_failure_does_not_fail_report(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            reports_dir = root / "reports"
+            reports_dir.mkdir(parents=True, exist_ok=True)
+
+            class FakeDB:
+                def __init__(self):
+                    self.paths = AppPaths(
+                        root_dir=root,
+                        data_dir=root / "data",
+                        duckdb_path=root / "data" / "market_data.duckdb",
+                        sqlite_path=root / "data" / "ledger.sqlite",
+                        reports_dir=reports_dir,
+                        logs_dir=root / "logs",
+                        config_path=root / "config.yaml",
+                        env_path=root / ".env",
+                        production_strategy_path=root / "production_strategy.json",
+                    )
+
+                def initialize(self): return None
+
+                def load_scan_candidates(self, scan_date=None):
+                    return pd.DataFrame(
+                        [
+                            {
+                                "scan_date": "2026-05-01",
+                                "ticker": "AAA",
+                                "strategy_slot": "industrials",
+                                "strategy_sector": "Industrials",
+                                "sector": "Industrials",
+                                "selected": 1,
+                                "selected_rank": 1,
+                            },
+                        ]
+                    )
+
+                def load_price_history(self, tickers):
+                    return pd.DataFrame(
+                        [
+                            {"ticker": "AAA", "date": "2026-05-01", "adj_close": 10.0},
+                            {"ticker": "AAA", "date": "2026-05-05", "adj_close": 11.0},
+                            {"ticker": "SPY", "date": "2026-05-01", "adj_close": 100.0},
+                            {"ticker": "SPY", "date": "2026-05-05", "adj_close": 101.0},
+                            {"ticker": "XLI", "date": "2026-05-01", "adj_close": 50.0},
+                            {"ticker": "XLI", "date": "2026-05-05", "adj_close": 51.0},
+                        ]
+                    )
+
+            class FakeSettings:
+                env = {}
+
+            def failing_email_sender(*, subject, html_body, settings):
+                raise OSError("smtp unavailable")
+
+            from unittest.mock import patch
+
+            with patch("src.scan.performance_service.get_settings", return_value=FakeSettings()):
+                report = ScanPerformanceService(FakeDB(), email_sender=failing_email_sender).run(
+                    recent_scan_dates=60,
+                    recent_picks=5,
+                    benchmark="sector",
+                    email=True,
+                )
+
+            self.assertEqual(report.selected_rows, 1)
+            self.assertTrue((reports_dir / "scan_performance.md").exists())
+
     def test_scan_performance_parser_accepts_args(self) -> None:
         parser = build_parser()
         args = parser.parse_args(

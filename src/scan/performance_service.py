@@ -129,11 +129,15 @@ class ScanPerformanceService:
                 window_label=window_label,
             )
             forward_predictions = self._load_forward_predictions()
-            self.email_sender(
-                subject=f"SwingQuant Performance ({benchmark})",
-                html_body=self._render_performance_email(enriched, dashboard, horizons, benchmark, forward_predictions),
-                settings=settings,
-            )
+            try:
+                self.email_sender(
+                    subject=f"SwingQuant Performance ({benchmark})",
+                    html_body=self._render_performance_email(enriched, dashboard, horizons, benchmark, forward_predictions),
+                    settings=settings,
+                )
+            except Exception as exc:
+                self.logger.exception("Unable to send scan performance email.")
+                print(f"Warning: failed to send scan performance email: {exc}")
 
         return ScanPerformanceReport(
             output_path=str(report_path),
