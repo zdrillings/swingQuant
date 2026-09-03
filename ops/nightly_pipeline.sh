@@ -60,6 +60,8 @@ echo "[$(date --iso-8601=seconds)] universe-backfill ${universe_refresh_start}..
 ./sq universe-backfill --date-from "${universe_refresh_start}" --date-to "${run_date}" --skip-existing
 
 echo "[$(date --iso-8601=seconds)] shortlist-model"
+shortlist_log="$(mktemp)"
+set +e
 ./sq shortlist-model \
   --top 10 \
   --horizon 20 \
@@ -68,7 +70,18 @@ echo "[$(date --iso-8601=seconds)] shortlist-model"
   --recent-dates 60 \
   --eligible-universe-mode passed_or_trend \
   --model-scope sector_specific \
-  --xgboost-config balanced_depth4
+  --xgboost-config balanced_depth4 2>&1 | tee "${shortlist_log}"
+shortlist_status="${PIPESTATUS[0]}"
+set -e
+if [[ "${shortlist_status}" -ne 0 ]]; then
+  if grep -Fq "No shortlist model candidate passed the promotion gate" "${shortlist_log}"; then
+    echo "[$(date --iso-8601=seconds)] shortlist-model produced no promotable champion; continuing with previously persisted model context"
+  else
+    rm -f "${shortlist_log}"
+    exit "${shortlist_status}"
+  fi
+fi
+rm -f "${shortlist_log}"
 
 echo "[$(date --iso-8601=seconds)] analyst-snapshot"
 ./sq analyst-snapshot --source research --top 250
