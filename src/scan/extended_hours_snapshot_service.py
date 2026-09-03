@@ -105,11 +105,18 @@ class ExtendedHoursSnapshotService:
                     },
                 }
             )
-        persisted_rows = self.db_manager.replace_extended_hours_snapshots(
-            snapshot_date=selected_date,
-            rows=rows,
-        )
         rows_with_extended_price = sum(1 for row in rows if self._is_finite(row.get("extended_price")))
+        if rows and rows_with_extended_price == 0:
+            self.logger.warning(
+                "Extended-hours snapshot for %s has no extended prices; preserving prior rows.",
+                selected_date,
+            )
+            persisted_rows = 0
+        else:
+            persisted_rows = self.db_manager.replace_extended_hours_snapshots(
+                snapshot_date=selected_date,
+                rows=rows,
+            )
         output_path = self._write_report(
             snapshot_date=selected_date,
             rows=rows,
@@ -234,6 +241,15 @@ class ExtendedHoursSnapshotService:
             "## Top Relative Extended-Hours Moves",
             "",
         ]
+        if requested_tickers > 0 and persisted_rows == 0 and rows_with_extended_price == 0:
+            lines.extend(
+                [
+                    "## Capture Warning",
+                    "",
+                    "- extended_hours: no usable provider payload; prior persisted rows were preserved.",
+                    "",
+                ]
+            )
         if not ranked:
             lines.append("No extended-hours relative moves were available.")
         else:

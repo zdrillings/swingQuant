@@ -31,6 +31,24 @@ class ExtendedHoursSnapshotServiceTests(unittest.TestCase):
         self.assertEqual(by_ticker["AAA"]["extended_volume"], 1500)
         self.assertIn("XLK", fake_market.requested_tickers)
 
+    def test_capture_preserves_existing_rows_when_no_extended_prices_download(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_db = FakeExtendedHoursDatabase(Path(tmpdir))
+            fake_market = EmptyExtendedHoursMarketDataClient()
+
+            report = ExtendedHoursSnapshotService(fake_db, market_data_client=fake_market).run(
+                snapshot_date="2026-07-03",
+                source="research",
+                top=2,
+            )
+
+            report_text = report.output_path.read_text(encoding="utf-8")
+
+        self.assertEqual(report.persisted_rows, 0)
+        self.assertEqual(report.rows_with_extended_price, 0)
+        self.assertEqual(fake_db.persisted_rows, [])
+        self.assertIn("prior persisted rows were preserved", report_text)
+
 
 class FakeExtendedHoursDatabase:
     def __init__(self, root: Path) -> None:
@@ -86,6 +104,11 @@ class FakeExtendedHoursMarketDataClient:
             data[(ticker, "Close")] = ticker_prices
             data[(ticker, "Volume")] = [1000, 1000, 1000, 500]
         return pd.DataFrame(data, index=timestamps)
+
+
+class EmptyExtendedHoursMarketDataClient:
+    def download_intraday_history(self, tickers: list[str], *, include_prepost: bool = False) -> pd.DataFrame:
+        return pd.DataFrame()
 
 
 if __name__ == "__main__":

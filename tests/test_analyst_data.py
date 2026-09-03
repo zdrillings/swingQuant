@@ -121,6 +121,26 @@ class AnalystSnapshotServiceTests(unittest.TestCase):
         self.assertEqual(revision_by_ticker["AAA"]["eps_revisions"], [{"period": "0q", "upLast7days": 2}])
         self.assertEqual(revision_by_ticker["BBB"]["eps_revisions"], [])
 
+    def test_capture_preserves_existing_rows_when_provider_payload_is_empty(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fake_db = FakeAnalystSnapshotDatabase(Path(tmpdir))
+            fake_client = FakeAnalystDataClient({})
+
+            report = AnalystSnapshotService(fake_db, analyst_data_client=fake_client).run(
+                snapshot_date="2026-06-24",
+                source="research",
+                top=2,
+            )
+
+            report_text = report.output_path.read_text(encoding="utf-8")
+
+        self.assertEqual(report.requested_tickers, 2)
+        self.assertEqual(report.persisted_rows, 0)
+        self.assertEqual(report.persisted_revision_rows, 0)
+        self.assertEqual(fake_db.persisted_rows, [])
+        self.assertEqual(fake_db.persisted_revision_rows, [])
+        self.assertIn("prior persisted rows were preserved", report_text)
+
 
 class FakeAnalystSnapshotDatabase:
     def __init__(self, root: Path) -> None:

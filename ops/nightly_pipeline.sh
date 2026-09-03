@@ -9,7 +9,10 @@ universe_refresh_start="$(date -d "${run_date} - 120 days" +%F)"
 send_failure_email() {
   local exit_code="$1"
   local failed_command="$2"
-  python3 - "${exit_code}" "${failed_command}" <<'PY'
+  local subject="${3:-SwingQuant Nightly Pipeline Failed}"
+  local heading="${4:-Nightly Pipeline Failed}"
+  local message="${5:-The ordered nightly refresh did not complete, so downstream scan output may be missing or stale.}"
+  python3 - "${exit_code}" "${failed_command}" "${subject}" "${heading}" "${message}" <<'PY'
 from html import escape
 import sys
 
@@ -18,12 +21,15 @@ from src.utils.emailer import send_html_email
 
 exit_code = sys.argv[1]
 failed_command = sys.argv[2]
+subject = sys.argv[3]
+heading = sys.argv[4]
+message = sys.argv[5]
 send_html_email(
-    subject="SwingQuant Nightly Pipeline Failed",
+    subject=subject,
     html_body=(
         "<html><body>"
-        "<h1>Nightly Pipeline Failed</h1>"
-        "<p>The ordered nightly refresh did not complete, so downstream scan output may be missing or stale.</p>"
+        f"<h1>{escape(heading)}</h1>"
+        f"<p>{escape(message)}</p>"
         f"<p><strong>Exit code:</strong> {escape(exit_code)}</p>"
         f"<p><strong>Failed command:</strong> <code>{escape(failed_command)}</code></p>"
         "</body></html>"
@@ -31,6 +37,20 @@ send_html_email(
     settings=get_settings(),
 )
 PY
+}
+
+promotion_failures_file="data/promotion_failures.txt"
+
+record_promotion_failure() {
+  mkdir -p data
+  if [[ ! -f "${promotion_failures_file}" ]] || ! grep -Fxq "${run_date}" "${promotion_failures_file}"; then
+    printf '%s\n' "${run_date}" >> "${promotion_failures_file}"
+  fi
+  tail -n 3 "${promotion_failures_file}" | wc -l
+}
+
+clear_promotion_failures() {
+  rm -f "${promotion_failures_file}"
 }
 
 notify_failure() {
@@ -79,11 +99,22 @@ trap notify_failure ERR
 if [[ "${shortlist_status}" -ne 0 ]]; then
   if grep -Fq "No shortlist model candidate passed the promotion gate" "${shortlist_log}"; then
     shortlist_promotion_failed=1
+    consecutive_promotion_failures="$(record_promotion_failure)"
     echo "[$(date --iso-8601=seconds)] shortlist-model produced no promotable champion; continuing with previously persisted model context"
+    if [[ "${consecutive_promotion_failures}" -ge 3 ]]; then
+      send_failure_email \
+        0 \
+        "shortlist promotion gate failed ${consecutive_promotion_failures} consecutive nights" \
+        "SwingQuant promotion gate failing - ${consecutive_promotion_failures} nights without picks" \
+        "Shortlist Promotion Gate Failing" \
+        "The shortlist model promotion gate has failed ${consecutive_promotion_failures} consecutive nightly runs. Scan will be skipped until a champion is promoted." || true
+    fi
   else
     rm -f "${shortlist_log}"
     exit "${shortlist_status}"
   fi
+else
+  clear_promotion_failures
 fi
 rm -f "${shortlist_log}"
 

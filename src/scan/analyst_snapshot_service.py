@@ -75,16 +75,6 @@ class AnalystSnapshotService:
             )
             for ticker in requested_tickers
         ]
-        persisted_rows = self.db_manager.replace_analyst_snapshots(
-            snapshot_date=snapshot_date,
-            provider=provider,
-            rows=rows,
-        )
-        persisted_revision_rows = self.db_manager.replace_analyst_revision_snapshots(
-            snapshot_date=snapshot_date,
-            provider=provider,
-            rows=revision_rows,
-        )
         rows_with_targets = sum(
             1
             for row in rows
@@ -107,6 +97,30 @@ class AnalystSnapshotService:
             for row in revision_rows
             if row.get("eps_revisions") or row.get("upgrades_downgrades")
         )
+        if rows and rows_with_targets == 0 and rows_with_recommendations == 0:
+            self.logger.warning(
+                "Analyst target snapshot for %s has no target or recommendation payload; preserving prior rows.",
+                snapshot_date,
+            )
+            persisted_rows = 0
+        else:
+            persisted_rows = self.db_manager.replace_analyst_snapshots(
+                snapshot_date=snapshot_date,
+                provider=provider,
+                rows=rows,
+            )
+        if revision_rows and rows_with_estimates == 0 and rows_with_revisions == 0:
+            self.logger.warning(
+                "Analyst revision snapshot for %s has no estimate or revision payload; preserving prior rows.",
+                snapshot_date,
+            )
+            persisted_revision_rows = 0
+        else:
+            persisted_revision_rows = self.db_manager.replace_analyst_revision_snapshots(
+                snapshot_date=snapshot_date,
+                provider=provider,
+                rows=revision_rows,
+            )
         output_path = self._write_report(
             snapshot_date=snapshot_date,
             provider=provider,
@@ -251,11 +265,33 @@ class AnalystSnapshotService:
             f"- rows_with_estimates: {rows_with_estimates}",
             f"- rows_with_revisions: {rows_with_revisions}",
             "",
-            "## Target Sample Rows",
-            "",
-            "| ticker | mean | median | low | high | analysts | recommendation |",
-            "|---|---:|---:|---:|---:|---:|---|",
         ]
+        if requested_tickers > 0 and persisted_rows == 0 and rows_with_targets == 0 and rows_with_recommendations == 0:
+            lines.extend(
+                [
+                    "## Capture Warning",
+                    "",
+                    "- analyst_targets: no usable provider payload; prior persisted rows were preserved.",
+                    "",
+                ]
+            )
+        if requested_tickers > 0 and persisted_revision_rows == 0 and rows_with_estimates == 0 and rows_with_revisions == 0:
+            lines.extend(
+                [
+                    "## Revision Warning",
+                    "",
+                    "- analyst_revisions: no usable provider payload; prior persisted rows were preserved.",
+                    "",
+                ]
+            )
+        lines.extend(
+            [
+                "## Target Sample Rows",
+                "",
+                "| ticker | mean | median | low | high | analysts | recommendation |",
+                "|---|---:|---:|---:|---:|---:|---|",
+            ]
+        )
         for row in rows[:25]:
             lines.append(
                 "| {ticker} | {mean} | {median} | {low} | {high} | {analysts} | {recommendation} |".format(

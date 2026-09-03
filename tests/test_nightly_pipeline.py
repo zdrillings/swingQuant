@@ -14,6 +14,11 @@ class NightlyPipelineScriptTests(unittest.TestCase):
         self.assertIn("No shortlist model candidate passed the promotion gate", script)
         self.assertIn("continuing with previously persisted model context", script)
         self.assertIn("shortlist_promotion_failed=1", script)
+        self.assertIn("promotion_failures_file=\"data/promotion_failures.txt\"", script)
+        self.assertIn("record_promotion_failure", script)
+        self.assertIn("consecutive_promotion_failures", script)
+        self.assertIn("SwingQuant promotion gate failing", script)
+        self.assertIn("clear_promotion_failures", script)
         self.assertIn("scan skipped because shortlist-model produced no promotable champion", script)
         self.assertIn("exit \"${shortlist_status}\"", script)
         self.assertLess(
