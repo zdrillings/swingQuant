@@ -245,6 +245,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
                         {
                             "generated_at": "2026-05-26T17:00:00+00:00",
                             "champion_model": "lasso_model",
+                            "target_column": "alpha_vs_sector_20d_pos",
                             "live_snapshot_date": "2026-05-19",
                         }
                     ]
@@ -319,6 +320,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
         assert context is not None
         self.assertEqual(captured["runs_model_scope"], "sector_specific")
         self.assertEqual(context.champion_model, "lasso_model")
+        self.assertEqual(context.target_column, "alpha_vs_sector_20d_pos")
         self.assertEqual(context.live_predictions.iloc[0]["ticker"], "AAA")
         self.assertEqual(
             context.live_predictions.iloc[0]["model_comparison_summary"],
@@ -497,6 +499,56 @@ class ShortlistModelServiceTests(unittest.TestCase):
 
         self.assertIn("roc_63__rank_all", feature_names)
         self.assertNotIn("relative_strength_index_vs_spy", feature_names)
+
+    def test_walk_forward_feature_ic_screen_uses_train_rows_only(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        dates = pd.bdate_range("2026-01-02", periods=8)
+        tickers = [f"T{index:02d}" for index in range(15)]
+        rows = []
+        for date_index, snapshot_date in enumerate(dates):
+            for ticker_index, ticker in enumerate(tickers):
+                future_only_signal = float(ticker_index) if date_index >= 4 else 1.0
+                rows.append(
+                    {
+                        "snapshot_date": snapshot_date,
+                        "ticker": ticker,
+                        "sector": "Energy",
+                        "md_volume_30d": 50_000_000.0,
+                        "relative_strength_index_vs_spy": float(ticker_index),
+                        "roc_63": future_only_signal,
+                        "sma_200_dist": 0.1,
+                        "vol_alpha": 1.0,
+                        "alpha_vs_sector_20d": float(ticker_index),
+                    }
+                )
+        frame = pd.DataFrame(rows)
+        observed_feature_sets: list[list[str]] = []
+
+        def fake_score_model(**kwargs):
+            observed_feature_sets.append(list(kwargs["feature_columns_override"]))
+            scored = kwargs["test_frame"].copy()
+            scored["predicted_alpha"] = 0.0
+            scored["model_top_reasons"] = [[] for _ in range(len(scored.index))]
+            scored["model_reason_summary"] = None
+            return scored
+
+        with patch.object(service, "_score_model", side_effect=fake_score_model):
+            predictions = service._walk_forward_predictions(
+                frame,
+                target_column="alpha_vs_sector_20d",
+                model_name="ridge_model",
+                min_train_dates=4,
+                test_window_dates=1,
+                model_scope="global",
+                evaluation_stride_dates=4,
+                min_feature_ic=0.80,
+            )
+
+        self.assertIsNotNone(predictions)
+        self.assertTrue(observed_feature_sets)
+        first_fold_features = observed_feature_sets[0]
+        self.assertTrue(any(feature.startswith("relative_strength_index_vs_spy") for feature in first_fold_features))
+        self.assertFalse(any(feature.startswith("roc_63") for feature in first_fold_features))
 
     def test_walk_forward_predictions_stride_training_labels_on_horizon_grid(self) -> None:
         service = ShortlistModelService(db_manager=object())

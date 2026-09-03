@@ -12,6 +12,49 @@ from src.settings import AppPaths
 
 
 class ScanPerformanceServiceTests(unittest.TestCase):
+    def test_performance_email_labels_classification_forward_predictions(self) -> None:
+        service = ScanPerformanceService(db_manager=object())
+        enriched = pd.DataFrame(
+            [
+                {
+                    "scan_date": "2026-05-01",
+                    "ticker": "AAA",
+                    "selected": 1,
+                    "fwd_return_20d": 0.04,
+                    "alpha_vs_spy_20d": 0.02,
+                }
+            ]
+        )
+        dashboard = {
+            "recommendation": "monitor",
+            "trend": "insufficient_data",
+            "model_name": "ensemble_model",
+            "scope": "all",
+        }
+        forward_predictions = pd.DataFrame(
+            [
+                {
+                    "ticker": "AAA",
+                    "sector": "Energy",
+                    "predicted_alpha": 0.91,
+                    "model_target_column": "alpha_vs_sector_20d_pos",
+                }
+            ]
+        )
+
+        html = service._render_performance_email(
+            enriched,
+            dashboard,
+            horizons=(20,),
+            benchmark="spy",
+            forward_predictions=forward_predictions,
+        )
+
+        self.assertIn("P(>2% Alpha)", html)
+        self.assertIn("91.0%", html)
+        self.assertNotIn("+91.0%", html)
+        self.assertNotIn("Forward Predictions (20d alpha)", html)
+
     def test_scan_performance_writes_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

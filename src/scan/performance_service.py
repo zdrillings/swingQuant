@@ -1445,6 +1445,7 @@ class ScanPerformanceService:
             )
             if predictions.empty:
                 return pd.DataFrame()
+            predictions["model_target_column"] = str(latest_run.get("target_column", "") or "")
             predictions["predicted_alpha"] = pd.to_numeric(predictions["predicted_alpha"], errors="coerce")
             predictions["md_volume_30d"] = pd.to_numeric(predictions["md_volume_30d"], errors="coerce")
             return predictions.sort_values("predicted_alpha", ascending=False).reset_index(drop=True)
@@ -1557,26 +1558,33 @@ class ScanPerformanceService:
         # forward predictions
         if forward_predictions is not None and not forward_predictions.empty:
             top_n = forward_predictions.head(6)
+            score_label = self._forward_prediction_score_label(top_n)
+            score_description = (
+                "Top model-ranked candidates and their probability of clearing the positive sector-relative alpha target."
+                if score_label == "P(>2% Alpha)"
+                else "Top model-ranked candidates and their predicted sector-relative alpha over the next 20 trading days."
+            )
             fp_rows = ""
             for _, row in top_n.iterrows():
                 alpha = float(row["predicted_alpha"])
                 alpha_color = "#28a745" if alpha > 0 else "#dc3545"
+                alpha_text = f"{alpha:.1%}" if score_label == "P(>2% Alpha)" else f"{alpha:+.1%}"
                 fp_rows += f"""
                 <tr>
                     <td style="padding:4px 10px;font-weight:600;">{row['ticker']}</td>
                     <td style="padding:4px 10px;">{row.get('sector', '')}</td>
-                    <td style="padding:4px 10px;color:{alpha_color};">{alpha:+.1%}</td>
+                    <td style="padding:4px 10px;color:{alpha_color};">{alpha_text}</td>
                     <td style="padding:4px 10px;">{row.get('model_reason_summary', '')}</td>
                 </tr>
                 """
             sections.append(f"""
-            <h3 style="font-size:14px;color:#495057;margin-bottom:8px;">Forward Predictions (20d alpha)</h3>
-            <p style="font-size:11px;color:#6c757d;margin:0 0 6px 0;">Top model-ranked candidates and their predicted sector-relative alpha over the next 20 trading days.</p>
+            <h3 style="font-size:14px;color:#495057;margin-bottom:8px;">Forward Predictions</h3>
+            <p style="font-size:11px;color:#6c757d;margin:0 0 6px 0;">{score_description}</p>
             <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px;">
                 <tr style="background:#e9ecef;">
                     <th style="padding:4px 10px;text-align:left;">Ticker</th>
                     <th style="padding:4px 10px;text-align:left;">Sector</th>
-                    <th style="padding:4px 10px;text-align:left;">Pred Alpha</th>
+                    <th style="padding:4px 10px;text-align:left;">{score_label}</th>
                     <th style="padding:4px 10px;text-align:left;">Why</th>
                 </tr>
                 {fp_rows}
@@ -1608,3 +1616,12 @@ class ScanPerformanceService:
 
         body = "".join(sections)
         return f"""<html><body style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:640px;margin:0 auto;padding:16px;color:#212529;">{body}</body></html>"""
+
+    def _forward_prediction_score_label(self, predictions: pd.DataFrame) -> str:
+        if "model_target_column" not in predictions.columns:
+            return "Pred Alpha"
+        targets = predictions["model_target_column"].dropna().astype(str)
+        targets = targets[targets != ""]
+        if not targets.empty and str(targets.iloc[0]).endswith("_pos"):
+            return "P(>2% Alpha)"
+        return "Pred Alpha"

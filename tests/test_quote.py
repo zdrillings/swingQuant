@@ -97,6 +97,7 @@ class QuoteServiceTests(unittest.TestCase):
         model_context = LiveShortlistModelContext(
             generated_at=f"{snapshot_date}T18:00:00",
             champion_model="xgboost_model",
+            target_column="alpha_vs_sector_20d",
             live_snapshot_date=snapshot_date,
             top_n=10,
             live_predictions=pd.DataFrame(

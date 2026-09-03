@@ -1261,6 +1261,8 @@ class ScanService:
                 "model_predicted_alpha",
                 "model_rank",
                 "calibrated_p_beat_sector",
+                "model_target_column",
+                "model_score_label",
                 "model_reason_summary",
                 "model_comparison_summary",
             ],
@@ -1297,6 +1299,8 @@ class ScanService:
         )
         merged["model_generated_at"] = shortlist_model_context.generated_at
         merged["model_name"] = shortlist_model_context.champion_model
+        merged["model_target_column"] = getattr(shortlist_model_context, "target_column", None)
+        merged["model_score_label"] = self._model_score_label(merged)
         merged["ranker_score"] = pd.NA
         merged["ranker_enabled"] = False
         merged["recent_drag_penalty"] = 0.0
@@ -1326,6 +1330,8 @@ class ScanService:
             "calibrated_p_beat_sector",
             "model_generated_at",
             "model_name",
+            "model_target_column",
+            "model_score_label",
             "model_reason_summary",
             "model_comparison_summary",
             "ranker_score",
@@ -1424,6 +1430,8 @@ class ScanService:
                             "model_rank": int(row.get("model_rank")) if pd.notna(row.get("model_rank")) else None,
                             "model_generated_at": row.get("model_generated_at"),
                             "model_name": row.get("model_name"),
+                            "model_target_column": row.get("model_target_column"),
+                            "model_score_label": row.get("model_score_label"),
                             "model_reason_summary": row.get("model_reason_summary"),
                             "model_comparison_summary": row.get("model_comparison_summary"),
                             "ranker_score": float(row.get("ranker_score", 0.0)) if pd.notna(row.get("ranker_score")) else None,
@@ -1647,13 +1655,14 @@ class ScanService:
     def _build_candidate_summary_table(self, candidates: pd.DataFrame) -> str:
         if candidates.empty:
             return ""
+        model_score_label = self._model_score_label(candidates)
         rows = ""
         for c in candidates.itertuples(index=False):
             ticker = getattr(c, "ticker", "")
             sector = getattr(c, "sector", "")
             alpha = getattr(c, "model_predicted_alpha", None)
             opp = getattr(c, "opportunity_score", 0)
-            alpha_str = f"{float(alpha):+.2%}" if alpha is not None and pd.notna(alpha) else "n/a"
+            alpha_str = self._format_model_score(alpha, c)
             rows += f"""
             <tr>
                 <td style="padding:6px 10px;font-weight:600;">{ticker}</td>
@@ -1668,7 +1677,7 @@ class ScanService:
                 <th style="padding:6px 10px;text-align:left;">Ticker</th>
                 <th style="padding:6px 10px;text-align:left;">Sector</th>
                 <th style="padding:6px 10px;text-align:left;">Opp Score</th>
-                <th style="padding:6px 10px;text-align:left;">Pred Alpha</th>
+                <th style="padding:6px 10px;text-align:left;">{model_score_label}</th>
             </tr>
             {rows}
         </table>
@@ -1859,6 +1868,7 @@ class ScanService:
     def _theme_candidate_table_html(self, title: str, frame: pd.DataFrame) -> str:
         if frame.empty:
             return f"<h3>{title}</h3><p>None currently clearing the diversifier filter.</p>"
+        model_score_label = self._model_score_label(frame)
         rows = []
         for index, row in enumerate(frame.itertuples(index=False), start=1):
             rows.append(
@@ -1870,14 +1880,14 @@ class ScanService:
                 f"<td>{getattr(row, 'theme_exposure', 'unknown')}</td>"
                 f"<td>{float(row.pre_penalty_opportunity_score):.2f}</td>"
                 f"<td>{float(row.opportunity_score):.2f}</td>"
-                f"<td>{self._format_pct_cell(getattr(row, 'model_predicted_alpha', None))}</td>"
+                f"<td>{self._format_model_score(getattr(row, 'model_predicted_alpha', None), row)}</td>"
                 f"<td>{self._target_reason_text(row)}</td>"
                 "</tr>"
             )
         return (
             f"<h3>{title}</h3>"
             "<table border='1' cellpadding='6' cellspacing='0'>"
-            "<tr><th>Rank</th><th>Ticker</th><th>Sector</th><th>Group</th><th>Exposure</th><th>Pre-Opp</th><th>Post-Opp</th><th>Model Alpha</th><th>Why</th></tr>"
+            f"<tr><th>Rank</th><th>Ticker</th><th>Sector</th><th>Group</th><th>Exposure</th><th>Pre-Opp</th><th>Post-Opp</th><th>{model_score_label}</th><th>Why</th></tr>"
             f"{''.join(rows)}"
             "</table>"
         )
@@ -1958,10 +1968,11 @@ class ScanService:
             & (working["model_predicted_alpha"].fillna(float("-inf")) > 0.0)
         ].copy()
         if targetable.empty:
+            model_score_label = self._model_score_label(working)
             return (
                 "<section>"
                 "<h2>Current Target Dashboard</h2>"
-                "<p>No candidates currently clear the 0.40 pre-penalty opportunity floor with positive model alpha.</p>"
+                f"<p>No candidates currently clear the 0.40 pre-penalty opportunity floor with positive {model_score_label.lower()}.</p>"
                 "</section>"
             )
 
@@ -1985,7 +1996,7 @@ class ScanService:
         return (
             "<section>"
             "<h2>Current Target Dashboard</h2>"
-            f"<p>Target filter: pre-penalty opportunity >= 0.40 and model alpha > 0. Top bets already held: {int(top_bets['dashboard_held'].astype(bool).sum())}/{len(top_bets.index)}. "
+            f"<p>Target filter: pre-penalty opportunity >= 0.40 and {self._model_score_label(targetable).lower()} > 0. Top bets already held: {int(top_bets['dashboard_held'].astype(bool).sum())}/{len(top_bets.index)}. "
             f"Best new targets: {self._ticker_list(new_targets)}.</p>"
             f"{self._target_table_html('Top Current Bets', top_bets, trade_lookup=trade_lookup, analyst_contexts=analyst_contexts or {})}"
             f"{self._target_table_html('Already Held Targets', held_targets, trade_lookup=trade_lookup, analyst_contexts=analyst_contexts or {})}"
@@ -2004,6 +2015,7 @@ class ScanService:
     ) -> str:
         if frame.empty:
             return f"<h3>{title}</h3><p>None.</p>"
+        model_score_label = self._model_score_label(frame)
         rows = []
         for index, row in enumerate(frame.itertuples(index=False), start=1):
             ticker = str(row.ticker)
@@ -2032,7 +2044,7 @@ class ScanService:
                 f"<td>{getattr(row, 'sector', '')}</td>"
                 f"<td>{float(row.pre_penalty_opportunity_score):.2f}</td>"
                 f"<td>{float(getattr(row, 'opportunity_score')):.2f}</td>"
-                f"<td>{self._format_pct_cell(getattr(row, 'model_predicted_alpha', None))}</td>"
+                f"<td>{self._format_model_score(getattr(row, 'model_predicted_alpha', None), row)}</td>"
                 f"<td>{self._format_price_cell(current_price)}</td>"
                 f"<td>{self._format_price_cell(entry_price)}</td>"
                 f"<td>{pnl_text}</td>"
@@ -2044,7 +2056,7 @@ class ScanService:
         return (
             f"<h3>{title}</h3>"
             "<table border='1' cellpadding='6' cellspacing='0'>"
-            "<tr><th>Rank</th><th>Ticker</th><th>Held</th><th>Selected</th><th>Sector</th><th>Pre-Opp</th><th>Post-Opp</th><th>Model Alpha</th><th>Price</th><th>Basis</th><th>PnL</th><th>Analyst Target</th><th>Earnings Confirmation</th><th>Why</th></tr>"
+            f"<tr><th>Rank</th><th>Ticker</th><th>Held</th><th>Selected</th><th>Sector</th><th>Pre-Opp</th><th>Post-Opp</th><th>{model_score_label}</th><th>Price</th><th>Basis</th><th>PnL</th><th>Analyst Target</th><th>Earnings Confirmation</th><th>Why</th></tr>"
             f"{''.join(rows)}"
             "</table>"
         )
@@ -2058,6 +2070,40 @@ class ScanService:
         if not self._is_finite(value):
             return "n/a"
         return f"{float(value) * 100.0:+.2f}%"
+
+    def _model_score_label(self, frame_or_candidate) -> str:
+        target_column = None
+        if isinstance(frame_or_candidate, pd.DataFrame):
+            if "model_score_label" in frame_or_candidate.columns:
+                labels = frame_or_candidate["model_score_label"].dropna().astype(str)
+                labels = labels[labels != ""]
+                if not labels.empty:
+                    return str(labels.iloc[0])
+            if "model_target_column" in frame_or_candidate.columns:
+                targets = frame_or_candidate["model_target_column"].dropna().astype(str)
+                targets = targets[targets != ""]
+                if not targets.empty:
+                    target_column = str(targets.iloc[0])
+        elif isinstance(frame_or_candidate, dict):
+            label = frame_or_candidate.get("model_score_label")
+            if label not in (None, "") and not pd.isna(label):
+                return str(label)
+            target_column = frame_or_candidate.get("model_target_column")
+        else:
+            label = getattr(frame_or_candidate, "model_score_label", None)
+            if label not in (None, "") and not pd.isna(label):
+                return str(label)
+            target_column = getattr(frame_or_candidate, "model_target_column", None)
+        if str(target_column or "").endswith("_pos"):
+            return "P(>2% Alpha)"
+        return "Pred Alpha"
+
+    def _format_model_score(self, value, frame_or_candidate=None) -> str:
+        if not self._is_finite(value):
+            return "n/a"
+        if frame_or_candidate is not None and self._model_score_label(frame_or_candidate) == "P(>2% Alpha)":
+            return f"{float(value) * 100.0:.1f}%"
+        return self._format_pct_cell(value)
 
     def _format_price_cell(self, value) -> str:
         if not self._is_finite(value):
@@ -2881,7 +2927,7 @@ class ScanService:
         if pd.isna(model_comparison_summary):
             model_comparison_summary = None
         if selection_source == "shortlist_model" and self._is_finite(model_predicted_alpha):
-            model_part = f"model {float(model_predicted_alpha):+.3f}"
+            model_part = f"{self._model_score_label(candidate)} {self._format_model_score(model_predicted_alpha, candidate)}"
             if self._is_finite(model_rank):
                 model_part += f" rank #{int(float(model_rank))}"
             if model_name:

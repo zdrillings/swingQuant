@@ -16,6 +16,7 @@ CONFIDENCE_BASKET_SIZE = 2
 class LiveShortlistModelContext:
     generated_at: str
     champion_model: str
+    target_column: str
     live_snapshot_date: str | None
     live_predictions: pd.DataFrame
     top_n: int
@@ -97,6 +98,7 @@ def load_live_shortlist_model_context(
     latest_run = runs.iloc[0]
     generated_at = str(latest_run["generated_at"])
     champion_model = str(latest_run["champion_model"])
+    target_column = str(latest_run.get("target_column", "") or "")
     selected_model = str(preferred_model_name).strip() if preferred_model_name not in (None, "") else champion_model
     if not selected_model:
         selected_model = champion_model
@@ -168,6 +170,7 @@ def load_live_shortlist_model_context(
     return LiveShortlistModelContext(
         generated_at=generated_at,
         champion_model=selected_model,
+        target_column=target_column,
         live_snapshot_date=str(latest_run["live_snapshot_date"]) if latest_run["live_snapshot_date"] is not None else None,
         live_predictions=live_predictions,
         top_n=int(top_n),

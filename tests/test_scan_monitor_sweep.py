@@ -28,6 +28,27 @@ class EmailCall:
 
 
 class ScanServiceTests(unittest.TestCase):
+    def test_candidate_summary_labels_classification_model_score(self) -> None:
+        service = ScanService(db_manager=None)
+        html = service._build_candidate_summary_table(
+            pd.DataFrame(
+                [
+                    {
+                        "ticker": "AAA",
+                        "sector": "Energy",
+                        "opportunity_score": 0.42,
+                        "model_predicted_alpha": 0.91,
+                        "model_target_column": "alpha_vs_sector_20d_pos",
+                    }
+                ]
+            )
+        )
+
+        self.assertIn("P(>2% Alpha)", html)
+        self.assertIn("91.0%", html)
+        self.assertNotIn("+91.00%", html)
+        self.assertNotIn("Pred Alpha", html)
+
     def test_score_candidate_caps_selection_opportunity_but_preserves_raw_score(self) -> None:
         service = ScanService(db_manager=None)
         strategy = ProductionStrategy(
@@ -677,7 +698,7 @@ class ScanServiceTests(unittest.TestCase):
         self.assertIn("Strategy sector scope: Energy | Candidates: 1", html)
         self.assertIn("Legacy Signal", html)
         self.assertIn("<td>+20.00%</td>", html)
-        self.assertIn("model +0.200 rank #1 (xgboost_model)", html)
+        self.assertIn("Pred Alpha +20.00% rank #1 (xgboost_model)", html)
         self.assertIn("won over AAA in Energy on strong 63d momentum", html)
 
     def test_scan_ignores_stale_shortlist_model_candidates(self) -> None:
@@ -1139,7 +1160,7 @@ class ScanServiceTests(unittest.TestCase):
 
         self.assertIn("<h2>Current Target Dashboard</h2>", html)
         self.assertIn(
-            "No candidates currently clear the 0.40 pre-penalty opportunity floor with positive model alpha.",
+            "No candidates currently clear the 0.40 pre-penalty opportunity floor with positive pred alpha.",
             html,
         )
         self.assertNotIn("+3800.00%", html)

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import math
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -125,10 +126,10 @@ class ShortlistModelService:
         )
         feature_columns_override = feature_ic_report["surviving_features"]
         if not feature_columns_override:
-            raise ValueError(
-                "No shortlist model features survived "
-                f"scan_policy.shortlist_model.min_feature_ic={min_feature_ic:.4f}; "
-                "inspect reports/feature_ic_report.md."
+            self.logger.warning(
+                "No features survived the diagnostic full-OOS feature IC report at min_feature_ic=%.4f; "
+                "fold-local training screens will still be evaluated.",
+                float(min_feature_ic),
             )
 
         model_predictions: dict[str, pd.DataFrame] = {}
@@ -143,7 +144,7 @@ class ShortlistModelService:
                 label_horizon_dates=max(int(horizon_days), 1),
                 model_scope=model_scope,
                 xgboost_params=xgboost_params if model_name == "xgboost_model" else None,
-                feature_columns_override=feature_columns_override,
+                min_feature_ic=min_feature_ic,
             )
             if predicted is not None and not predicted.empty:
                 model_predictions[model_name] = predicted
@@ -272,7 +273,7 @@ class ShortlistModelService:
                 eligible_universe_mode=eligible_universe_mode,
                 model_scope=model_scope,
                 xgboost_params=xgboost_params if model_name == "xgboost_model" else None,
-                feature_columns_override=feature_columns_override,
+                min_feature_ic=min_feature_ic,
             )
             if scored is not None and not scored.empty:
                 scored = self._apply_calibration_from_oos(
@@ -485,6 +486,7 @@ class ShortlistModelService:
         label_horizon_dates: int | None = None,
         xgboost_params: dict[str, float | int] | None = None,
         feature_columns_override: list[str] | None = None,
+        min_feature_ic: float | None = None,
     ) -> pd.DataFrame | None:
         dates = sorted(frame["snapshot_date"].drop_duplicates().tolist())
         folds: list[pd.DataFrame] = []
@@ -518,6 +520,22 @@ class ShortlistModelService:
                 raw_train_rows,
             )
             test_frame = frame[frame["snapshot_date"].isin(test_dates)].copy()
+            fold_feature_columns = feature_columns_override
+            if fold_feature_columns is None and min_feature_ic is not None and model_name != "signal_proxy":
+                fold_feature_columns = self._feature_ic_survivors_from_frame(
+                    train_frame,
+                    target_column=target_column,
+                    min_feature_ic=float(min_feature_ic),
+                )
+                if not fold_feature_columns:
+                    self.logger.info(
+                        "Walk-forward fold %s skipped %s because no train-only features cleared min_feature_ic=%.4f",
+                        pd.Timestamp(test_dates[0]).date(),
+                        model_name,
+                        float(min_feature_ic),
+                    )
+                    start_index += stride
+                    continue
             scored = self._score_model(
                 model_name=model_name,
                 train_frame=train_frame,
@@ -525,7 +543,7 @@ class ShortlistModelService:
                 target_column=target_column,
                 model_scope=model_scope,
                 xgboost_params=xgboost_params,
-                feature_columns_override=feature_columns_override,
+                feature_columns_override=fold_feature_columns,
             )
             if scored is not None and not scored.empty:
                 folds.append(
@@ -578,6 +596,7 @@ class ShortlistModelService:
         model_scope: str,
         xgboost_params: dict[str, float | int] | None = None,
         feature_columns_override: list[str] | None = None,
+        min_feature_ic: float | None = None,
     ) -> pd.DataFrame:
         latest_date = all_snapshots["snapshot_date"].max()
         live_snapshot = all_snapshots[all_snapshots["snapshot_date"] == latest_date].copy()
@@ -605,7 +624,15 @@ class ShortlistModelService:
             target_column=target_column,
             model_scope=model_scope,
             xgboost_params=xgboost_params,
-            feature_columns_override=feature_columns_override,
+            feature_columns_override=(
+                feature_columns_override
+                if feature_columns_override is not None or min_feature_ic is None or model_name == "signal_proxy"
+                else self._feature_ic_survivors_from_frame(
+                    safe_train,
+                    target_column=target_column,
+                    min_feature_ic=float(min_feature_ic),
+                )
+            ),
         )
         if scored is None or scored.empty:
             return live_snapshot.assign(predicted_alpha=pd.Series(dtype=float))
@@ -835,13 +862,19 @@ class ShortlistModelService:
                 scored["model_reason_summary"] = None
                 return scored
             model = LogisticRegression(penalty="l1", solver="liblinear", C=1.0, max_iter=500, random_state=42)
-            model.fit(train_matrix, train_target)
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message=".*penalty.*deprecated.*", category=FutureWarning)
+                warnings.filterwarnings("ignore", message=".*Inconsistent values: penalty=l1.*", category=UserWarning)
+                model.fit(train_matrix, train_target)
             nonzero = np.abs(model.coef_[0]) > 1e-8
             if not nonzero.all():
                 dropped = [str(feature_names[i]) for i in range(len(feature_names)) if not nonzero[i]]
                 self.logger.info("Purging %d zero-coef features: %s", len(dropped), ", ".join(dropped[:10]))
                 model = LogisticRegression(penalty="l1", solver="liblinear", C=1.0, max_iter=500, random_state=42)
-                model.fit(train_matrix[:, nonzero], train_target)
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", message=".*penalty.*deprecated.*", category=FutureWarning)
+                    warnings.filterwarnings("ignore", message=".*Inconsistent values: penalty=l1.*", category=UserWarning)
+                    model.fit(train_matrix[:, nonzero], train_target)
                 full_weights = np.zeros(len(feature_names))
                 full_weights[nonzero] = model.coef_[0]
                 test_matrix_used = test_matrix[:, nonzero]
@@ -1167,6 +1200,38 @@ class ShortlistModelService:
             else {}
         )
         return float(payload.get("min_feature_ic", 0.03))
+
+    def _feature_ic_survivors_from_frame(
+        self,
+        frame: pd.DataFrame,
+        *,
+        target_column: str,
+        min_feature_ic: float,
+    ) -> list[str]:
+        if frame.empty or target_column not in frame.columns:
+            return []
+        available_columns = ["snapshot_date", "sector"] + [
+            col for col in MODEL_FEATURE_COLUMNS if col in frame.columns
+        ]
+        feature_frame = frame[available_columns].copy()
+        for col in MODEL_FEATURE_COLUMNS:
+            if col not in feature_frame.columns:
+                feature_frame[col] = np.nan
+        feature_frame, feature_columns = build_rank_augmented_feature_frame(feature_frame)
+        target = pd.to_numeric(frame[target_column], errors="coerce")
+        survivors: list[str] = []
+        min_observations = min(40, max(2, int(len(frame.index) // 2)))
+        for feature_name in feature_columns:
+            values = pd.to_numeric(feature_frame[feature_name], errors="coerce")
+            valid = values.notna() & target.notna()
+            if int(valid.sum()) < min_observations:
+                continue
+            if values[valid].nunique(dropna=True) < 2 or target[valid].nunique(dropna=True) < 2:
+                continue
+            ic = values[valid].corr(target[valid], method="spearman")
+            if pd.notna(ic) and math.isfinite(float(ic)) and abs(float(ic)) >= float(min_feature_ic):
+                survivors.append(str(feature_name))
+        return survivors
 
     def _days_since_last_champion(self, *, generated_at: str, horizon_days: int) -> int | None:
         loader = getattr(self.db_manager, "load_shortlist_model_runs", None)
@@ -1860,6 +1925,7 @@ class ShortlistModelService:
             f"- oos_evaluation_stride_dates: {int(evaluation_stride_dates)}",
             f"- label_horizon_dates: {int(label_horizon_dates)}",
             "- training_label_policy: horizon-strided non-overlapping dates after label embargo",
+            "- feature_selection_policy: fold-local train-only rank IC screen; feature_ic_report is diagnostic",
             "- objective: walk-forward cross-sectional ranking of the eligible universe on forward sector-relative alpha",
             f"- universe: {eligible_universe_mode_description(eligible_universe_mode)}",
             "- feature_matrix: raw features plus date-wise cross-sectional ranks and sector-relative ranks",
