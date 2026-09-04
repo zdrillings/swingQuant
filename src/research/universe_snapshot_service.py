@@ -20,6 +20,14 @@ SNAPSHOT_REFRESH_COLUMNS = (
     "relative_strength_index_vs_subindustry",
     "rs_vs_spy_5d_change",
     "rs_vs_subindustry_5d_change",
+    "rsi_2",
+    "ret_1d",
+    "ret_5d",
+    "close_vs_20d_low",
+    "spy_roc_20",
+    "spy_roc_5",
+    "spy_realized_vol_20",
+    "qqq_roc_20",
 )
 SNAPSHOT_OUTCOME_COLUMNS = tuple(
     column

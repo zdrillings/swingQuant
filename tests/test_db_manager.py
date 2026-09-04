@@ -92,6 +92,9 @@ class DatabaseManagerInitializationTests(unittest.TestCase):
             )
             self.assertTrue(any("historical_ohlcv" in statement for statement in fake_duckdb.statements))
             self.assertTrue(any("analyst_snapshots" in statement for statement in fake_duckdb.statements))
+            self.assertTrue(any("rsi_2 DOUBLE" in statement for statement in fake_duckdb.statements))
+            self.assertTrue(any("spy_roc_20 DOUBLE" in statement for statement in fake_duckdb.statements))
+            self.assertTrue(any("alpha_vs_sector_20d_pos INTEGER" in statement for statement in fake_duckdb.statements))
 
     def test_scan_candidates_persist_model_attribution(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -266,13 +269,25 @@ class DatabaseManagerInitializationTests(unittest.TestCase):
                 "avg_abs_gap_pct_20": 0.01,
                 "max_gap_down_pct_60": 0.02,
                 "distance_above_20d_high": 0.01,
+                "distance_from_52w_high": -0.03,
+                "days_since_52w_high": 7.0,
+                "rsi_2": 18.0,
+                "ret_1d": -0.01,
+                "ret_5d": 0.03,
+                "close_vs_20d_low": 0.08,
                 "base_range_pct_20": 0.04,
                 "base_atr_contraction_20": 0.8,
                 "base_volume_dryup_ratio_20": 0.7,
                 "breakout_volume_ratio_50": 1.8,
+                "dollar_volume_ratio_20_60": 1.1,
+                "volume_percentile_60": 0.65,
                 "sector_pct_above_50": 0.75,
                 "sector_pct_above_200": 0.7,
                 "sector_median_roc_63": 0.08,
+                "spy_roc_20": 0.04,
+                "spy_roc_5": 0.01,
+                "spy_realized_vol_20": 0.012,
+                "qqq_roc_20": 0.06,
                 "passed_any_strategy": True,
                 "strategy_pass_count": 1,
                 "passed_slots": ["technology"],
@@ -291,6 +306,7 @@ class DatabaseManagerInitializationTests(unittest.TestCase):
                 "alpha_vs_sector_5d": 0.008,
                 "alpha_vs_sector_10d": 0.009,
                 "alpha_vs_sector_20d": 0.01,
+                "alpha_vs_sector_20d_pos": 0,
                 "mfe_20d": 0.12,
                 "mae_20d": -0.05,
                 "details": {"example": True},
@@ -303,6 +319,25 @@ class DatabaseManagerInitializationTests(unittest.TestCase):
             statement, rows = fake_duckdb.executemany_calls[-1]
             placeholder_count = statement.count("?")
             self.assertEqual(placeholder_count, len(rows[0]))
+            inserted_columns = [
+                column.strip()
+                for column in statement.split("INSERT INTO universe_daily_snapshots (", 1)[1]
+                .split(")", 1)[0]
+                .split(",")
+            ]
+            inserted = dict(zip(inserted_columns, rows[0], strict=True))
+            for column in (
+                "rsi_2",
+                "ret_1d",
+                "ret_5d",
+                "close_vs_20d_low",
+                "spy_roc_20",
+                "spy_roc_5",
+                "spy_realized_vol_20",
+                "qqq_roc_20",
+                "alpha_vs_sector_20d_pos",
+            ):
+                self.assertEqual(inserted[column], row[column])
 
     def test_replace_analyst_snapshots_builds_matching_insert_placeholders(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

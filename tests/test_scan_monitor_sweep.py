@@ -2428,9 +2428,17 @@ class ScanServiceTests(unittest.TestCase):
                     "sma_200_dist": 0.10,
                     "sma_50_dist": 0.05,
                     "rsi_14": 50.0,
+                    "rsi_2": 18.0,
+                    "ret_1d": -0.01,
+                    "ret_5d": 0.03,
+                    "close_vs_20d_low": 0.08,
                     "sector_pct_above_50": 0.8,
                     "sector_pct_above_200": 0.8,
                     "sector_median_roc_63": 0.08,
+                    "spy_roc_20": 0.04,
+                    "spy_roc_5": 0.01,
+                    "spy_realized_vol_20": 0.012,
+                    "qqq_roc_20": 0.06,
                 },
                 {
                     "ticker": "AAA",
@@ -2564,9 +2572,17 @@ class ScanServiceTests(unittest.TestCase):
                     "sma_200_dist": 0.10,
                     "sma_50_dist": 0.05,
                     "rsi_14": 50.0,
+                    "rsi_2": 18.0,
+                    "ret_1d": -0.01,
+                    "ret_5d": 0.03,
+                    "close_vs_20d_low": 0.08,
                     "sector_pct_above_50": 0.8,
                     "sector_pct_above_200": 0.8,
                     "sector_median_roc_63": 0.08,
+                    "spy_roc_20": 0.04,
+                    "spy_roc_5": 0.01,
+                    "spy_realized_vol_20": 0.012,
+                    "qqq_roc_20": 0.06,
                 },
             ]
         )
@@ -2659,9 +2675,17 @@ class ScanServiceTests(unittest.TestCase):
                     "sma_200_dist": 0.10,
                     "sma_50_dist": 0.05,
                     "rsi_14": 50.0,
+                    "rsi_2": 18.0,
+                    "ret_1d": -0.01,
+                    "ret_5d": 0.03,
+                    "close_vs_20d_low": 0.08,
                     "sector_pct_above_50": 0.8,
                     "sector_pct_above_200": 0.8,
                     "sector_median_roc_63": 0.08,
+                    "spy_roc_20": 0.04,
+                    "spy_roc_5": 0.01,
+                    "spy_realized_vol_20": 0.012,
+                    "qqq_roc_20": 0.06,
                 },
                 {
                     "ticker": "AAA",
@@ -2803,9 +2827,17 @@ class ScanServiceTests(unittest.TestCase):
                     "sma_200_dist": 0.10,
                     "sma_50_dist": 0.05,
                     "rsi_14": 50.0,
+                    "rsi_2": 18.0,
+                    "ret_1d": -0.01,
+                    "ret_5d": 0.03,
+                    "close_vs_20d_low": 0.08,
                     "sector_pct_above_50": 0.8,
                     "sector_pct_above_200": 0.8,
                     "sector_median_roc_63": 0.08,
+                    "spy_roc_20": 0.04,
+                    "spy_roc_5": 0.01,
+                    "spy_realized_vol_20": 0.012,
+                    "qqq_roc_20": 0.06,
                 },
             ]
         )
@@ -2828,6 +2860,22 @@ class ScanServiceTests(unittest.TestCase):
         self.assertEqual(db.persisted_by_date["2026-05-01"][0]["sub_industry"], "Semiconductors")
         self.assertEqual(db.persisted_by_date["2026-05-01"][0]["subindustry_benchmark"], "SMH")
         self.assertEqual(db.persisted_by_date["2026-05-01"][0]["relative_strength_index_vs_subindustry"], 90.0)
+        self.assertEqual(db.persisted_by_date["2026-05-01"][0]["rsi_2"], 18.0)
+        self.assertEqual(db.persisted_by_date["2026-05-01"][0]["ret_1d"], -0.01)
+        self.assertEqual(db.persisted_by_date["2026-05-01"][0]["ret_5d"], 0.03)
+        self.assertEqual(db.persisted_by_date["2026-05-01"][0]["close_vs_20d_low"], 0.08)
+        self.assertEqual(db.persisted_by_date["2026-05-01"][0]["spy_roc_20"], 0.04)
+        self.assertEqual(db.persisted_by_date["2026-05-01"][0]["spy_roc_5"], 0.01)
+        self.assertEqual(db.persisted_by_date["2026-05-01"][0]["spy_realized_vol_20"], 0.012)
+        self.assertEqual(db.persisted_by_date["2026-05-01"][0]["qqq_roc_20"], 0.06)
+        self.assertIn("rsi_2", db.refresh_columns)
+        self.assertIn("ret_1d", db.refresh_columns)
+        self.assertIn("ret_5d", db.refresh_columns)
+        self.assertIn("close_vs_20d_low", db.refresh_columns)
+        self.assertIn("spy_roc_20", db.refresh_columns)
+        self.assertIn("spy_roc_5", db.refresh_columns)
+        self.assertIn("spy_realized_vol_20", db.refresh_columns)
+        self.assertIn("qqq_roc_20", db.refresh_columns)
         self.assertIn("alpha_vs_sector_20d", db.refresh_columns)
         self.assertIn("fwd_return_5d", db.refresh_columns)
 
