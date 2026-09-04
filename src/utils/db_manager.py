@@ -298,6 +298,9 @@ CREATE TABLE IF NOT EXISTS Shortlist_Model_Runs (
     eligible_dates INTEGER NOT NULL,
     oos_dates INTEGER NOT NULL,
     live_snapshot_date TEXT,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    decommissioned_at TEXT,
+    decommission_reason TEXT,
     report_path TEXT NOT NULL
 );
 
@@ -472,6 +475,14 @@ class DatabaseManager:
             connection.execute(
                 "ALTER TABLE Shortlist_Model_Runs ADD COLUMN feature_profile TEXT NOT NULL DEFAULT 'full'"
             )
+        if "is_active" not in shortlist_run_columns:
+            connection.execute(
+                "ALTER TABLE Shortlist_Model_Runs ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1"
+            )
+        if "decommissioned_at" not in shortlist_run_columns:
+            connection.execute("ALTER TABLE Shortlist_Model_Runs ADD COLUMN decommissioned_at TEXT")
+        if "decommission_reason" not in shortlist_run_columns:
+            connection.execute("ALTER TABLE Shortlist_Model_Runs ADD COLUMN decommission_reason TEXT")
         connection.execute(
             "UPDATE Shortlist_Model_Runs SET eligible_universe_mode = 'passed_only' WHERE eligible_universe_mode IS NULL OR TRIM(eligible_universe_mode) = ''"
         )
@@ -1423,9 +1434,12 @@ class DatabaseManager:
                     eligible_dates,
                     oos_dates,
                     live_snapshot_date,
+                    is_active,
+                    decommissioned_at,
+                    decommission_reason,
                     report_path
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     str(row["generated_at"]),
@@ -1444,10 +1458,52 @@ class DatabaseManager:
                     int(row["eligible_dates"]),
                     int(row["oos_dates"]),
                     row.get("live_snapshot_date"),
+                    int(row.get("is_active", 1)),
+                    row.get("decommissioned_at"),
+                    row.get("decommission_reason"),
                     str(row["report_path"]),
                 ),
             )
             return int(cursor.lastrowid)
+
+    def decommission_shortlist_model_runs(
+        self,
+        *,
+        horizon_days: int,
+        eligible_universe_mode: str | None = None,
+        model_scope: str | None = None,
+        xgboost_config: str | None = None,
+        feature_profile: str | None = None,
+        reason: str,
+        decommissioned_at: str,
+    ) -> int:
+        filters = ["horizon_days = ?", "is_active = 1"]
+        params: list[object] = [int(horizon_days)]
+        if eligible_universe_mode is not None:
+            filters.append("eligible_universe_mode = ?")
+            params.append(str(eligible_universe_mode))
+        if model_scope is not None:
+            filters.append("model_scope = ?")
+            params.append(str(model_scope))
+        if xgboost_config is not None:
+            filters.append("xgboost_config = ?")
+            params.append(str(xgboost_config))
+        if feature_profile is not None:
+            filters.append("feature_profile = ?")
+            params.append(str(feature_profile))
+        params = [str(decommissioned_at), str(reason), *params]
+        with self.sqlite_connection() as connection:
+            cursor = connection.execute(
+                f"""
+                UPDATE Shortlist_Model_Runs
+                SET is_active = 0,
+                    decommissioned_at = ?,
+                    decommission_reason = ?
+                WHERE {" AND ".join(filters)}
+                """,
+                tuple(params),
+            )
+            return int(cursor.rowcount or 0)
 
     def replace_shortlist_model_predictions(
         self,
@@ -1522,6 +1578,7 @@ class DatabaseManager:
         model_scope: str | None = None,
         xgboost_config: str | None = None,
         feature_profile: str | None = None,
+        active_only: bool = True,
         limit: int | None = None,
     ):
         import pandas as pd
@@ -1545,6 +1602,9 @@ class DatabaseManager:
                 eligible_dates,
                 oos_dates,
                 live_snapshot_date,
+                is_active,
+                decommissioned_at,
+                decommission_reason,
                 report_path
             FROM Shortlist_Model_Runs
         """
@@ -1565,6 +1625,8 @@ class DatabaseManager:
         if feature_profile is not None:
             filters.append("feature_profile = ?")
             params.append(str(feature_profile))
+        if active_only:
+            filters.append("is_active = 1")
         if filters:
             query += " WHERE " + " AND ".join(filters)
         query += " ORDER BY generated_at DESC, id DESC"
@@ -1592,6 +1654,9 @@ class DatabaseManager:
                     "eligible_dates",
                     "oos_dates",
                     "live_snapshot_date",
+                    "is_active",
+                    "decommissioned_at",
+                    "decommission_reason",
                     "report_path",
                 ]
             )

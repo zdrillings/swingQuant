@@ -702,6 +702,33 @@ class ShortlistModelServiceTests(unittest.TestCase):
             self.assertIn("true", report_text)
             self.assertIn("relative_strength_index_vs_spy", result["surviving_features"])
 
+    def test_feature_ic_screen_drops_date_constant_features(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        rows = []
+        for date_index, snapshot_date in enumerate(pd.bdate_range("2026-01-02", periods=12)):
+            for ticker_index, ticker in enumerate(("AAA", "BBB", "CCC")):
+                rows.append(
+                    {
+                        "snapshot_date": snapshot_date,
+                        "ticker": ticker,
+                        "sector": "Energy",
+                        "spy_roc_20": float(date_index),
+                        "qqq_roc_20": float(date_index),
+                        "rsi_2": float(ticker_index),
+                        "alpha_vs_sector_20d": float(date_index + ticker_index),
+                    }
+                )
+        survivors = service._feature_ic_survivors_from_frame(
+            pd.DataFrame(rows),
+            target_column="alpha_vs_sector_20d",
+            min_feature_ic=0.10,
+        )
+
+        self.assertIn("rsi_2", survivors)
+        self.assertNotIn("spy_roc_20", survivors)
+        self.assertNotIn("spy_roc_20__rank_all", survivors)
+        self.assertNotIn("qqq_roc_20__rank_sector", survivors)
+
     def test_shortlist_model_writes_failure_report_when_no_candidate_passes_gate(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -741,10 +768,14 @@ class ShortlistModelServiceTests(unittest.TestCase):
                 def __init__(self, paths, snapshot_frame):
                     self.paths = paths
                     self._snapshot_frame = snapshot_frame
+                    self.decommission_calls = []
 
                 def initialize(self): return None
                 def load_universe_daily_snapshots(self, snapshot_date=None):
                     return self._snapshot_frame.copy()
+                def decommission_shortlist_model_runs(self, **kwargs):
+                    self.decommission_calls.append(kwargs)
+                    return 1
 
             gate = {
                 "scan_policy": {
@@ -758,11 +789,16 @@ class ShortlistModelServiceTests(unittest.TestCase):
                             "min_recent_60d_hit_rate": 1.01,
                             "min_recent_60d_beat_universe_rate": 1.01,
                             "min_recent_60d_mean_target": 1.01,
+                            "min_recent_20d_spearman": 1.01,
+                            "min_recent_60d_spearman": 1.01,
+                            "min_recent_1fold_spearman": 1.01,
+                            "min_recent_3fold_spearman": 1.01,
                         }
                     }
                 }
             }
-            service = ShortlistModelService(FakeDB(paths, pd.DataFrame(rows)))
+            fake_db = FakeDB(paths, pd.DataFrame(rows))
+            service = ShortlistModelService(fake_db)
 
             with patch("src.research.shortlist_model_service.load_feature_config", return_value=gate), \
                  patch.object(service, "_score_xgboost_model", return_value=None), \
@@ -779,6 +815,9 @@ class ShortlistModelServiceTests(unittest.TestCase):
             self.assertIn("- days_since_last_champion: n/a", report_text)
             self.assertTrue((paths.reports_dir / "shortlist_model_oos_predictions.csv").exists())
             self.assertTrue((paths.reports_dir / "feature_ic_report.md").exists())
+            self.assertEqual(len(fake_db.decommission_calls), 1)
+            self.assertEqual(fake_db.decommission_calls[0]["horizon_days"], 20)
+            self.assertEqual(fake_db.decommission_calls[0]["eligible_universe_mode"], "passed_only")
 
     def test_runtime_loader_does_not_refresh_stale_model_without_explicit_permission(self) -> None:
         class FakeDB:
@@ -818,7 +857,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertIsNone(context)
         self.assertEqual(fake_db.refresh_count, 0)
 
-    def test_runtime_loader_rejects_champion_with_negative_latest_fold(self) -> None:
+    def test_runtime_loader_rejects_champion_with_negative_latest_spearman(self) -> None:
         class FakeDB:
             def load_shortlist_model_runs(self, *, horizon_days, eligible_universe_mode=None, model_scope=None, xgboost_config="baseline", limit=1):
                 return pd.DataFrame(
@@ -854,7 +893,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
                     ("2026-05-18", (0.04, 0.03, -0.01)),
                     ("2026-05-19", (0.05, 0.02, -0.01)),
                     ("2026-05-20", (0.04, 0.01, -0.01)),
-                    ("2026-05-21", (-0.03, -0.02, -0.04)),
+                    ("2026-05-21", (-0.04, -0.02, 0.03)),
                 ]:
                     for ticker, predicted_alpha, target in zip(("AAA", "BBB", "CCC"), (0.11, 0.08, 0.01), targets):
                         rows.append(
@@ -903,6 +942,10 @@ class ShortlistModelServiceTests(unittest.TestCase):
             "min_recent_60d_hit_rate": 0.50,
             "min_recent_60d_beat_universe_rate": 0.50,
             "min_recent_60d_mean_target": 0.0,
+            "min_recent_20d_spearman": 0.0,
+            "min_recent_60d_spearman": 0.0,
+            "min_recent_1fold_spearman": 0.0,
+            "min_recent_3fold_spearman": 0.0,
         }
 
         with self.assertRaisesRegex(ValueError, "No shortlist model candidate passed the promotion gate"):
@@ -912,7 +955,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
                 promotion_gate=promotion_gate,
             )
 
-    def test_champion_selection_refuses_models_with_negative_latest_fold(self) -> None:
+    def test_champion_selection_refuses_models_with_negative_latest_spearman(self) -> None:
         service = ShortlistModelService(db_manager=object())
         full_summaries = pd.DataFrame(
             [
@@ -921,10 +964,10 @@ class ShortlistModelServiceTests(unittest.TestCase):
         )
         acceptance_summaries = pd.DataFrame(
             [
-                {"model": "lasso_model_20d", "hit_rate": 0.85, "beat_universe_rate": 0.85, "mean_target": 0.04},
-                {"model": "lasso_model_60d", "hit_rate": 0.85, "beat_universe_rate": 0.85, "mean_target": 0.04},
-                {"model": "lasso_model_last_1fold", "hit_rate": 0.0, "beat_universe_rate": 0.0, "mean_target": -0.03},
-                {"model": "lasso_model_last_3fold", "hit_rate": 0.67, "beat_universe_rate": 0.67, "mean_target": 0.01},
+                {"model": "lasso_model_20d", "hit_rate": 0.85, "beat_universe_rate": 0.85, "mean_target": 0.04, "spearman": 0.04},
+                {"model": "lasso_model_60d", "hit_rate": 0.85, "beat_universe_rate": 0.85, "mean_target": 0.04, "spearman": 0.04},
+                {"model": "lasso_model_last_1fold", "hit_rate": 0.0, "beat_universe_rate": 0.0, "mean_target": -0.03, "spearman": -0.10},
+                {"model": "lasso_model_last_3fold", "hit_rate": 0.67, "beat_universe_rate": 0.67, "mean_target": 0.01, "spearman": 0.02},
             ]
         )
         promotion_gate = {
@@ -941,6 +984,10 @@ class ShortlistModelServiceTests(unittest.TestCase):
             "min_recent_3fold_hit_rate": 0.50,
             "min_recent_3fold_beat_universe_rate": 0.50,
             "min_recent_3fold_mean_target": 0.0,
+            "min_recent_20d_spearman": 0.0,
+            "min_recent_60d_spearman": 0.0,
+            "min_recent_1fold_spearman": 0.0,
+            "min_recent_3fold_spearman": 0.0,
         }
 
         with self.assertRaisesRegex(ValueError, "No shortlist model candidate passed the promotion gate"):

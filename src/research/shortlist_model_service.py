@@ -237,6 +237,15 @@ class ShortlistModelService:
                 promotion_gate=promotion_gate,
             )
         except ValueError as exc:
+            self._decommission_active_champions(
+                generated_at=generated_at,
+                horizon_days=int(horizon_days),
+                eligible_universe_mode=eligible_universe_mode,
+                model_scope=model_scope,
+                xgboost_config=xgboost_config,
+                feature_profile=feature_profile,
+                reason=str(exc),
+            )
             combined_predictions.to_csv(oos_path, index=False)
             lines = self._build_report_lines(
                 target_column=target_column,
@@ -1255,12 +1264,71 @@ class ShortlistModelService:
             valid = values.notna() & target.notna()
             if int(valid.sum()) < min_observations:
                 continue
+            base_feature_name = self._base_feature_name(feature_name)
+            if not self._has_cross_sectional_variation(
+                feature_frame=feature_frame,
+                feature_name=base_feature_name,
+                valid=valid,
+            ):
+                continue
             if values[valid].nunique(dropna=True) < 2 or target[valid].nunique(dropna=True) < 2:
                 continue
             ic = values[valid].corr(target[valid], method="spearman")
             if pd.notna(ic) and math.isfinite(float(ic)) and abs(float(ic)) >= float(min_feature_ic):
                 survivors.append(str(feature_name))
         return survivors
+
+    def _base_feature_name(self, feature_name: str) -> str:
+        for suffix in ("__rank_all", "__rank_sector"):
+            if str(feature_name).endswith(suffix):
+                return str(feature_name)[: -len(suffix)]
+        return str(feature_name)
+
+    def _has_cross_sectional_variation(
+        self,
+        *,
+        feature_frame: pd.DataFrame,
+        feature_name: str,
+        valid: pd.Series,
+    ) -> bool:
+        if feature_name not in feature_frame.columns:
+            return False
+        base_values = pd.to_numeric(feature_frame[feature_name], errors="coerce")
+        base_valid = valid & base_values.notna()
+        if int(base_valid.sum()) < 2:
+            return False
+        varied_by_date = base_values[base_valid].groupby(feature_frame.loc[base_valid, "snapshot_date"]).nunique(dropna=True)
+        min_varied_dates = min(5, max(1, int(varied_by_date.index.nunique() // 4)))
+        return int((varied_by_date > 1).sum()) >= min_varied_dates
+
+    def _decommission_active_champions(
+        self,
+        *,
+        generated_at: str,
+        horizon_days: int,
+        eligible_universe_mode: str,
+        model_scope: str,
+        xgboost_config: str,
+        feature_profile: str,
+        reason: str,
+    ) -> int:
+        decommissioner = getattr(self.db_manager, "decommission_shortlist_model_runs", None)
+        if decommissioner is None:
+            return 0
+        try:
+            return int(
+                decommissioner(
+                    horizon_days=int(horizon_days),
+                    eligible_universe_mode=eligible_universe_mode,
+                    model_scope=model_scope,
+                    xgboost_config=xgboost_config,
+                    feature_profile=feature_profile,
+                    reason=reason,
+                    decommissioned_at=generated_at,
+                )
+            )
+        except TypeError:
+            return 0
 
     def _days_since_last_champion(self, *, generated_at: str, horizon_days: int) -> int | None:
         loader = getattr(self.db_manager, "load_shortlist_model_runs", None)
@@ -1347,7 +1415,17 @@ class ShortlistModelService:
         for feature_name in feature_columns:
             values = pd.to_numeric(feature_frame[feature_name], errors="coerce")
             valid = values.notna() & target.notna()
-            if int(valid.sum()) < 2 or values[valid].nunique(dropna=True) < 2 or target[valid].nunique(dropna=True) < 2:
+            has_cross_sectional_variation = self._has_cross_sectional_variation(
+                feature_frame=feature_frame,
+                feature_name=self._base_feature_name(feature_name),
+                valid=valid,
+            )
+            if (
+                int(valid.sum()) < 2
+                or not has_cross_sectional_variation
+                or values[valid].nunique(dropna=True) < 2
+                or target[valid].nunique(dropna=True) < 2
+            ):
                 ic = float("nan")
             else:
                 ic = float(values[valid].corr(target[valid], method="spearman"))
@@ -1500,6 +1578,14 @@ class ShortlistModelService:
             universe_target = pd.to_numeric(day_frame[target_column], errors="coerce").dropna()
             if target.empty or universe_target.empty:
                 continue
+            full_target = pd.to_numeric(ordered[target_column], errors="coerce")
+            full_score = pd.to_numeric(ordered["predicted_alpha"], errors="coerce")
+            spearman = float("nan")
+            full_valid = full_target.notna() & full_score.notna()
+            if int(full_valid.sum()) >= 3 and full_target[full_valid].nunique(dropna=True) > 1 and full_score[full_valid].nunique(dropna=True) > 1:
+                corr = full_score[full_valid].corr(full_target[full_valid], method="spearman")
+                if pd.notna(corr) and math.isfinite(float(corr)):
+                    spearman = float(corr)
             rows.append(
                 {
                     "date": pd.Timestamp(snapshot_date),
@@ -1507,6 +1593,7 @@ class ShortlistModelService:
                     "mean_target": float(target.mean()),
                     "hit_rate": float((target > 0.0).mean()),
                     "universe_mean_target": float(universe_target.mean()),
+                    "spearman": spearman,
                 }
             )
         if not rows:
@@ -1519,6 +1606,7 @@ class ShortlistModelService:
             "mean_target": float(frame["mean_target"].mean()),
             "hit_rate": float(frame["hit_rate"].mean()),
             "beat_universe_rate": float((frame["mean_target"] > frame["universe_mean_target"]).mean()),
+            "spearman": float(frame["spearman"].dropna().mean()) if frame["spearman"].notna().any() else float("nan"),
             "positive_date_rate": float((frame["mean_target"] > 0.0).mean()),
             "ge_2pct_rate": float((frame["mean_target"] >= 0.02).mean()),
             "ge_5pct_rate": float((frame["mean_target"] >= 0.05).mean()),
@@ -1775,6 +1863,10 @@ class ShortlistModelService:
             "min_recent_3fold_hit_rate": float(payload.get("min_recent_3fold_hit_rate", 0.50)),
             "min_recent_3fold_beat_universe_rate": float(payload.get("min_recent_3fold_beat_universe_rate", 0.50)),
             "min_recent_3fold_mean_target": float(payload.get("min_recent_3fold_mean_target", 0.0)),
+            "min_recent_20d_spearman": float(payload.get("min_recent_20d_spearman", 0.0)),
+            "min_recent_60d_spearman": float(payload.get("min_recent_60d_spearman", 0.0)),
+            "min_recent_1fold_spearman": float(payload.get("min_recent_1fold_spearman", 0.0)),
+            "min_recent_3fold_spearman": float(payload.get("min_recent_3fold_spearman", 0.0)),
         }
 
     def _choose_champion_model(
@@ -1831,14 +1923,7 @@ class ShortlistModelService:
             if row.empty:
                 return False
             summary = row.iloc[0]
-            if not self._finite_at_least(summary.get("hit_rate"), promotion_gate[f"min_recent_{window}d_hit_rate"]):
-                return False
-            if not self._finite_at_least(
-                summary.get("beat_universe_rate"),
-                promotion_gate[f"min_recent_{window}d_beat_universe_rate"],
-            ):
-                return False
-            if not self._finite_at_least(summary.get("mean_target"), promotion_gate[f"min_recent_{window}d_mean_target"]):
+            if not self._finite_at_least(summary.get("spearman"), promotion_gate.get(f"min_recent_{window}d_spearman", 0.0)):
                 return False
         for folds in (1, 3):
             row = acceptance_summaries[
@@ -1847,14 +1932,7 @@ class ShortlistModelService:
             if row.empty:
                 return False
             summary = row.iloc[0]
-            if not self._finite_at_least(summary.get("hit_rate"), promotion_gate[f"min_recent_{folds}fold_hit_rate"]):
-                return False
-            if not self._finite_at_least(
-                summary.get("beat_universe_rate"),
-                promotion_gate[f"min_recent_{folds}fold_beat_universe_rate"],
-            ):
-                return False
-            if not self._finite_at_least(summary.get("mean_target"), promotion_gate[f"min_recent_{folds}fold_mean_target"]):
+            if not self._finite_at_least(summary.get("spearman"), promotion_gate.get(f"min_recent_{folds}fold_spearman", 0.0)):
                 return False
         return True
 
@@ -1888,6 +1966,11 @@ class ShortlistModelService:
                 f"- min_recent_3fold_hit_rate: {float(promotion_gate['min_recent_3fold_hit_rate']):.2f}",
                 f"- min_recent_3fold_beat_universe_rate: {float(promotion_gate['min_recent_3fold_beat_universe_rate']):.2f}",
                 f"- min_recent_3fold_mean_target: {float(promotion_gate['min_recent_3fold_mean_target']):.4f}",
+                f"- min_recent_20d_spearman: {float(promotion_gate['min_recent_20d_spearman']):.4f}",
+                f"- min_recent_60d_spearman: {float(promotion_gate['min_recent_60d_spearman']):.4f}",
+                f"- min_recent_1fold_spearman: {float(promotion_gate['min_recent_1fold_spearman']):.4f}",
+                f"- min_recent_3fold_spearman: {float(promotion_gate['min_recent_3fold_spearman']):.4f}",
+                "- gate_metric: per-date cross-sectional Spearman over the full OOS slice",
                 "",
             ]
         )
@@ -1902,6 +1985,7 @@ class ShortlistModelService:
             "mean_target": float("nan"),
             "hit_rate": float("nan"),
             "beat_universe_rate": float("nan"),
+            "spearman": float("nan"),
             "positive_date_rate": float("nan"),
             "ge_2pct_rate": float("nan"),
             "ge_5pct_rate": float("nan"),
@@ -2009,6 +2093,7 @@ class ShortlistModelService:
             lines.append(f"- mean_target: {self._fmt(row.mean_target)}")
             lines.append(f"- hit_rate: {self._fmt(row.hit_rate)}")
             lines.append(f"- beat_universe_rate: {self._fmt(row.beat_universe_rate)}")
+            lines.append(f"- spearman: {self._fmt(getattr(row, 'spearman', float('nan')))}")
             lines.append(f"- positive_date_rate: {self._fmt(row.positive_date_rate)}")
             lines.append(f"- ge_2pct_rate: {self._fmt(row.ge_2pct_rate)}")
             lines.append(f"- ge_5pct_rate: {self._fmt(row.ge_5pct_rate)}")

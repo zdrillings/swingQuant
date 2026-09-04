@@ -67,6 +67,10 @@ class DatabaseManagerInitializationTests(unittest.TestCase):
                     row[1]
                     for row in connection.execute("PRAGMA table_info(Scan_Candidates)").fetchall()
                 }
+                shortlist_run_columns = {
+                    row[1]
+                    for row in connection.execute("PRAGMA table_info(Shortlist_Model_Runs)").fetchall()
+                }
             finally:
                 connection.close()
 
@@ -95,6 +99,80 @@ class DatabaseManagerInitializationTests(unittest.TestCase):
             self.assertTrue(any("rsi_2 DOUBLE" in statement for statement in fake_duckdb.statements))
             self.assertTrue(any("spy_roc_20 DOUBLE" in statement for statement in fake_duckdb.statements))
             self.assertTrue(any("alpha_vs_sector_20d_pos INTEGER" in statement for statement in fake_duckdb.statements))
+            self.assertTrue({"is_active", "decommissioned_at", "decommission_reason"}.issubset(shortlist_run_columns))
+
+    def test_decommissioned_shortlist_model_runs_are_not_loaded_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            paths = AppPaths(
+                root_dir=root,
+                data_dir=root / "data",
+                duckdb_path=root / "data" / "market_data.duckdb",
+                sqlite_path=root / "data" / "ledger.sqlite",
+                reports_dir=root / "reports",
+                logs_dir=root / "logs",
+                config_path=root / "config.yaml",
+                env_path=root / ".env",
+                production_strategy_path=root / "production_strategy.json",
+            )
+            manager = DatabaseManager(paths)
+            fake_duckdb = FakeDuckDBConnection()
+
+            with patch.object(manager, "duckdb_connection", return_value=fake_duckdb):
+                manager.initialize()
+
+            manager.insert_shortlist_model_run(
+                row={
+                    "generated_at": "2026-09-04T14:06:00+00:00",
+                    "horizon_days": 20,
+                    "eligible_universe_mode": "passed_or_trend",
+                    "model_scope": "sector_specific",
+                    "xgboost_config": "faster_shallow",
+                    "feature_profile": "no_gap_risk",
+                    "top_n": 2,
+                    "min_train_dates": 252,
+                    "test_window_dates": 20,
+                    "recent_dates": 60,
+                    "champion_model": "ensemble_model",
+                    "target_column": "alpha_vs_sector_20d_pos",
+                    "eligible_rows": 100,
+                    "eligible_dates": 50,
+                    "oos_dates": 17,
+                    "live_snapshot_date": "2026-09-03",
+                    "report_path": "reports/shortlist_model.md",
+                }
+            )
+            updated = manager.decommission_shortlist_model_runs(
+                horizon_days=20,
+                eligible_universe_mode="passed_or_trend",
+                model_scope="sector_specific",
+                xgboost_config="faster_shallow",
+                feature_profile="no_gap_risk",
+                reason="gate failed",
+                decommissioned_at="2026-09-04T15:46:25+00:00",
+            )
+
+            active = manager.load_shortlist_model_runs(
+                horizon_days=20,
+                eligible_universe_mode="passed_or_trend",
+                model_scope="sector_specific",
+                xgboost_config="faster_shallow",
+                feature_profile="no_gap_risk",
+            )
+            audited = manager.load_shortlist_model_runs(
+                horizon_days=20,
+                eligible_universe_mode="passed_or_trend",
+                model_scope="sector_specific",
+                xgboost_config="faster_shallow",
+                feature_profile="no_gap_risk",
+                active_only=False,
+            )
+
+            self.assertEqual(updated, 1)
+            self.assertTrue(active.empty)
+            self.assertEqual(len(audited.index), 1)
+            self.assertEqual(int(audited.iloc[0]["is_active"]), 0)
+            self.assertEqual(audited.iloc[0]["decommission_reason"], "gate failed")
 
     def test_scan_candidates_persist_model_attribution(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

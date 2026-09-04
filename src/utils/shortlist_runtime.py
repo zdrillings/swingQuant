@@ -23,15 +23,19 @@ class LiveShortlistModelContext:
     recent_20d_beat_rate: float | None = None
     recent_20d_mean_target: float | None = None
     recent_20d_hit_rate: float | None = None
+    recent_20d_spearman: float | None = None
     recent_60d_beat_rate: float | None = None
     recent_60d_mean_target: float | None = None
     recent_60d_hit_rate: float | None = None
+    recent_60d_spearman: float | None = None
     recent_1fold_beat_rate: float | None = None
     recent_1fold_mean_target: float | None = None
     recent_1fold_hit_rate: float | None = None
+    recent_1fold_spearman: float | None = None
     recent_3fold_beat_rate: float | None = None
     recent_3fold_mean_target: float | None = None
     recent_3fold_hit_rate: float | None = None
+    recent_3fold_spearman: float | None = None
 
 
 def load_live_shortlist_model_context(
@@ -137,10 +141,10 @@ def load_live_shortlist_model_context(
     live_predictions["model_rank"] = range(1, len(live_predictions.index) + 1)
     live_predictions = _annotate_live_prediction_comparisons(live_predictions, top_n=int(top_n))
     recent_metrics = {
-        20: {"beat_rate": None, "mean_target": None, "hit_rate": None},
-        60: {"beat_rate": None, "mean_target": None, "hit_rate": None},
-        1: {"beat_rate": None, "mean_target": None, "hit_rate": None},
-        3: {"beat_rate": None, "mean_target": None, "hit_rate": None},
+        20: {"beat_rate": None, "mean_target": None, "hit_rate": None, "spearman": None},
+        60: {"beat_rate": None, "mean_target": None, "hit_rate": None, "spearman": None},
+        1: {"beat_rate": None, "mean_target": None, "hit_rate": None, "spearman": None},
+        3: {"beat_rate": None, "mean_target": None, "hit_rate": None, "spearman": None},
     }
     try:
         oos_predictions = db_manager.load_shortlist_model_predictions(
@@ -181,23 +185,28 @@ def load_live_shortlist_model_context(
         recent_20d_beat_rate=recent_metrics[20]["beat_rate"],
         recent_20d_mean_target=recent_metrics[20]["mean_target"],
         recent_20d_hit_rate=recent_metrics[20]["hit_rate"],
+        recent_20d_spearman=recent_metrics[20]["spearman"],
         recent_60d_beat_rate=recent_metrics[60]["beat_rate"],
         recent_60d_mean_target=recent_metrics[60]["mean_target"],
         recent_60d_hit_rate=recent_metrics[60]["hit_rate"],
+        recent_60d_spearman=recent_metrics[60]["spearman"],
         recent_1fold_beat_rate=recent_metrics[1]["beat_rate"],
         recent_1fold_mean_target=recent_metrics[1]["mean_target"],
         recent_1fold_hit_rate=recent_metrics[1]["hit_rate"],
+        recent_1fold_spearman=recent_metrics[1]["spearman"],
         recent_3fold_beat_rate=recent_metrics[3]["beat_rate"],
         recent_3fold_mean_target=recent_metrics[3]["mean_target"],
         recent_3fold_hit_rate=recent_metrics[3]["hit_rate"],
+        recent_3fold_spearman=recent_metrics[3]["spearman"],
     )
 
 
 def _score_recent_oos_basket(frame: pd.DataFrame) -> dict[str, float | None]:
     if frame.empty:
-        return {"beat_rate": None, "mean_target": None, "hit_rate": None}
+        return {"beat_rate": None, "mean_target": None, "hit_rate": None, "spearman": None}
     daily_means = []
     daily_universe = []
+    daily_spearman = []
     pick_actuals = []
     for _snap_date, day_frame in frame.groupby("snapshot_date", sort=True):
         sort_columns = ["predicted_alpha"]
@@ -209,6 +218,13 @@ def _score_recent_oos_basket(frame: pd.DataFrame) -> dict[str, float | None]:
         picks = ordered.head(CONFIDENCE_BASKET_SIZE)
         actual = pd.to_numeric(picks["actual_alpha_vs_sector"], errors="coerce").dropna()
         universe = pd.to_numeric(day_frame["actual_alpha_vs_sector"], errors="coerce").dropna()
+        full_actual = pd.to_numeric(day_frame["actual_alpha_vs_sector"], errors="coerce")
+        full_score = pd.to_numeric(day_frame["predicted_alpha"], errors="coerce")
+        full_valid = full_actual.notna() & full_score.notna()
+        if int(full_valid.sum()) >= 3 and full_actual[full_valid].nunique(dropna=True) > 1 and full_score[full_valid].nunique(dropna=True) > 1:
+            corr = full_score[full_valid].corr(full_actual[full_valid], method="spearman")
+            if pd.notna(corr) and np.isfinite(float(corr)):
+                daily_spearman.append(float(corr))
         if not actual.empty and not universe.empty:
             daily_means.append(float(actual.mean()))
             daily_universe.append(float(universe.mean()))
@@ -222,7 +238,8 @@ def _score_recent_oos_basket(frame: pd.DataFrame) -> dict[str, float | None]:
         beat_rate = beats / len(daily_means)
     if pick_actuals:
         hit_rate = sum(1 for value in pick_actuals if value > 0) / len(pick_actuals)
-    return {"beat_rate": beat_rate, "mean_target": mean_target, "hit_rate": hit_rate}
+    spearman = float(np.mean(daily_spearman)) if daily_spearman else None
+    return {"beat_rate": beat_rate, "mean_target": mean_target, "hit_rate": hit_rate, "spearman": spearman}
 
 
 def _runtime_promotion_gate() -> dict[str, float | bool]:
@@ -248,6 +265,10 @@ def _runtime_promotion_gate() -> dict[str, float | bool]:
         "min_recent_3fold_hit_rate": float(payload.get("min_recent_3fold_hit_rate", 0.50)),
         "min_recent_3fold_beat_universe_rate": float(payload.get("min_recent_3fold_beat_universe_rate", 0.50)),
         "min_recent_3fold_mean_target": float(payload.get("min_recent_3fold_mean_target", 0.0)),
+        "min_recent_20d_spearman": float(payload.get("min_recent_20d_spearman", 0.0)),
+        "min_recent_60d_spearman": float(payload.get("min_recent_60d_spearman", 0.0)),
+        "min_recent_1fold_spearman": float(payload.get("min_recent_1fold_spearman", 0.0)),
+        "min_recent_3fold_spearman": float(payload.get("min_recent_3fold_spearman", 0.0)),
     }
 
 
@@ -260,35 +281,22 @@ def _passes_runtime_promotion_gate(
         return True
     for window in (20, 60):
         metrics = recent_metrics.get(window, {})
-        checks = (
-            (metrics.get("hit_rate"), gate[f"min_recent_{window}d_hit_rate"]),
-            (metrics.get("beat_rate"), gate[f"min_recent_{window}d_beat_universe_rate"]),
-            (metrics.get("mean_target"), gate[f"min_recent_{window}d_mean_target"]),
-        )
-        for value, threshold in checks:
-            try:
-                numeric = float(value)
-                required = float(threshold)
-            except (TypeError, ValueError):
-                return False
-            if not np.isfinite(numeric) or numeric < required:
-                return False
+        if not _finite_at_least(metrics.get("spearman"), gate[f"min_recent_{window}d_spearman"]):
+            return False
     for folds in (1, 3):
         metrics = recent_metrics.get(folds, {})
-        checks = (
-            (metrics.get("hit_rate"), gate[f"min_recent_{folds}fold_hit_rate"]),
-            (metrics.get("beat_rate"), gate[f"min_recent_{folds}fold_beat_universe_rate"]),
-            (metrics.get("mean_target"), gate[f"min_recent_{folds}fold_mean_target"]),
-        )
-        for value, threshold in checks:
-            try:
-                numeric = float(value)
-                required = float(threshold)
-            except (TypeError, ValueError):
-                return False
-            if not np.isfinite(numeric) or numeric < required:
-                return False
+        if not _finite_at_least(metrics.get("spearman"), gate[f"min_recent_{folds}fold_spearman"]):
+            return False
     return True
+
+
+def _finite_at_least(value, threshold) -> bool:
+    try:
+        numeric = float(value)
+        required = float(threshold)
+    except (TypeError, ValueError):
+        return False
+    return bool(np.isfinite(numeric) and numeric >= required)
 
 
 def _load_shortlist_model_runs(
@@ -308,15 +316,26 @@ def _load_shortlist_model_runs(
             model_scope=model_scope,
             xgboost_config=xgboost_config,
             feature_profile=feature_profile,
+            active_only=True,
             limit=limit,
         )
     except TypeError:
-        return db_manager.load_shortlist_model_runs(
-            horizon_days=horizon_days,
-            eligible_universe_mode=eligible_universe_mode,
-            model_scope=model_scope,
-            limit=limit,
-        )
+        try:
+            return db_manager.load_shortlist_model_runs(
+                horizon_days=horizon_days,
+                eligible_universe_mode=eligible_universe_mode,
+                model_scope=model_scope,
+                xgboost_config=xgboost_config,
+                feature_profile=feature_profile,
+                limit=limit,
+            )
+        except TypeError:
+            return db_manager.load_shortlist_model_runs(
+                horizon_days=horizon_days,
+                eligible_universe_mode=eligible_universe_mode,
+                model_scope=model_scope,
+                limit=limit,
+            )
 
 
 def _parse_prediction_details(value) -> dict:
