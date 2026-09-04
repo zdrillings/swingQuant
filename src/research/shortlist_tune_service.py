@@ -95,7 +95,7 @@ class ShortlistTuneService(ShortlistModelService):
             flush=True,
         )
 
-        full_feature_columns = expand_model_feature_columns(MODEL_FEATURE_COLUMNS)
+        min_feature_ic = self._load_min_feature_ic()
         param_rows: list[dict[str, object]] = []
         param_frame = pd.DataFrame()
         tuned_candidate = ""
@@ -117,8 +117,10 @@ class ShortlistTuneService(ShortlistModelService):
                     min_train_dates=int(min_train_dates),
                     test_window_dates=int(test_window_dates),
                     model_scope=model_scope,
+                    evaluation_stride_dates=max(int(horizon_days), 1),
+                    label_horizon_dates=max(int(horizon_days), 1),
                     xgboost_params=candidate["params"],
-                    feature_columns_override=full_feature_columns,
+                    min_feature_ic=min_feature_ic,
                 )
                 if predictions is None or predictions.empty:
                     continue
@@ -168,8 +170,11 @@ class ShortlistTuneService(ShortlistModelService):
                     min_train_dates=int(min_train_dates),
                     test_window_dates=int(test_window_dates),
                     model_scope=model_scope,
+                    evaluation_stride_dates=max(int(horizon_days), 1),
+                    label_horizon_dates=max(int(horizon_days), 1),
                     xgboost_params=tuned_params,
                     feature_columns_override=expand_model_feature_columns(base_features),
+                    min_feature_ic=min_feature_ic,
                 )
                 if predictions is None or predictions.empty:
                     continue
@@ -202,6 +207,8 @@ class ShortlistTuneService(ShortlistModelService):
             f"- min_train_dates: {int(min_train_dates)}",
             f"- test_window_dates: {int(test_window_dates)}",
             f"- tuned_model_family: xgboost_model",
+            f"- feature_selection_policy: fold-local train-only rank IC screen",
+            f"- min_feature_ic: {float(min_feature_ic):.4f}",
             "",
             "## Tuned Winner",
             "",

@@ -3,9 +3,11 @@ from __future__ import annotations
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
+from src import cli
 from src.cli import build_parser
 from src.research.shortlist_tune_service import ShortlistTuneService
 from src.settings import AppPaths
@@ -62,6 +64,10 @@ class ShortlistTuneServiceTests(unittest.TestCase):
                 def load_universe_daily_snapshots(self): return self._snapshots.copy()
 
             class TestTuneService(ShortlistTuneService):
+                def __init__(self, db):
+                    super().__init__(db)
+                    self.walk_forward_calls = []
+
                 def _walk_forward_predictions(
                     self,
                     frame: pd.DataFrame,
@@ -71,9 +77,19 @@ class ShortlistTuneServiceTests(unittest.TestCase):
                     min_train_dates: int,
                     test_window_dates: int,
                     model_scope: str,
+                    evaluation_stride_dates: int | None = None,
+                    label_horizon_dates: int | None = None,
                     xgboost_params=None,
                     feature_columns_override=None,
+                    min_feature_ic: float | None = None,
                 ) -> pd.DataFrame | None:
+                    self.walk_forward_calls.append(
+                        {
+                            "evaluation_stride_dates": evaluation_stride_dates,
+                            "label_horizon_dates": label_horizon_dates,
+                            "min_feature_ic": min_feature_ic,
+                        }
+                    )
                     score = 0.05
                     if xgboost_params and xgboost_params.get("max_depth") == 3 and xgboost_params.get("min_child_weight") == 3.0:
                         score = 0.09
@@ -105,7 +121,8 @@ class ShortlistTuneServiceTests(unittest.TestCase):
                         ]
                     )
 
-            report = TestTuneService(FakeDB(paths, snapshots)).run(
+            service = TestTuneService(FakeDB(paths, snapshots))
+            report = service.run(
                 top_n=1,
                 horizon_days=20,
                 min_train_dates=1,
@@ -120,12 +137,19 @@ class ShortlistTuneServiceTests(unittest.TestCase):
 
             self.assertEqual(report.tuned_candidate, "shallower_regularized")
             self.assertEqual(report.ablation_count, 3)
+            self.assertTrue(service.walk_forward_calls)
+            self.assertTrue(
+                all(call["evaluation_stride_dates"] == 20 for call in service.walk_forward_calls)
+            )
+            self.assertTrue(all(call["label_horizon_dates"] == 20 for call in service.walk_forward_calls))
+            self.assertTrue(all(call["min_feature_ic"] is not None for call in service.walk_forward_calls))
             report_text = (paths.reports_dir / "shortlist_tune.md").read_text(encoding="utf-8")
             self.assertIn("# Shortlist Tune", report_text)
             self.assertIn("- model_scope: sector_specific", report_text)
             self.assertIn("- mode: full", report_text)
             self.assertIn("- tuning_profile: focused", report_text)
             self.assertIn("- ablation_profile: focused", report_text)
+            self.assertIn("- feature_selection_policy: fold-local train-only rank IC screen", report_text)
             self.assertIn("## XGBoost Parameter Grid", report_text)
             self.assertIn("### shallower_regularized", report_text)
             self.assertIn("## Feature Ablation", report_text)
@@ -181,6 +205,10 @@ class ShortlistTuneServiceTests(unittest.TestCase):
                 def load_universe_daily_snapshots(self): return self._snapshots.copy()
 
             class TestTuneService(ShortlistTuneService):
+                def __init__(self, db):
+                    super().__init__(db)
+                    self.walk_forward_calls = []
+
                 def _walk_forward_predictions(
                     self,
                     frame: pd.DataFrame,
@@ -190,9 +218,19 @@ class ShortlistTuneServiceTests(unittest.TestCase):
                     min_train_dates: int,
                     test_window_dates: int,
                     model_scope: str,
+                    evaluation_stride_dates: int | None = None,
+                    label_horizon_dates: int | None = None,
                     xgboost_params=None,
                     feature_columns_override=None,
+                    min_feature_ic: float | None = None,
                 ) -> pd.DataFrame | None:
+                    self.walk_forward_calls.append(
+                        {
+                            "evaluation_stride_dates": evaluation_stride_dates,
+                            "label_horizon_dates": label_horizon_dates,
+                            "min_feature_ic": min_feature_ic,
+                        }
+                    )
                     score = 0.05
                     if xgboost_params and xgboost_params.get("max_depth") == 3 and xgboost_params.get("min_child_weight") == 3.0:
                         score = 0.09
@@ -252,6 +290,12 @@ class ShortlistTuneServiceTests(unittest.TestCase):
             )
             self.assertEqual(ablation_only_report.tuned_candidate, "shallower_regularized")
             self.assertEqual(ablation_only_report.ablation_count, 3)
+            self.assertTrue(service.walk_forward_calls)
+            self.assertTrue(
+                all(call["evaluation_stride_dates"] == 20 for call in service.walk_forward_calls)
+            )
+            self.assertTrue(all(call["label_horizon_dates"] == 20 for call in service.walk_forward_calls))
+            self.assertTrue(all(call["min_feature_ic"] is not None for call in service.walk_forward_calls))
             ablation_only_text = (paths.reports_dir / "shortlist_tune.md").read_text(encoding="utf-8")
             self.assertIn("- skipped in ablation_only mode", ablation_only_text)
 
@@ -296,3 +340,59 @@ class ShortlistTuneServiceTests(unittest.TestCase):
         self.assertEqual(args.tuning_profile, "full")
         self.assertEqual(args.ablation_profile, "focused")
         self.assertEqual(args.ablation_params_candidate, "balanced_depth4")
+
+    def test_shortlist_tune_cli_forwards_mode_profiles_and_ablation_candidate(self) -> None:
+        report = MagicMock()
+        report.output_path = Path("reports/shortlist_tune.md")
+        report.tuned_candidate = "balanced_depth4"
+        report.ablation_count = 5
+
+        with patch("src.settings.get_settings") as get_settings, patch("src.cli.configure_logging"), patch(
+            "src.cli.DatabaseManager"
+        ) as database_manager, patch("src.cli.ShortlistTuneService") as tune_service:
+            get_settings.return_value.paths.logs_dir = Path("logs")
+            tune_service.return_value.run.return_value = report
+
+            exit_code = cli.main(
+                [
+                    "shortlist-tune",
+                    "--top",
+                    "2",
+                    "--horizon",
+                    "20",
+                    "--min-train-dates",
+                    "252",
+                    "--test-window-dates",
+                    "20",
+                    "--recent-dates",
+                    "60",
+                    "--eligible-universe-mode",
+                    "passed_or_trend",
+                    "--model-scope",
+                    "sector_specific",
+                    "--mode",
+                    "ablation_only",
+                    "--tuning-profile",
+                    "full",
+                    "--ablation-profile",
+                    "full",
+                    "--ablation-params-candidate",
+                    "balanced_depth4",
+                ]
+            )
+
+        self.assertEqual(exit_code, 0)
+        tune_service.assert_called_once_with(database_manager.return_value)
+        tune_service.return_value.run.assert_called_once_with(
+            top_n=2,
+            horizon_days=20,
+            min_train_dates=252,
+            test_window_dates=20,
+            recent_dates=60,
+            eligible_universe_mode="passed_or_trend",
+            model_scope="sector_specific",
+            mode="ablation_only",
+            tuning_profile="full",
+            ablation_profile="full",
+            ablation_params_candidate="balanced_depth4",
+        )

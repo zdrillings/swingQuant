@@ -47,6 +47,9 @@ from src.utils.emailer import send_html_email
 from src.utils.logging import configure_logging
 
 
+XGBOOST_CONFIG_CHOICES = ["baseline", "balanced_depth4", "shallower_regularized", "faster_shallow"]
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="sq")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -160,7 +163,7 @@ def build_parser() -> argparse.ArgumentParser:
     shortlist_model_parser.add_argument("--eligible-universe-mode", choices=VALID_ELIGIBLE_UNIVERSE_MODES, default="passed_only")
     shortlist_model_parser.add_argument("--model-scope", choices=VALID_MODEL_SCOPES, default="global")
     shortlist_model_parser.add_argument("--target-type", choices=["regression", "classification"], default="regression")
-    shortlist_model_parser.add_argument("--xgboost-config", choices=["baseline", "balanced_depth4", "shallower_regularized"], default="baseline")
+    shortlist_model_parser.add_argument("--xgboost-config", choices=XGBOOST_CONFIG_CHOICES, default="baseline")
     shortlist_scoreboard_parser = subparsers.add_parser("shortlist-scoreboard", help="Render model scorecards and explicit promotion decisions for shortlist candidates.")
     shortlist_scoreboard_parser.add_argument("--top", type=int, default=10)
     shortlist_scoreboard_parser.add_argument("--horizon", type=int, default=20)
@@ -199,14 +202,14 @@ def build_parser() -> argparse.ArgumentParser:
     shortlist_reactivation_parser.add_argument("--eligible-universe-mode", choices=VALID_ELIGIBLE_UNIVERSE_MODES, default=None)
     shortlist_reactivation_parser.add_argument("--model-scope", choices=VALID_MODEL_SCOPES, default=None)
     shortlist_reactivation_parser.add_argument("--model-name", type=str, default=None)
-    shortlist_reactivation_parser.add_argument("--xgboost-config", choices=["baseline", "balanced_depth4", "shallower_regularized"], default=None)
+    shortlist_reactivation_parser.add_argument("--xgboost-config", choices=XGBOOST_CONFIG_CHOICES, default=None)
     shortlist_reactivation_parser.add_argument("--candidate-sector", action="append", default=None)
     shortlist_reactivation_parser.add_argument("--no-refresh-if-stale", action="store_true")
     shortlist_promote_parser = subparsers.add_parser("shortlist-promote", help="Pin a shortlist model configuration for production scan and monitor.")
     shortlist_promote_parser.add_argument("--model-name", required=True, type=str)
     shortlist_promote_parser.add_argument("--eligible-universe-mode", choices=VALID_ELIGIBLE_UNIVERSE_MODES, required=True)
     shortlist_promote_parser.add_argument("--model-scope", choices=VALID_MODEL_SCOPES, required=True)
-    shortlist_promote_parser.add_argument("--xgboost-config", choices=["baseline", "balanced_depth4", "shallower_regularized"], default="baseline")
+    shortlist_promote_parser.add_argument("--xgboost-config", choices=XGBOOST_CONFIG_CHOICES, default="baseline")
     shortlist_promote_parser.add_argument("--horizon", type=int, default=20)
     shortlist_tune_parser = subparsers.add_parser("shortlist-tune", help="Tune sector-specific xgboost shortlist parameters and run feature ablations.")
     shortlist_tune_parser.add_argument("--top", type=int, default=10)
@@ -230,7 +233,7 @@ def build_parser() -> argparse.ArgumentParser:
     shortlist_earnings_overlay_parser.add_argument("--model-name", type=str, default=None)
     shortlist_earnings_overlay_parser.add_argument("--eligible-universe-mode", choices=VALID_ELIGIBLE_UNIVERSE_MODES, default=None)
     shortlist_earnings_overlay_parser.add_argument("--model-scope", choices=VALID_MODEL_SCOPES, default=None)
-    shortlist_earnings_overlay_parser.add_argument("--xgboost-config", choices=["baseline", "balanced_depth4", "shallower_regularized"], default=None)
+    shortlist_earnings_overlay_parser.add_argument("--xgboost-config", choices=XGBOOST_CONFIG_CHOICES, default=None)
     shortlist_earnings_overlay_parser.add_argument("--generated-at", type=str, default=None)
     exit_analysis_parser = subparsers.add_parser("exit-analysis", help="Compare realized exits against simple fixed-horizon counterfactual holds.")
     exit_analysis_parser.add_argument("--horizons", type=int, nargs="*", default=[5, 10, 15, 20])
@@ -640,6 +643,10 @@ def main(argv: list[str] | None = None) -> int:
                 recent_dates=args.recent_dates,
                 eligible_universe_mode=args.eligible_universe_mode,
                 model_scope=args.model_scope,
+                mode=args.mode,
+                tuning_profile=args.tuning_profile,
+                ablation_profile=args.ablation_profile,
+                ablation_params_candidate=args.ablation_params_candidate,
             )
             print(
                 f"Shortlist tune report written to {report.output_path} "

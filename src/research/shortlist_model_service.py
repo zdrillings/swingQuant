@@ -49,6 +49,12 @@ class ShortlistModelService:
             "min_child_weight": 3.0,
             "reg_lambda": 2.0,
         },
+        "faster_shallow": {
+            "max_depth": 3,
+            "learning_rate": 0.07,
+            "subsample": 0.9,
+            "colsample_bytree": 0.8,
+        },
     }
 
     def __init__(self, db_manager: DatabaseManager) -> None:
@@ -521,12 +527,19 @@ class ShortlistModelService:
             )
             test_frame = frame[frame["snapshot_date"].isin(test_dates)].copy()
             fold_feature_columns = feature_columns_override
-            if fold_feature_columns is None and min_feature_ic is not None and model_name != "signal_proxy":
-                fold_feature_columns = self._feature_ic_survivors_from_frame(
+            if min_feature_ic is not None and model_name != "signal_proxy":
+                ic_survivors = self._feature_ic_survivors_from_frame(
                     train_frame,
                     target_column=target_column,
                     min_feature_ic=float(min_feature_ic),
                 )
+                if feature_columns_override is None:
+                    fold_feature_columns = ic_survivors
+                else:
+                    allowed_features = set(feature_columns_override)
+                    fold_feature_columns = [
+                        feature for feature in ic_survivors if feature in allowed_features
+                    ]
                 if not fold_feature_columns:
                     self.logger.info(
                         "Walk-forward fold %s skipped %s because no train-only features cleared min_feature_ic=%.4f",
