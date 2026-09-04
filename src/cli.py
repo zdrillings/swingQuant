@@ -41,6 +41,7 @@ from src.sweep.service import SweepService
 from src.sync.refresh_service import RefreshUniverseService
 from src.sync.service import SyncService
 from src.trade.service import TradeService
+from src.research.shortlist_bakeoff_service import VALID_SHORTLIST_FEATURE_PROFILES
 from src.research.shortlist_universe import VALID_ELIGIBLE_UNIVERSE_MODES, VALID_MODEL_SCOPES
 from src.utils.db_manager import DatabaseManager
 from src.utils.emailer import send_html_email
@@ -164,6 +165,7 @@ def build_parser() -> argparse.ArgumentParser:
     shortlist_model_parser.add_argument("--model-scope", choices=VALID_MODEL_SCOPES, default="global")
     shortlist_model_parser.add_argument("--target-type", choices=["regression", "classification"], default="regression")
     shortlist_model_parser.add_argument("--xgboost-config", choices=XGBOOST_CONFIG_CHOICES, default="baseline")
+    shortlist_model_parser.add_argument("--feature-profile", choices=VALID_SHORTLIST_FEATURE_PROFILES, default="full")
     shortlist_scoreboard_parser = subparsers.add_parser("shortlist-scoreboard", help="Render model scorecards and explicit promotion decisions for shortlist candidates.")
     shortlist_scoreboard_parser.add_argument("--top", type=int, default=10)
     shortlist_scoreboard_parser.add_argument("--horizon", type=int, default=20)
@@ -203,6 +205,7 @@ def build_parser() -> argparse.ArgumentParser:
     shortlist_reactivation_parser.add_argument("--model-scope", choices=VALID_MODEL_SCOPES, default=None)
     shortlist_reactivation_parser.add_argument("--model-name", type=str, default=None)
     shortlist_reactivation_parser.add_argument("--xgboost-config", choices=XGBOOST_CONFIG_CHOICES, default=None)
+    shortlist_reactivation_parser.add_argument("--feature-profile", choices=VALID_SHORTLIST_FEATURE_PROFILES, default=None)
     shortlist_reactivation_parser.add_argument("--candidate-sector", action="append", default=None)
     shortlist_reactivation_parser.add_argument("--no-refresh-if-stale", action="store_true")
     shortlist_promote_parser = subparsers.add_parser("shortlist-promote", help="Pin a shortlist model configuration for production scan and monitor.")
@@ -210,6 +213,7 @@ def build_parser() -> argparse.ArgumentParser:
     shortlist_promote_parser.add_argument("--eligible-universe-mode", choices=VALID_ELIGIBLE_UNIVERSE_MODES, required=True)
     shortlist_promote_parser.add_argument("--model-scope", choices=VALID_MODEL_SCOPES, required=True)
     shortlist_promote_parser.add_argument("--xgboost-config", choices=XGBOOST_CONFIG_CHOICES, default="baseline")
+    shortlist_promote_parser.add_argument("--feature-profile", choices=VALID_SHORTLIST_FEATURE_PROFILES, default="full")
     shortlist_promote_parser.add_argument("--horizon", type=int, default=20)
     shortlist_tune_parser = subparsers.add_parser("shortlist-tune", help="Tune sector-specific xgboost shortlist parameters and run feature ablations.")
     shortlist_tune_parser.add_argument("--top", type=int, default=10)
@@ -234,6 +238,7 @@ def build_parser() -> argparse.ArgumentParser:
     shortlist_earnings_overlay_parser.add_argument("--eligible-universe-mode", choices=VALID_ELIGIBLE_UNIVERSE_MODES, default=None)
     shortlist_earnings_overlay_parser.add_argument("--model-scope", choices=VALID_MODEL_SCOPES, default=None)
     shortlist_earnings_overlay_parser.add_argument("--xgboost-config", choices=XGBOOST_CONFIG_CHOICES, default=None)
+    shortlist_earnings_overlay_parser.add_argument("--feature-profile", choices=VALID_SHORTLIST_FEATURE_PROFILES, default=None)
     shortlist_earnings_overlay_parser.add_argument("--generated-at", type=str, default=None)
     exit_analysis_parser = subparsers.add_parser("exit-analysis", help="Compare realized exits against simple fixed-horizon counterfactual holds.")
     exit_analysis_parser.add_argument("--horizons", type=int, nargs="*", default=[5, 10, 15, 20])
@@ -534,6 +539,7 @@ def main(argv: list[str] | None = None) -> int:
                 eligible_universe_mode=args.eligible_universe_mode,
                 model_scope=args.model_scope,
                 xgboost_config=args.xgboost_config,
+                feature_profile=args.feature_profile,
                 target_type=args.target_type,
             )
             print(
@@ -608,6 +614,7 @@ def main(argv: list[str] | None = None) -> int:
                 model_scope=args.model_scope,
                 model_name=args.model_name,
                 xgboost_config=args.xgboost_config,
+                feature_profile=args.feature_profile,
                 candidate_sectors=tuple(args.candidate_sector or ["Information Technology"]),
             )
             print(
@@ -623,6 +630,7 @@ def main(argv: list[str] | None = None) -> int:
                 eligible_universe_mode=args.eligible_universe_mode,
                 model_scope=args.model_scope,
                 xgboost_config=args.xgboost_config,
+                feature_profile=args.feature_profile,
                 horizon_days=args.horizon,
             )
             print(
@@ -630,7 +638,8 @@ def main(argv: list[str] | None = None) -> int:
                 f"(model_name={report.production_model_name}, "
                 f"eligible_universe_mode={report.production_eligible_universe_mode}, "
                 f"model_scope={report.production_model_scope}, "
-                f"xgboost_config={report.production_xgboost_config})"
+                f"xgboost_config={report.production_xgboost_config}, "
+                f"feature_profile={report.production_feature_profile})"
             )
             return 0
 
@@ -663,6 +672,7 @@ def main(argv: list[str] | None = None) -> int:
                 eligible_universe_mode=args.eligible_universe_mode,
                 model_scope=args.model_scope,
                 xgboost_config=args.xgboost_config,
+                feature_profile=args.feature_profile,
                 generated_at=args.generated_at,
             )
             print(

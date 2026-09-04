@@ -36,7 +36,7 @@ class ShortlistSectorReactivationServiceTests(unittest.TestCase):
 
                 def initialize(self): return None
 
-                def load_shortlist_model_runs(self, *, horizon_days=None, eligible_universe_mode=None, model_scope=None, xgboost_config=None, limit=None):
+                def load_shortlist_model_runs(self, *, horizon_days=None, eligible_universe_mode=None, model_scope=None, xgboost_config=None, feature_profile=None, limit=None):
                     return pd.DataFrame(
                         [
                             {

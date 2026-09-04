@@ -66,6 +66,32 @@ MODEL_FEATURE_COLUMNS = [
 ]
 
 
+SHORTLIST_FEATURE_GROUPS = {
+    "gap_risk": {
+        "avg_abs_gap_pct_20",
+        "max_gap_down_pct_60",
+    },
+}
+
+VALID_SHORTLIST_FEATURE_PROFILES = ("full", "no_gap_risk")
+
+
+def normalize_shortlist_feature_profile(feature_profile: str | None) -> str:
+    normalized = str(feature_profile or "full").strip().lower()
+    if normalized not in VALID_SHORTLIST_FEATURE_PROFILES:
+        valid = ", ".join(VALID_SHORTLIST_FEATURE_PROFILES)
+        raise ValueError(f"Unsupported feature_profile '{feature_profile}'. Valid choices: {valid}.")
+    return normalized
+
+
+def model_feature_columns_for_profile(feature_profile: str | None) -> list[str]:
+    normalized = normalize_shortlist_feature_profile(feature_profile)
+    excluded: set[str] = set()
+    if normalized == "no_gap_risk":
+        excluded.update(SHORTLIST_FEATURE_GROUPS["gap_risk"])
+    return [column for column in MODEL_FEATURE_COLUMNS if column not in excluded]
+
+
 def expand_model_feature_columns(base_features: list[str] | tuple[str, ...]) -> list[str]:
     ordered = [str(column) for column in base_features if str(column) in MODEL_FEATURE_COLUMNS]
     expanded = list(ordered)

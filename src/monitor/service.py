@@ -381,12 +381,14 @@ class MonitorService:
             )
             model_scope = shortlist_model_config.get("production_model_scope", "global")
             xgboost_config = shortlist_model_config.get("production_xgboost_config", "baseline")
+            feature_profile = shortlist_model_config.get("production_feature_profile", "full")
             return load_live_shortlist_model_context(
                 self.db_manager,
                 preferred_model_name=str(preferred_model_name) if preferred_model_name not in (None, "") else None,
                 eligible_universe_mode=str(eligible_universe_mode or "passed_only"),
                 model_scope=str(model_scope or "global"),
                 xgboost_config=str(xgboost_config or "baseline"),
+                feature_profile=str(feature_profile or "full"),
             )
         except Exception as exc:
             self.logger.warning("Unable to load shortlist model context in monitor: %s", exc)

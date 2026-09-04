@@ -48,6 +48,7 @@ def load_live_shortlist_model_context(
     eligible_universe_mode: str = "passed_only",
     model_scope: str = "global",
     xgboost_config: str = "baseline",
+    feature_profile: str = "full",
 ) -> LiveShortlistModelContext | None:
     required_methods = (
         "load_shortlist_model_runs",
@@ -63,6 +64,7 @@ def load_live_shortlist_model_context(
         eligible_universe_mode=str(eligible_universe_mode or "passed_only"),
         model_scope=str(model_scope or "global"),
         xgboost_config=str(xgboost_config or "baseline"),
+        feature_profile=str(feature_profile or "full"),
         limit=1,
     )
     latest_snapshot_dates = db_manager.list_universe_daily_snapshot_dates()
@@ -83,6 +85,7 @@ def load_live_shortlist_model_context(
             eligible_universe_mode=str(eligible_universe_mode or "passed_only"),
             model_scope=str(model_scope or "global"),
             xgboost_config=str(xgboost_config or "baseline"),
+            feature_profile=str(feature_profile or "full"),
         )
         runs = _load_shortlist_model_runs(
             db_manager,
@@ -90,6 +93,7 @@ def load_live_shortlist_model_context(
             eligible_universe_mode=str(eligible_universe_mode or "passed_only"),
             model_scope=str(model_scope or "global"),
             xgboost_config=str(xgboost_config or "baseline"),
+            feature_profile=str(feature_profile or "full"),
             limit=1,
         )
         if runs.empty:
@@ -294,6 +298,7 @@ def _load_shortlist_model_runs(
     eligible_universe_mode: str,
     model_scope: str,
     xgboost_config: str,
+    feature_profile: str,
     limit: int,
 ) -> pd.DataFrame:
     try:
@@ -302,6 +307,7 @@ def _load_shortlist_model_runs(
             eligible_universe_mode=eligible_universe_mode,
             model_scope=model_scope,
             xgboost_config=xgboost_config,
+            feature_profile=feature_profile,
             limit=limit,
         )
     except TypeError:

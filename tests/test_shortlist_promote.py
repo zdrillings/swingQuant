@@ -45,7 +45,7 @@ class ShortlistPromoteServiceTests(unittest.TestCase):
             class FakeDB:
                 def initialize(self): return None
 
-                def load_shortlist_model_runs(self, *, horizon_days=None, eligible_universe_mode=None, model_scope=None, xgboost_config=None, limit=None):
+                def load_shortlist_model_runs(self, *, horizon_days=None, eligible_universe_mode=None, model_scope=None, xgboost_config=None, feature_profile=None, limit=None):
                     return __import__("pandas").DataFrame(
                         [
                             {
@@ -81,6 +81,7 @@ class ShortlistPromoteServiceTests(unittest.TestCase):
                     eligible_universe_mode="passed_or_trend",
                     model_scope="sector_specific",
                     xgboost_config="balanced_depth4",
+                    feature_profile="no_gap_risk",
                     horizon_days=20,
                 )
 
@@ -88,11 +89,13 @@ class ShortlistPromoteServiceTests(unittest.TestCase):
             self.assertEqual(report.production_eligible_universe_mode, "passed_or_trend")
             self.assertEqual(report.production_model_scope, "sector_specific")
             self.assertEqual(report.production_xgboost_config, "balanced_depth4")
+            self.assertEqual(report.production_feature_profile, "no_gap_risk")
             updated_text = config_path.read_text(encoding="utf-8")
             self.assertIn("production_model_name: xgboost_model", updated_text)
             self.assertIn("production_eligible_universe_mode: passed_or_trend", updated_text)
             self.assertIn("production_model_scope: sector_specific", updated_text)
             self.assertIn("production_xgboost_config: balanced_depth4", updated_text)
+            self.assertIn("production_feature_profile: no_gap_risk", updated_text)
 
     def test_shortlist_promote_parser_accepts_args(self) -> None:
         parser = build_parser()
@@ -107,6 +110,8 @@ class ShortlistPromoteServiceTests(unittest.TestCase):
                 "sector_specific",
                 "--xgboost-config",
                 "balanced_depth4",
+                "--feature-profile",
+                "no_gap_risk",
                 "--horizon",
                 "20",
             ]
@@ -116,4 +121,5 @@ class ShortlistPromoteServiceTests(unittest.TestCase):
         self.assertEqual(args.eligible_universe_mode, "passed_or_trend")
         self.assertEqual(args.model_scope, "sector_specific")
         self.assertEqual(args.xgboost_config, "balanced_depth4")
+        self.assertEqual(args.feature_profile, "no_gap_risk")
         self.assertEqual(args.horizon, 20)

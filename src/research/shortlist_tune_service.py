@@ -341,6 +341,21 @@ class ShortlistTuneService(ShortlistModelService):
             target_column=target_column,
             model_name=experiment_name,
         )
+        prediction_dates = sorted(predictions["snapshot_date"].drop_duplicates().tolist())
+        last_1_predictions = predictions[predictions["snapshot_date"].isin(prediction_dates[-1:])].copy()
+        last_3_predictions = predictions[predictions["snapshot_date"].isin(prediction_dates[-3:])].copy()
+        last_1_summary = self._evaluate_predictions(
+            predictions=last_1_predictions,
+            top_n=int(top_n),
+            target_column=target_column,
+            model_name=experiment_name,
+        )
+        last_3_summary = self._evaluate_predictions(
+            predictions=last_3_predictions,
+            top_n=int(top_n),
+            target_column=target_column,
+            model_name=experiment_name,
+        )
         return {
             "experiment": experiment_name,
             "params_json": json.dumps(params, sort_keys=True),
@@ -351,18 +366,26 @@ class ShortlistTuneService(ShortlistModelService):
             "recent_mean_target": float(recent_summary["mean_target"]),
             "recent_beat_universe_rate": float(recent_summary["beat_universe_rate"]),
             "recent_hit_rate": float(recent_summary["hit_rate"]),
+            "last_1fold_mean_target": float(last_1_summary["mean_target"]),
+            "last_1fold_beat_universe_rate": float(last_1_summary["beat_universe_rate"]),
+            "last_1fold_hit_rate": float(last_1_summary["hit_rate"]),
+            "last_3fold_mean_target": float(last_3_summary["mean_target"]),
+            "last_3fold_beat_universe_rate": float(last_3_summary["beat_universe_rate"]),
+            "last_3fold_hit_rate": float(last_3_summary["hit_rate"]),
         }
 
     def _choose_best_experiment(self, frame: pd.DataFrame) -> pd.Series:
         ordered = frame.sort_values(
             [
+                "last_3fold_beat_universe_rate",
+                "last_3fold_mean_target",
                 "full_beat_universe_rate",
                 "recent_beat_universe_rate",
                 "full_mean_target",
                 "recent_mean_target",
                 "experiment",
             ],
-            ascending=[False, False, False, False, True],
+            ascending=[False, False, False, False, False, False, True],
         ).reset_index(drop=True)
         return ordered.iloc[0]
 
@@ -370,13 +393,15 @@ class ShortlistTuneService(ShortlistModelService):
         lines = [heading, ""]
         ordered = frame.sort_values(
             [
+                "last_3fold_beat_universe_rate",
+                "last_3fold_mean_target",
                 "full_beat_universe_rate",
                 "recent_beat_universe_rate",
                 "full_mean_target",
                 "recent_mean_target",
                 "experiment",
             ],
-            ascending=[False, False, False, False, True],
+            ascending=[False, False, False, False, False, False, True],
         ).reset_index(drop=True)
         for row in ordered.itertuples(index=False):
             lines.append(f"### {row.experiment}")
@@ -390,6 +415,12 @@ class ShortlistTuneService(ShortlistModelService):
             lines.append(f"- recent_mean_target: {self._fmt(row.recent_mean_target)}")
             lines.append(f"- recent_beat_universe_rate: {self._fmt(row.recent_beat_universe_rate)}")
             lines.append(f"- recent_hit_rate: {self._fmt(row.recent_hit_rate)}")
+            lines.append(f"- last_1fold_mean_target: {self._fmt(row.last_1fold_mean_target)}")
+            lines.append(f"- last_1fold_beat_universe_rate: {self._fmt(row.last_1fold_beat_universe_rate)}")
+            lines.append(f"- last_1fold_hit_rate: {self._fmt(row.last_1fold_hit_rate)}")
+            lines.append(f"- last_3fold_mean_target: {self._fmt(row.last_3fold_mean_target)}")
+            lines.append(f"- last_3fold_beat_universe_rate: {self._fmt(row.last_3fold_beat_universe_rate)}")
+            lines.append(f"- last_3fold_hit_rate: {self._fmt(row.last_3fold_hit_rate)}")
             lines.append("")
         return lines
 

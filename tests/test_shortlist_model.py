@@ -222,6 +222,8 @@ class ShortlistModelServiceTests(unittest.TestCase):
                 "sector_specific",
                 "--xgboost-config",
                 "faster_shallow",
+                "--feature-profile",
+                "no_gap_risk",
             ]
         )
         self.assertEqual(args.command, "shortlist-model")
@@ -233,6 +235,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertEqual(args.eligible_universe_mode, "passed_or_trend")
         self.assertEqual(args.model_scope, "sector_specific")
         self.assertEqual(args.xgboost_config, "faster_shallow")
+        self.assertEqual(args.feature_profile, "no_gap_risk")
 
     def test_runtime_loader_returns_lasso_model_context(self) -> None:
         captured: dict[str, object] = {}

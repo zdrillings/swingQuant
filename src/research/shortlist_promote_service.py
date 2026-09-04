@@ -16,6 +16,7 @@ class ShortlistPromoteReport:
     production_eligible_universe_mode: str
     production_model_scope: str
     production_xgboost_config: str
+    production_feature_profile: str
 
 
 class ShortlistPromoteService:
@@ -29,6 +30,7 @@ class ShortlistPromoteService:
         eligible_universe_mode: str,
         model_scope: str,
         xgboost_config: str = "baseline",
+        feature_profile: str = "full",
         horizon_days: int = 20,
     ) -> ShortlistPromoteReport:
         self.db_manager.initialize()
@@ -36,6 +38,7 @@ class ShortlistPromoteService:
         model_scope = normalize_model_scope(model_scope)
         selected_model_name = str(model_name).strip()
         selected_xgboost_config = str(xgboost_config or "baseline").strip().lower()
+        selected_feature_profile = str(feature_profile or "full").strip().lower()
         if not selected_model_name:
             raise ValueError("model_name is required.")
 
@@ -44,12 +47,14 @@ class ShortlistPromoteService:
             eligible_universe_mode=eligible_universe_mode,
             model_scope=model_scope,
             xgboost_config=selected_xgboost_config,
+            feature_profile=selected_feature_profile,
             limit=1,
         )
         if runs.empty:
             raise ValueError(
                 f"No shortlist model runs found for eligible_universe_mode={eligible_universe_mode} "
-                f"and model_scope={model_scope} and xgboost_config={selected_xgboost_config}."
+                f"and model_scope={model_scope} and xgboost_config={selected_xgboost_config} "
+                f"and feature_profile={selected_feature_profile}."
             )
         latest_run = runs.iloc[0]
         generated_at = str(latest_run["generated_at"])
@@ -76,6 +81,7 @@ class ShortlistPromoteService:
         shortlist_model["production_eligible_universe_mode"] = eligible_universe_mode
         shortlist_model["production_model_scope"] = model_scope
         shortlist_model["production_xgboost_config"] = selected_xgboost_config
+        shortlist_model["production_feature_profile"] = selected_feature_profile
         with config_path.open("w", encoding="utf-8") as handle:
             yaml.safe_dump(config, handle, sort_keys=False)
 
@@ -85,4 +91,5 @@ class ShortlistPromoteService:
             production_eligible_universe_mode=eligible_universe_mode,
             production_model_scope=model_scope,
             production_xgboost_config=selected_xgboost_config,
+            production_feature_profile=selected_feature_profile,
         )

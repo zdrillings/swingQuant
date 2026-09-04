@@ -39,6 +39,7 @@ class ShortlistSectorReactivationService:
         model_scope: str | None = None,
         model_name: str | None = None,
         xgboost_config: str | None = None,
+        feature_profile: str | None = None,
         candidate_sectors: tuple[str, ...] = ("Information Technology",),
     ) -> ShortlistSectorReactivationReport:
         self.db_manager.initialize()
@@ -47,6 +48,7 @@ class ShortlistSectorReactivationService:
             model_scope=model_scope,
             model_name=model_name,
             xgboost_config=xgboost_config,
+            feature_profile=feature_profile,
         )
         active_sectors = self._active_strategy_sectors()
         candidate_sector_list = [sector for sector in candidate_sectors if sector]
@@ -64,6 +66,7 @@ class ShortlistSectorReactivationService:
             eligible_universe_mode=resolved["eligible_universe_mode"],
             model_scope=resolved["model_scope"],
             xgboost_config=resolved["xgboost_config"],
+            feature_profile=resolved["feature_profile"],
         )
         run_generated_at = str(latest_run["generated_at"])
         selected_model_name = str(model_name or resolved["model_name"] or latest_run["champion_model"])
@@ -237,6 +240,7 @@ class ShortlistSectorReactivationService:
         model_scope: str | None,
         model_name: str | None,
         xgboost_config: str | None,
+        feature_profile: str | None,
     ) -> dict[str, str]:
         config = load_feature_config()
         shortlist_model = config.get("scan_policy", {}).get("shortlist_model", {}) if isinstance(config, dict) else {}
@@ -261,6 +265,11 @@ class ShortlistSectorReactivationService:
                 xgboost_config
                 or shortlist_model.get("production_xgboost_config")
                 or "baseline"
+            ),
+            "feature_profile": str(
+                feature_profile
+                or shortlist_model.get("production_feature_profile")
+                or "full"
             ),
         }
 
@@ -288,12 +297,14 @@ class ShortlistSectorReactivationService:
         eligible_universe_mode: str,
         model_scope: str,
         xgboost_config: str,
+        feature_profile: str,
     ) -> pd.Series:
         runs = self.db_manager.load_shortlist_model_runs(
             horizon_days=int(horizon_days),
             eligible_universe_mode=eligible_universe_mode,
             model_scope=model_scope,
             xgboost_config=xgboost_config,
+            feature_profile=feature_profile,
             limit=1,
         )
         latest_snapshot_dates = self.db_manager.list_universe_daily_snapshot_dates()
@@ -311,12 +322,14 @@ class ShortlistSectorReactivationService:
                 eligible_universe_mode=eligible_universe_mode,
                 model_scope=model_scope,
                 xgboost_config=xgboost_config,
+                feature_profile=feature_profile,
             )
             runs = self.db_manager.load_shortlist_model_runs(
                 horizon_days=int(horizon_days),
                 eligible_universe_mode=eligible_universe_mode,
                 model_scope=model_scope,
                 xgboost_config=xgboost_config,
+                feature_profile=feature_profile,
                 limit=1,
             )
             if runs.empty:

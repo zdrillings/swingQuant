@@ -152,6 +152,8 @@ class ShortlistTuneServiceTests(unittest.TestCase):
             self.assertIn("- feature_selection_policy: fold-local train-only rank IC screen", report_text)
             self.assertIn("## XGBoost Parameter Grid", report_text)
             self.assertIn("### shallower_regularized", report_text)
+            self.assertIn("- last_3fold_mean_target:", report_text)
+            self.assertIn("- last_3fold_beat_universe_rate:", report_text)
             self.assertIn("## Feature Ablation", report_text)
             self.assertIn("### no_earnings", report_text)
 

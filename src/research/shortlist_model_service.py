@@ -12,6 +12,8 @@ from src.research.shortlist_bakeoff_service import (
     MODEL_FEATURE_COLUMNS,
     build_rank_augmented_feature_frame,
     expand_model_feature_columns,
+    model_feature_columns_for_profile,
+    normalize_shortlist_feature_profile,
 )
 from src.research.shortlist_universe import (
     eligible_universe_mode_description,
@@ -72,6 +74,7 @@ class ShortlistModelService:
         eligible_universe_mode: str = "passed_only",
         model_scope: str = "global",
         xgboost_config: str = "baseline",
+        feature_profile: str = "full",
         target_type: str = "regression",
     ) -> ShortlistModelReport:
         self.db_manager.initialize()
@@ -81,6 +84,7 @@ class ShortlistModelService:
             target_column = f"alpha_vs_sector_{int(horizon_days)}d"
         eligible_universe_mode = normalize_eligible_universe_mode(eligible_universe_mode)
         model_scope = normalize_model_scope(model_scope)
+        feature_profile = normalize_shortlist_feature_profile(feature_profile)
         frame = self.db_manager.load_universe_daily_snapshots()
         if frame.empty:
             raise ValueError("No universe snapshots found. Run `sq universe-backfill` first.")
@@ -112,6 +116,8 @@ class ShortlistModelService:
 
         xgboost_config = self._normalize_xgboost_config(xgboost_config)
         xgboost_params = self._xgboost_params_for_config(xgboost_config)
+        base_feature_columns = model_feature_columns_for_profile(feature_profile)
+        expanded_feature_columns = expand_model_feature_columns(base_feature_columns)
         candidate_models = (
             "signal_proxy",
             "ridge_model",
@@ -129,6 +135,7 @@ class ShortlistModelService:
             evaluation_stride_dates=max(int(horizon_days), 1),
             label_horizon_dates=max(int(horizon_days), 1),
             min_feature_ic=min_feature_ic,
+            feature_columns_override=expanded_feature_columns,
         )
         feature_columns_override = feature_ic_report["surviving_features"]
         if not feature_columns_override:
@@ -150,6 +157,7 @@ class ShortlistModelService:
                 label_horizon_dates=max(int(horizon_days), 1),
                 model_scope=model_scope,
                 xgboost_params=xgboost_params if model_name == "xgboost_model" else None,
+                feature_columns_override=expanded_feature_columns,
                 min_feature_ic=min_feature_ic,
             )
             if predicted is not None and not predicted.empty:
@@ -240,6 +248,7 @@ class ShortlistModelService:
                 selected_model="n/a",
                 selected_model_gate_passed=False,
                 xgboost_config=xgboost_config,
+                feature_profile=feature_profile,
                 min_train_dates=int(min_train_dates),
                 test_window_dates=int(test_window_dates),
                 evaluation_stride_dates=max(int(horizon_days), 1),
@@ -279,6 +288,7 @@ class ShortlistModelService:
                 eligible_universe_mode=eligible_universe_mode,
                 model_scope=model_scope,
                 xgboost_params=xgboost_params if model_name == "xgboost_model" else None,
+                feature_columns_override=expanded_feature_columns,
                 min_feature_ic=min_feature_ic,
             )
             if scored is not None and not scored.empty:
@@ -316,6 +326,7 @@ class ShortlistModelService:
             selected_model=champion_model,
             selected_model_gate_passed=bool(champion_gate_passed),
             xgboost_config=xgboost_config,
+            feature_profile=feature_profile,
             min_train_dates=int(min_train_dates),
             test_window_dates=int(test_window_dates),
             evaluation_stride_dates=max(int(horizon_days), 1),
@@ -366,6 +377,7 @@ class ShortlistModelService:
                 "eligible_universe_mode": eligible_universe_mode,
                 "model_scope": model_scope,
                 "xgboost_config": xgboost_config,
+                "feature_profile": feature_profile,
                 "top_n": int(top_n),
                 "min_train_dates": int(min_train_dates),
                 "test_window_dates": int(test_window_dates),
@@ -630,6 +642,18 @@ class ShortlistModelService:
                 anchor_index=len(safe_train_dates),
                 label_horizon_dates=self._target_horizon_dates(target_column),
             )
+        live_feature_columns = feature_columns_override
+        if min_feature_ic is not None and model_name != "signal_proxy":
+            ic_survivors = self._feature_ic_survivors_from_frame(
+                safe_train,
+                target_column=target_column,
+                min_feature_ic=float(min_feature_ic),
+            )
+            if feature_columns_override is None:
+                live_feature_columns = ic_survivors
+            else:
+                allowed_features = set(feature_columns_override)
+                live_feature_columns = [feature for feature in ic_survivors if feature in allowed_features]
         scored = self._score_model(
             model_name=model_name,
             train_frame=safe_train,
@@ -637,15 +661,7 @@ class ShortlistModelService:
             target_column=target_column,
             model_scope=model_scope,
             xgboost_params=xgboost_params,
-            feature_columns_override=(
-                feature_columns_override
-                if feature_columns_override is not None or min_feature_ic is None or model_name == "signal_proxy"
-                else self._feature_ic_survivors_from_frame(
-                    safe_train,
-                    target_column=target_column,
-                    min_feature_ic=float(min_feature_ic),
-                )
-            ),
+            feature_columns_override=live_feature_columns,
         )
         if scored is None or scored.empty:
             return live_snapshot.assign(predicted_alpha=pd.Series(dtype=float))
@@ -1277,6 +1293,7 @@ class ShortlistModelService:
         evaluation_stride_dates: int,
         label_horizon_dates: int,
         min_feature_ic: float,
+        feature_columns_override: list[str] | None = None,
     ) -> dict[str, object]:
         dates = sorted(frame["snapshot_date"].drop_duplicates().tolist())
         oos_dates: list = []
@@ -1323,6 +1340,8 @@ class ShortlistModelService:
             if col not in feature_frame.columns:
                 feature_frame[col] = np.nan
         feature_frame, feature_columns = build_rank_augmented_feature_frame(feature_frame)
+        if feature_columns_override is not None:
+            feature_columns = [column for column in feature_columns_override if column in feature_frame.columns]
         target = pd.to_numeric(oos_frame[target_column], errors="coerce")
         rows: list[dict[str, object]] = []
         for feature_name in feature_columns:
@@ -1899,6 +1918,7 @@ class ShortlistModelService:
         selected_model: str,
         selected_model_gate_passed: bool,
         xgboost_config: str,
+        feature_profile: str,
         min_train_dates: int,
         test_window_dates: int,
         evaluation_stride_dates: int,
@@ -1933,6 +1953,7 @@ class ShortlistModelService:
             f"- selected_model: {selected_model}",
             f"- selected_model_gate_passed: {str(bool(selected_model_gate_passed)).lower()}",
             f"- xgboost_config: {xgboost_config}",
+            f"- feature_profile: {feature_profile}",
             f"- min_train_dates: {int(min_train_dates)}",
             f"- test_window_dates: {int(test_window_dates)}",
             f"- oos_evaluation_stride_dates: {int(evaluation_stride_dates)}",

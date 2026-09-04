@@ -44,6 +44,7 @@ class ShortlistEarningsOverlayService:
         eligible_universe_mode: str | None = None,
         model_scope: str | None = None,
         xgboost_config: str | None = None,
+        feature_profile: str | None = None,
         generated_at: str | None = None,
     ) -> ShortlistEarningsOverlayReport:
         self.db_manager.initialize()
@@ -56,6 +57,7 @@ class ShortlistEarningsOverlayService:
         )
         model_scope = normalize_model_scope(model_scope or config.get("production_model_scope") or "sector_specific")
         xgboost_config = str(xgboost_config or config.get("production_xgboost_config") or "baseline")
+        feature_profile = str(feature_profile or config.get("production_feature_profile") or "full")
 
         if generated_at is None:
             runs = self.db_manager.load_shortlist_model_runs(
@@ -63,13 +65,14 @@ class ShortlistEarningsOverlayService:
                 eligible_universe_mode=eligible_universe_mode,
                 model_scope=model_scope,
                 xgboost_config=xgboost_config,
+                feature_profile=feature_profile,
                 limit=1,
             )
             if runs.empty:
                 raise ValueError(
                     "No shortlist model runs found for "
                     f"eligible_universe_mode={eligible_universe_mode}, model_scope={model_scope}, "
-                    f"xgboost_config={xgboost_config}."
+                    f"xgboost_config={xgboost_config}, feature_profile={feature_profile}."
                 )
             generated_at = str(runs.iloc[0]["generated_at"])
             if model_name in (None, ""):
@@ -110,6 +113,7 @@ class ShortlistEarningsOverlayService:
             eligible_universe_mode=eligible_universe_mode,
             model_scope=model_scope,
             xgboost_config=xgboost_config,
+            feature_profile=feature_profile,
         )
         report_path = self.db_manager.paths.reports_dir / "earnings_confirmation_live_comparison.md"
         report_path.write_text("\n".join(report), encoding="utf-8")
@@ -208,6 +212,7 @@ class ShortlistEarningsOverlayService:
         eligible_universe_mode: str,
         model_scope: str,
         xgboost_config: str,
+        feature_profile: str,
     ) -> list[str]:
         summaries: dict[str, dict[str, dict[str, float]]] = {}
         deltas: dict[str, dict[str, dict[str, float]]] = {}
@@ -253,7 +258,7 @@ class ShortlistEarningsOverlayService:
             "# Earnings Confirmation Live Model Comparison",
             "",
             f"- live_model_run: {generated_at}",
-            f"- live_model: {model_name} / {eligible_universe_mode} / {model_scope} / {xgboost_config}",
+            f"- live_model: {model_name} / {eligible_universe_mode} / {model_scope} / {xgboost_config} / {feature_profile}",
             f"- oos_dates: {len(dates)} ({pd.Timestamp(dates[0]).date()} to {pd.Timestamp(dates[-1]).date()})",
             f"- oos_rows: {len(frame.index)}",
             f"- target: alpha_vs_sector_{int(horizon_days)}d",

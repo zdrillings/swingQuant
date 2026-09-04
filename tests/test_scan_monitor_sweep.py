@@ -328,6 +328,7 @@ class ScanServiceTests(unittest.TestCase):
                         "production_model_scope": "sector_specific",
                         "production_model_name": "xgboost_model",
                         "production_xgboost_config": "balanced_depth4",
+                        "production_feature_profile": "no_gap_risk",
                         "min_opportunity_score": 0.31,
                     },
                 }
@@ -363,6 +364,7 @@ class ScanServiceTests(unittest.TestCase):
         self.assertEqual(policy.shortlist_model.production_eligible_universe_mode, "passed_or_trend")
         self.assertEqual(policy.shortlist_model.production_model_scope, "sector_specific")
         self.assertEqual(policy.shortlist_model.production_xgboost_config, "balanced_depth4")
+        self.assertEqual(policy.shortlist_model.production_feature_profile, "no_gap_risk")
         self.assertEqual(policy.shortlist_model.min_opportunity_score, 0.31)
 
     def test_scan_policy_supports_candidate_quality_throttle(self) -> None:

@@ -359,6 +359,7 @@ scan_policy:
     production_eligible_universe_mode: passed_or_trend
     production_model_scope: sector_specific
     production_xgboost_config: balanced_depth4
+    production_feature_profile: full
     promotion_gate:
       enabled: true
       min_recent_20d_hit_rate: 0.50

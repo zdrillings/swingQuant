@@ -287,6 +287,7 @@ CREATE TABLE IF NOT EXISTS Shortlist_Model_Runs (
     eligible_universe_mode TEXT NOT NULL DEFAULT 'passed_only',
     model_scope TEXT NOT NULL DEFAULT 'global',
     xgboost_config TEXT NOT NULL DEFAULT 'baseline',
+    feature_profile TEXT NOT NULL DEFAULT 'full',
     top_n INTEGER NOT NULL,
     min_train_dates INTEGER NOT NULL,
     test_window_dates INTEGER NOT NULL,
@@ -467,6 +468,10 @@ class DatabaseManager:
             connection.execute(
                 "ALTER TABLE Shortlist_Model_Runs ADD COLUMN xgboost_config TEXT NOT NULL DEFAULT 'baseline'"
             )
+        if "feature_profile" not in shortlist_run_columns:
+            connection.execute(
+                "ALTER TABLE Shortlist_Model_Runs ADD COLUMN feature_profile TEXT NOT NULL DEFAULT 'full'"
+            )
         connection.execute(
             "UPDATE Shortlist_Model_Runs SET eligible_universe_mode = 'passed_only' WHERE eligible_universe_mode IS NULL OR TRIM(eligible_universe_mode) = ''"
         )
@@ -475,6 +480,9 @@ class DatabaseManager:
         )
         connection.execute(
             "UPDATE Shortlist_Model_Runs SET xgboost_config = 'baseline' WHERE xgboost_config IS NULL OR TRIM(xgboost_config) = ''"
+        )
+        connection.execute(
+            "UPDATE Shortlist_Model_Runs SET feature_profile = 'full' WHERE feature_profile IS NULL OR TRIM(feature_profile) = ''"
         )
         if "eligible_universe_mode" not in shortlist_prediction_columns:
             connection.execute(
@@ -1404,6 +1412,7 @@ class DatabaseManager:
                     eligible_universe_mode,
                     model_scope,
                     xgboost_config,
+                    feature_profile,
                     top_n,
                     min_train_dates,
                     test_window_dates,
@@ -1416,7 +1425,7 @@ class DatabaseManager:
                     live_snapshot_date,
                     report_path
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     str(row["generated_at"]),
@@ -1424,6 +1433,7 @@ class DatabaseManager:
                     str(row.get("eligible_universe_mode") or "passed_only"),
                     str(row.get("model_scope") or "global"),
                     str(row.get("xgboost_config") or "baseline"),
+                    str(row.get("feature_profile") or "full"),
                     int(row["top_n"]),
                     int(row["min_train_dates"]),
                     int(row["test_window_dates"]),
@@ -1511,6 +1521,7 @@ class DatabaseManager:
         eligible_universe_mode: str | None = None,
         model_scope: str | None = None,
         xgboost_config: str | None = None,
+        feature_profile: str | None = None,
         limit: int | None = None,
     ):
         import pandas as pd
@@ -1523,6 +1534,7 @@ class DatabaseManager:
                 eligible_universe_mode,
                 model_scope,
                 xgboost_config,
+                feature_profile,
                 top_n,
                 min_train_dates,
                 test_window_dates,
@@ -1550,6 +1562,9 @@ class DatabaseManager:
         if xgboost_config is not None:
             filters.append("xgboost_config = ?")
             params.append(str(xgboost_config))
+        if feature_profile is not None:
+            filters.append("feature_profile = ?")
+            params.append(str(feature_profile))
         if filters:
             query += " WHERE " + " AND ".join(filters)
         query += " ORDER BY generated_at DESC, id DESC"
@@ -1566,6 +1581,7 @@ class DatabaseManager:
                     "eligible_universe_mode",
                     "model_scope",
                     "xgboost_config",
+                    "feature_profile",
                     "top_n",
                     "min_train_dates",
                     "test_window_dates",

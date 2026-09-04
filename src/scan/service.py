@@ -67,6 +67,7 @@ class ShortlistModelPolicy:
     production_model_scope: str
     production_model_name: str | None
     production_xgboost_config: str
+    production_feature_profile: str
 
 
 @dataclass(frozen=True)
@@ -213,6 +214,7 @@ class ScanPolicy:
                     else None
                 ),
                 production_xgboost_config=str(shortlist_model.get("production_xgboost_config", "baseline") or "baseline"),
+                production_feature_profile=str(shortlist_model.get("production_feature_profile", "full") or "full"),
             ),
         )
 
@@ -1096,6 +1098,7 @@ class ScanService:
                 model_scope=scan_policy.shortlist_model.production_model_scope,
                 preferred_model_name=scan_policy.shortlist_model.production_model_name,
                 xgboost_config=scan_policy.shortlist_model.production_xgboost_config,
+                feature_profile=scan_policy.shortlist_model.production_feature_profile,
             )
         except Exception as exc:
             self.logger.warning("Unable to load shortlist model context; falling back to heuristic selector: %s", exc)
