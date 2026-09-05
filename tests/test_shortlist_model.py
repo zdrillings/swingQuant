@@ -214,6 +214,8 @@ class ShortlistModelServiceTests(unittest.TestCase):
                 "200",
                 "--test-window-dates",
                 "15",
+                "--oos-stride-dates",
+                "60",
                 "--recent-dates",
                 "30",
                 "--eligible-universe-mode",
@@ -231,6 +233,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertEqual(args.horizon, 20)
         self.assertEqual(args.min_train_dates, 200)
         self.assertEqual(args.test_window_dates, 15)
+        self.assertEqual(args.oos_stride_dates, 60)
         self.assertEqual(args.recent_dates, 30)
         self.assertEqual(args.eligible_universe_mode, "passed_or_trend")
         self.assertEqual(args.model_scope, "sector_specific")

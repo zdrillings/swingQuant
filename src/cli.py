@@ -160,6 +160,7 @@ def build_parser() -> argparse.ArgumentParser:
     shortlist_model_parser.add_argument("--horizon", type=int, default=20)
     shortlist_model_parser.add_argument("--min-train-dates", type=int, default=252)
     shortlist_model_parser.add_argument("--test-window-dates", type=int, default=20)
+    shortlist_model_parser.add_argument("--oos-stride-dates", type=int, default=None)
     shortlist_model_parser.add_argument("--recent-dates", type=int, default=60)
     shortlist_model_parser.add_argument("--eligible-universe-mode", choices=VALID_ELIGIBLE_UNIVERSE_MODES, default="passed_only")
     shortlist_model_parser.add_argument("--model-scope", choices=VALID_MODEL_SCOPES, default="global")
@@ -541,6 +542,7 @@ def main(argv: list[str] | None = None) -> int:
                 xgboost_config=args.xgboost_config,
                 feature_profile=args.feature_profile,
                 target_type=args.target_type,
+                oos_stride_dates=args.oos_stride_dates,
             )
             print(
                 f"Shortlist model written to {report.output_path} "

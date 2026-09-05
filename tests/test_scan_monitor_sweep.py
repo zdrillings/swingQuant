@@ -2802,6 +2802,41 @@ class ScanServiceTests(unittest.TestCase):
             def universe_daily_snapshot_date_needs_refresh(self, *, snapshot_date, required_non_null_columns):
                 self.refresh_columns = tuple(required_non_null_columns)
                 return snapshot_date == "2026-05-01"
+            def load_analyst_snapshots(self):
+                return pd.DataFrame(
+                    [
+                        {
+                            "snapshot_date": "2026-04-30",
+                            "ticker": "AAA",
+                            "provider": "yfinance",
+                            "captured_at": "2026-04-30T21:00:00+00:00",
+                            "target_mean": 12.0,
+                            "target_low": 9.0,
+                            "target_high": 15.0,
+                            "analyst_count": 8,
+                            "recommendation": "2 strong buy, 4 buy, 2 hold",
+                            "details_json": "{}",
+                        }
+                    ]
+                )
+            def load_analyst_revision_snapshots(self):
+                return pd.DataFrame(
+                    [
+                        {
+                            "snapshot_date": "2026-04-29",
+                            "ticker": "AAA",
+                            "provider": "yfinance",
+                            "captured_at": "2026-04-29T21:00:00+00:00",
+                            "earnings_estimate_json": "[]",
+                            "revenue_estimate_json": "[]",
+                            "eps_trend_json": "[]",
+                            "eps_revisions_json": '[{"upLast7days": 3, "downLast7days": 1}]',
+                            "growth_estimates_json": "[]",
+                            "upgrades_downgrades_json": '[{"action": "upgrade"}]',
+                            "details_json": "{}",
+                        }
+                    ]
+                )
             def replace_universe_daily_snapshots(self, *, snapshot_date, rows):
                 self.persisted_by_date[snapshot_date] = list(rows)
                 return len(rows)
@@ -2870,6 +2905,14 @@ class ScanServiceTests(unittest.TestCase):
         self.assertEqual(db.persisted_by_date["2026-05-01"][0]["spy_roc_5"], 0.01)
         self.assertEqual(db.persisted_by_date["2026-05-01"][0]["spy_realized_vol_20"], 0.012)
         self.assertEqual(db.persisted_by_date["2026-05-01"][0]["qqq_roc_20"], 0.06)
+        self.assertAlmostEqual(db.persisted_by_date["2026-05-01"][0]["analyst_target_upside"], 0.2)
+        self.assertAlmostEqual(db.persisted_by_date["2026-05-01"][0]["analyst_target_range_pct"], 0.6)
+        self.assertEqual(db.persisted_by_date["2026-05-01"][0]["analyst_count"], 8.0)
+        self.assertAlmostEqual(db.persisted_by_date["2026-05-01"][0]["analyst_recommendation_score"], 1.0)
+        self.assertAlmostEqual(db.persisted_by_date["2026-05-01"][0]["analyst_eps_revision_breadth"], 0.5)
+        self.assertAlmostEqual(db.persisted_by_date["2026-05-01"][0]["analyst_upgrade_downgrade_score"], 1.0)
+        self.assertEqual(db.persisted_by_date["2026-05-01"][0]["analyst_snapshot_age_days"], 1.0)
+        self.assertEqual(db.persisted_by_date["2026-05-01"][0]["analyst_revision_snapshot_age_days"], 2.0)
         self.assertIn("rsi_2", db.refresh_columns)
         self.assertIn("ret_1d", db.refresh_columns)
         self.assertIn("ret_5d", db.refresh_columns)
@@ -2878,6 +2921,8 @@ class ScanServiceTests(unittest.TestCase):
         self.assertIn("spy_roc_5", db.refresh_columns)
         self.assertIn("spy_realized_vol_20", db.refresh_columns)
         self.assertIn("qqq_roc_20", db.refresh_columns)
+        self.assertIn("analyst_target_upside", db.refresh_columns)
+        self.assertIn("analyst_eps_revision_breadth", db.refresh_columns)
         self.assertIn("alpha_vs_sector_20d", db.refresh_columns)
         self.assertIn("fwd_return_5d", db.refresh_columns)
 

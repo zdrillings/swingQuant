@@ -76,6 +76,9 @@ echo "[$(date --iso-8601=seconds)] nightly pipeline start run_date=${run_date}"
 echo "[$(date --iso-8601=seconds)] sync"
 ./sq sync
 
+echo "[$(date --iso-8601=seconds)] analyst-snapshot"
+./sq analyst-snapshot --source research --top 250
+
 echo "[$(date --iso-8601=seconds)] universe-backfill ${universe_refresh_start}..${run_date}"
 ./sq universe-backfill --date-from "${universe_refresh_start}" --date-to "${run_date}" --skip-existing
 
@@ -89,6 +92,7 @@ set +e
   --horizon 20 \
   --min-train-dates 252 \
   --test-window-dates 20 \
+  --oos-stride-dates 60 \
   --recent-dates 60 \
   --eligible-universe-mode passed_or_trend \
   --model-scope sector_specific \
@@ -100,15 +104,13 @@ if [[ "${shortlist_status}" -ne 0 ]]; then
   if grep -Fq "No shortlist model candidate passed the promotion gate" "${shortlist_log}"; then
     shortlist_promotion_failed=1
     consecutive_promotion_failures="$(record_promotion_failure)"
-    echo "[$(date --iso-8601=seconds)] shortlist-model produced no promotable champion; continuing with previously persisted model context"
-    if [[ "${consecutive_promotion_failures}" -ge 3 ]]; then
-      send_failure_email \
-        0 \
-        "shortlist promotion gate failed ${consecutive_promotion_failures} consecutive nights" \
-        "SwingQuant promotion gate failing - ${consecutive_promotion_failures} nights without picks" \
-        "Shortlist Promotion Gate Failing" \
-        "The shortlist model promotion gate has failed ${consecutive_promotion_failures} consecutive nightly runs. Scan will be skipped until a champion is promoted." || true
-    fi
+    echo "[$(date --iso-8601=seconds)] shortlist-model produced no promotable champion; scan will be skipped"
+    send_failure_email \
+      0 \
+      "scan skipped because shortlist promotion gate failed ${consecutive_promotion_failures} consecutive nights" \
+      "SwingQuant scan skipped - no promotable shortlist champion" \
+      "Scan Skipped" \
+      "The shortlist model promotion gate failed tonight. Consecutive recorded promotion failures: ${consecutive_promotion_failures}. Scan will be skipped until a champion is promoted." || true
   else
     rm -f "${shortlist_log}"
     exit "${shortlist_status}"
@@ -117,9 +119,6 @@ else
   clear_promotion_failures
 fi
 rm -f "${shortlist_log}"
-
-echo "[$(date --iso-8601=seconds)] analyst-snapshot"
-./sq analyst-snapshot --source research --top 250
 
 echo "[$(date --iso-8601=seconds)] extended-hours-snapshot"
 ./sq extended-hours-snapshot --source all

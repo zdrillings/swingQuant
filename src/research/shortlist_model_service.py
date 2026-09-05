@@ -76,12 +76,14 @@ class ShortlistModelService:
         xgboost_config: str = "baseline",
         feature_profile: str = "full",
         target_type: str = "regression",
+        oos_stride_dates: int | None = None,
     ) -> ShortlistModelReport:
         self.db_manager.initialize()
         if target_type == "classification":
             target_column = f"alpha_vs_sector_{int(horizon_days)}d_pos"
         else:
             target_column = f"alpha_vs_sector_{int(horizon_days)}d"
+        evaluation_target_column = f"alpha_vs_sector_{int(horizon_days)}d"
         eligible_universe_mode = normalize_eligible_universe_mode(eligible_universe_mode)
         model_scope = normalize_model_scope(model_scope)
         feature_profile = normalize_shortlist_feature_profile(feature_profile)
@@ -100,6 +102,8 @@ class ShortlistModelService:
                 self.logger.info("Derived %s from %s on-the-fly (column not yet backfilled).", target_column, source_col)
         if target_column not in frame.columns:
             raise ValueError(f"Universe snapshots do not include horizon_days={horizon_days}.")
+        if evaluation_target_column not in frame.columns:
+            evaluation_target_column = target_column
 
         all_snapshots = self._prepare_snapshot_frame(frame)
         matured = self._build_matured_eligible_universe(
@@ -129,10 +133,10 @@ class ShortlistModelService:
         min_feature_ic = self._load_min_feature_ic()
         feature_ic_report = self._feature_ic_report(
             matured,
-            target_column=target_column,
+            target_column=evaluation_target_column,
             min_train_dates=int(min_train_dates),
             test_window_dates=int(test_window_dates),
-            evaluation_stride_dates=max(int(horizon_days), 1),
+            evaluation_stride_dates=max(int(oos_stride_dates or horizon_days), 1),
             label_horizon_dates=max(int(horizon_days), 1),
             min_feature_ic=min_feature_ic,
             feature_columns_override=expanded_feature_columns,
@@ -150,10 +154,11 @@ class ShortlistModelService:
             predicted = self._walk_forward_predictions(
                 matured,
                 target_column=target_column,
+                evaluation_target_column=evaluation_target_column,
                 model_name=model_name,
                 min_train_dates=int(min_train_dates),
                 test_window_dates=int(test_window_dates),
-                evaluation_stride_dates=max(int(horizon_days), 1),
+                evaluation_stride_dates=max(int(oos_stride_dates or horizon_days), 1),
                 label_horizon_dates=max(int(horizon_days), 1),
                 model_scope=model_scope,
                 xgboost_params=xgboost_params if model_name == "xgboost_model" else None,
@@ -196,7 +201,7 @@ class ShortlistModelService:
                 self._evaluate_predictions(
                     predictions=predictions,
                     top_n=promotion_top_n,
-                    target_column=target_column,
+                    target_column=evaluation_target_column,
                     model_name=model_name,
                 )
                 for model_name, predictions in model_predictions.items()
@@ -210,7 +215,7 @@ class ShortlistModelService:
                 self._evaluate_predictions(
                     predictions=recent_predictions,
                     top_n=promotion_top_n,
-                    target_column=target_column,
+                    target_column=evaluation_target_column,
                     model_name=model_name,
                 )
             )
@@ -222,7 +227,7 @@ class ShortlistModelService:
                 for model_name, predictions in model_predictions.items()
                 for row in self._rolling_window_summaries(
                     predictions=predictions,
-                    target_column=target_column,
+                    target_column=evaluation_target_column,
                     model_name=model_name,
                     top_n=promotion_top_n,
                     windows=(20, 60),
@@ -249,6 +254,7 @@ class ShortlistModelService:
             combined_predictions.to_csv(oos_path, index=False)
             lines = self._build_report_lines(
                 target_column=target_column,
+                evaluation_target_column=evaluation_target_column,
                 top_n=int(top_n),
                 promotion_top_n=promotion_top_n,
                 eligible_universe_mode=eligible_universe_mode,
@@ -260,7 +266,7 @@ class ShortlistModelService:
                 feature_profile=feature_profile,
                 min_train_dates=int(min_train_dates),
                 test_window_dates=int(test_window_dates),
-                evaluation_stride_dates=max(int(horizon_days), 1),
+                evaluation_stride_dates=max(int(oos_stride_dates or horizon_days), 1),
                 label_horizon_dates=max(int(horizon_days), 1),
                 feature_ic_path=self.db_manager.paths.reports_dir / "feature_ic_report.md",
                 min_feature_ic=min_feature_ic,
@@ -294,6 +300,7 @@ class ShortlistModelService:
                 matured=matured,
                 model_name=model_name,
                 target_column=target_column,
+                feature_ic_target_column=evaluation_target_column,
                 eligible_universe_mode=eligible_universe_mode,
                 model_scope=model_scope,
                 xgboost_params=xgboost_params if model_name == "xgboost_model" else None,
@@ -327,6 +334,7 @@ class ShortlistModelService:
 
         lines = self._build_report_lines(
             target_column=target_column,
+            evaluation_target_column=evaluation_target_column,
             top_n=int(top_n),
             promotion_top_n=promotion_top_n,
             eligible_universe_mode=eligible_universe_mode,
@@ -338,7 +346,7 @@ class ShortlistModelService:
             feature_profile=feature_profile,
             min_train_dates=int(min_train_dates),
             test_window_dates=int(test_window_dates),
-            evaluation_stride_dates=max(int(horizon_days), 1),
+            evaluation_stride_dates=max(int(oos_stride_dates or horizon_days), 1),
             label_horizon_dates=max(int(horizon_days), 1),
             feature_ic_path=self.db_manager.paths.reports_dir / "feature_ic_report.md",
             min_feature_ic=min_feature_ic,
@@ -359,7 +367,7 @@ class ShortlistModelService:
             self._render_summary_table(
                 self._rolling_window_summaries(
                     predictions=model_predictions[champion_model],
-                    target_column=target_column,
+                    target_column=evaluation_target_column,
                     model_name=champion_model,
                     top_n=promotion_top_n,
                     windows=(20, 40, 60),
@@ -371,7 +379,7 @@ class ShortlistModelService:
         lines.extend(
             self._render_sector_contribution(
                 predictions=model_predictions[champion_model],
-                target_column=target_column,
+                target_column=evaluation_target_column,
                 top_n=int(top_n),
                 heading="## Champion Sector Contribution",
             )
@@ -411,7 +419,7 @@ class ShortlistModelService:
                 "model_scope": model_scope,
                 "md_volume_30d": row.get("md_volume_30d"),
                 "predicted_alpha": row.get("predicted_alpha"),
-                "actual_alpha_vs_sector": row.get(target_column),
+                "actual_alpha_vs_sector": row.get(evaluation_target_column),
                 "details": {
                     "model_top_reasons": self._ensure_reason_list(row.get("model_top_reasons")),
                     "model_reason_summary": row.get("model_reason_summary"),
@@ -482,6 +490,7 @@ class ShortlistModelService:
         frame: pd.DataFrame,
         *,
         target_column: str,
+        feature_ic_target_column: str | None = None,
         eligible_universe_mode: str,
     ) -> pd.DataFrame:
         working = frame.copy()
@@ -505,6 +514,7 @@ class ShortlistModelService:
         frame: pd.DataFrame,
         *,
         target_column: str,
+        evaluation_target_column: str | None = None,
         model_name: str,
         min_train_dates: int,
         test_window_dates: int,
@@ -516,6 +526,7 @@ class ShortlistModelService:
         min_feature_ic: float | None = None,
     ) -> pd.DataFrame | None:
         dates = sorted(frame["snapshot_date"].drop_duplicates().tolist())
+        evaluation_target_column = evaluation_target_column or target_column
         folds: list[pd.DataFrame] = []
         start_index = int(min_train_dates)
         stride = max(int(evaluation_stride_dates or test_window_dates), 1)
@@ -551,7 +562,7 @@ class ShortlistModelService:
             if min_feature_ic is not None and model_name != "signal_proxy":
                 ic_survivors = self._feature_ic_survivors_from_frame(
                     train_frame,
-                    target_column=target_column,
+                    target_column=evaluation_target_column,
                     min_feature_ic=float(min_feature_ic),
                 )
                 if feature_columns_override is None:
@@ -580,19 +591,20 @@ class ShortlistModelService:
                 feature_columns_override=fold_feature_columns,
             )
             if scored is not None and not scored.empty:
+                output_columns = [
+                    "snapshot_date",
+                    "ticker",
+                    "sector",
+                    "md_volume_30d",
+                    target_column,
+                    "predicted_alpha",
+                    "model_top_reasons",
+                    "model_reason_summary",
+                ]
+                if evaluation_target_column != target_column and evaluation_target_column in scored.columns:
+                    output_columns.insert(5, evaluation_target_column)
                 folds.append(
-                    scored[
-                        [
-                            "snapshot_date",
-                            "ticker",
-                            "sector",
-                            "md_volume_30d",
-                            target_column,
-                            "predicted_alpha",
-                            "model_top_reasons",
-                            "model_reason_summary",
-                        ]
-                    ].copy()
+                    scored[output_columns].copy()
                 )
             start_index += stride
         if not folds:
@@ -628,11 +640,13 @@ class ShortlistModelService:
         target_column: str,
         eligible_universe_mode: str,
         model_scope: str,
+        feature_ic_target_column: str | None = None,
         xgboost_params: dict[str, float | int] | None = None,
         feature_columns_override: list[str] | None = None,
         min_feature_ic: float | None = None,
     ) -> pd.DataFrame:
         latest_date = all_snapshots["snapshot_date"].max()
+        feature_ic_target_column = feature_ic_target_column or target_column
         live_snapshot = all_snapshots[all_snapshots["snapshot_date"] == latest_date].copy()
         live_snapshot = self._build_live_eligible_universe(
             live_snapshot,
@@ -655,7 +669,7 @@ class ShortlistModelService:
         if min_feature_ic is not None and model_name != "signal_proxy":
             ic_survivors = self._feature_ic_survivors_from_frame(
                 safe_train,
-                target_column=target_column,
+                target_column=feature_ic_target_column,
                 min_feature_ic=float(min_feature_ic),
             )
             if feature_columns_override is None:
@@ -1995,6 +2009,7 @@ class ShortlistModelService:
         self,
         *,
         target_column: str,
+        evaluation_target_column: str | None = None,
         top_n: int,
         eligible_universe_mode: str,
         model_scope: str,
@@ -2029,6 +2044,7 @@ class ShortlistModelService:
             "# Shortlist Model",
             "",
             f"- target_column: {target_column}",
+            f"- evaluation_target_column: {evaluation_target_column or target_column}",
             f"- live_output_top_n: {int(top_n)}",
             f"- promotion_top_n: {int(promotion_top_n)}",
             f"- eligible_universe_mode: {eligible_universe_mode}",

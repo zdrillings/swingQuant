@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date as date_type, datetime
+import json
+import re
 
 import pandas as pd
 
@@ -88,6 +90,14 @@ SNAPSHOT_FEATURE_COLUMNS = [
     "spy_roc_5",
     "spy_realized_vol_20",
     "qqq_roc_20",
+    "analyst_target_upside",
+    "analyst_target_range_pct",
+    "analyst_count",
+    "analyst_recommendation_score",
+    "analyst_eps_revision_breadth",
+    "analyst_upgrade_downgrade_score",
+    "analyst_snapshot_age_days",
+    "analyst_revision_snapshot_age_days",
 ]
 
 
@@ -145,6 +155,8 @@ class UniverseSnapshotBackfillService:
             raise ValueError("No trading dates matched the requested universe snapshot range.")
 
         history_context = self._history_context(price_history)
+        analyst_context = self._analyst_context()
+        analyst_revision_context = self._analyst_revision_context()
         processed = 0
         skipped = 0
         total_rows = 0
@@ -161,6 +173,8 @@ class UniverseSnapshotBackfillService:
                     required_columns = self._required_refresh_columns_for_snapshot(
                         snapshot_date=snapshot_date_str,
                         history_context=history_context,
+                        analyst_context=analyst_context,
+                        analyst_revision_context=analyst_revision_context,
                     )
                     needs_refresh = bool(
                         refresh_probe(
@@ -184,6 +198,8 @@ class UniverseSnapshotBackfillService:
                 day_frame=day_frame,
                 strategies=self._strategies_effective_on(strategies, snapshot_date_str),
                 history_context=history_context,
+                analyst_context=analyst_context,
+                analyst_revision_context=analyst_revision_context,
             )
             self.db_manager.replace_universe_daily_snapshots(snapshot_date=snapshot_date_str, rows=rows)
             processed += 1
@@ -226,6 +242,8 @@ class UniverseSnapshotBackfillService:
         day_frame: pd.DataFrame,
         strategies: dict,
         history_context: dict[str, dict[str, object]],
+        analyst_context: dict[str, pd.DataFrame] | None = None,
+        analyst_revision_context: dict[str, pd.DataFrame] | None = None,
     ) -> list[dict[str, object]]:
         if day_frame.empty:
             return []
@@ -262,6 +280,15 @@ class UniverseSnapshotBackfillService:
             }
             for column in SNAPSHOT_FEATURE_COLUMNS:
                 snapshot_row[column] = self._optional_float(row.get(column))
+            snapshot_row.update(
+                self._analyst_feature_payload(
+                    snapshot_date=snapshot_date,
+                    ticker=ticker,
+                    adj_close=snapshot_row.get("adj_close"),
+                    analyst_context=analyst_context or {},
+                    analyst_revision_context=analyst_revision_context or {},
+                )
+            )
             snapshot_row.update(
                 self._outcome_payload(
                     snapshot_date=snapshot_date,
@@ -308,13 +335,181 @@ class UniverseSnapshotBackfillService:
             }
         return context
 
+    def _analyst_context(self) -> dict[str, pd.DataFrame]:
+        loader = getattr(self.db_manager, "load_analyst_snapshots", None)
+        if not callable(loader):
+            return {}
+        frame = loader()
+        if frame.empty:
+            return {}
+        working = frame.copy()
+        working["snapshot_date"] = pd.to_datetime(working["snapshot_date"]).dt.normalize()
+        return {
+            str(ticker): group.sort_values("snapshot_date").reset_index(drop=True)
+            for ticker, group in working.groupby(working["ticker"].astype(str).str.upper(), sort=False)
+        }
+
+    def _analyst_revision_context(self) -> dict[str, pd.DataFrame]:
+        loader = getattr(self.db_manager, "load_analyst_revision_snapshots", None)
+        if not callable(loader):
+            return {}
+        frame = loader()
+        if frame.empty:
+            return {}
+        working = frame.copy()
+        working["snapshot_date"] = pd.to_datetime(working["snapshot_date"]).dt.normalize()
+        return {
+            str(ticker): group.sort_values("snapshot_date").reset_index(drop=True)
+            for ticker, group in working.groupby(working["ticker"].astype(str).str.upper(), sort=False)
+        }
+
+    def _analyst_feature_payload(
+        self,
+        *,
+        snapshot_date: str,
+        ticker: str,
+        adj_close: float | None,
+        analyst_context: dict[str, pd.DataFrame],
+        analyst_revision_context: dict[str, pd.DataFrame],
+    ) -> dict[str, float | None]:
+        payload = {
+            "analyst_target_upside": None,
+            "analyst_target_range_pct": None,
+            "analyst_count": None,
+            "analyst_recommendation_score": None,
+            "analyst_eps_revision_breadth": None,
+            "analyst_upgrade_downgrade_score": None,
+            "analyst_snapshot_age_days": None,
+            "analyst_revision_snapshot_age_days": None,
+        }
+        snapshot_ts = pd.Timestamp(snapshot_date).normalize()
+        analyst_row = self._latest_point_in_time_row(analyst_context.get(str(ticker).upper()), snapshot_ts)
+        if analyst_row is not None:
+            target_mean = self._optional_float(analyst_row.get("target_mean"))
+            target_low = self._optional_float(analyst_row.get("target_low"))
+            target_high = self._optional_float(analyst_row.get("target_high"))
+            close = self._optional_float(adj_close)
+            if target_mean is not None and close is not None and close > 0:
+                payload["analyst_target_upside"] = (float(target_mean) / float(close)) - 1.0
+            if target_low is not None and target_high is not None and close is not None and close > 0:
+                payload["analyst_target_range_pct"] = (float(target_high) - float(target_low)) / float(close)
+            payload["analyst_count"] = self._optional_float(analyst_row.get("analyst_count"))
+            payload["analyst_recommendation_score"] = self._recommendation_score(analyst_row.get("recommendation"))
+            payload["analyst_snapshot_age_days"] = float((snapshot_ts - pd.Timestamp(analyst_row["snapshot_date"]).normalize()).days)
+
+        revision_row = self._latest_point_in_time_row(analyst_revision_context.get(str(ticker).upper()), snapshot_ts)
+        if revision_row is not None:
+            payload["analyst_eps_revision_breadth"] = self._eps_revision_breadth(
+                self._json_records(revision_row.get("eps_revisions_json"))
+            )
+            payload["analyst_upgrade_downgrade_score"] = self._upgrade_downgrade_score(
+                self._json_records(revision_row.get("upgrades_downgrades_json"))
+            )
+            payload["analyst_revision_snapshot_age_days"] = float((snapshot_ts - pd.Timestamp(revision_row["snapshot_date"]).normalize()).days)
+        return payload
+
+    def _latest_point_in_time_row(self, frame: pd.DataFrame | None, snapshot_ts: pd.Timestamp):
+        if frame is None or frame.empty:
+            return None
+        eligible = frame.loc[pd.to_datetime(frame["snapshot_date"]).dt.normalize() <= snapshot_ts]
+        if eligible.empty:
+            return None
+        return eligible.sort_values("snapshot_date").iloc[-1]
+
+    def _recommendation_score(self, recommendation: object) -> float | None:
+        if recommendation in (None, "") or pd.isna(recommendation):
+            return None
+        weights = {
+            "strong buy": 2.0,
+            "buy": 1.0,
+            "hold": 0.0,
+            "sell": -1.0,
+            "strong sell": -2.0,
+        }
+        total = 0.0
+        count = 0.0
+        text = str(recommendation).lower()
+        for raw_count, raw_label in re.findall(r"(\d+)\s+([a-z ]+?)(?=,|$)", text):
+            label = raw_label.strip()
+            if label not in weights:
+                continue
+            weight = float(raw_count)
+            total += weight * weights[label]
+            count += weight
+        return total / count if count > 0 else None
+
+    def _json_records(self, value: object) -> list[dict]:
+        if value in (None, ""):
+            return []
+        if isinstance(value, list):
+            return [record for record in value if isinstance(record, dict)]
+        if not isinstance(value, str):
+            return []
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+        return [record for record in parsed if isinstance(record, dict)] if isinstance(parsed, list) else []
+
+    def _eps_revision_breadth(self, records: list[dict]) -> float | None:
+        up_total = 0.0
+        down_total = 0.0
+        for record in records:
+            for key, value in record.items():
+                normalized = str(key).lower()
+                numeric = self._optional_float(value)
+                if numeric is None:
+                    continue
+                if "up" in normalized:
+                    up_total += float(numeric)
+                elif "down" in normalized:
+                    down_total += float(numeric)
+        total = up_total + down_total
+        return (up_total - down_total) / total if total > 0 else None
+
+    def _upgrade_downgrade_score(self, records: list[dict]) -> float | None:
+        if not records:
+            return None
+        score = 0.0
+        observations = 0
+        for record in records:
+            text = " ".join(str(value).lower() for value in record.values())
+            if "upgrade" in text or "initiated" in text or "raised" in text:
+                score += 1.0
+                observations += 1
+            elif "downgrade" in text or "lowered" in text or "cut" in text:
+                score -= 1.0
+                observations += 1
+        return score / observations if observations else None
+
     def _required_refresh_columns_for_snapshot(
         self,
         *,
         snapshot_date: str,
         history_context: dict[str, dict[str, object]],
+        analyst_context: dict[str, pd.DataFrame],
+        analyst_revision_context: dict[str, pd.DataFrame],
     ) -> tuple[str, ...]:
         required = list(SNAPSHOT_REFRESH_COLUMNS)
+        snapshot_ts = pd.Timestamp(snapshot_date).normalize()
+        if any(self._latest_point_in_time_row(frame, snapshot_ts) is not None for frame in analyst_context.values()):
+            required.extend(
+                [
+                    "analyst_target_upside",
+                    "analyst_target_range_pct",
+                    "analyst_count",
+                    "analyst_recommendation_score",
+                    "analyst_snapshot_age_days",
+                ]
+            )
+        if any(self._latest_point_in_time_row(frame, snapshot_ts) is not None for frame in analyst_revision_context.values()):
+            required.extend(
+                [
+                    "analyst_eps_revision_breadth",
+                    "analyst_upgrade_downgrade_score",
+                    "analyst_revision_snapshot_age_days",
+                ]
+            )
         spy_context = history_context.get("SPY")
         if spy_context is None:
             return tuple(required)

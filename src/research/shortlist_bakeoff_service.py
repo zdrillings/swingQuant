@@ -63,6 +63,14 @@ MODEL_FEATURE_COLUMNS = [
     "spy_roc_5",
     "spy_realized_vol_20",
     "qqq_roc_20",
+    "analyst_target_upside",
+    "analyst_target_range_pct",
+    "analyst_count",
+    "analyst_recommendation_score",
+    "analyst_eps_revision_breadth",
+    "analyst_upgrade_downgrade_score",
+    "analyst_snapshot_age_days",
+    "analyst_revision_snapshot_age_days",
 ]
 
 

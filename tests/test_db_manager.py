@@ -96,6 +96,7 @@ class DatabaseManagerInitializationTests(unittest.TestCase):
             )
             self.assertTrue(any("historical_ohlcv" in statement for statement in fake_duckdb.statements))
             self.assertTrue(any("analyst_snapshots" in statement for statement in fake_duckdb.statements))
+            self.assertTrue(any("analyst_target_upside DOUBLE" in statement for statement in fake_duckdb.statements))
             self.assertTrue(any("rsi_2 DOUBLE" in statement for statement in fake_duckdb.statements))
             self.assertTrue(any("spy_roc_20 DOUBLE" in statement for statement in fake_duckdb.statements))
             self.assertTrue(any("alpha_vs_sector_20d_pos INTEGER" in statement for statement in fake_duckdb.statements))
