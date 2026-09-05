@@ -24,6 +24,7 @@ from src.research.shortlist_universe import (
 from src.settings import load_feature_config
 from src.utils.db_manager import DatabaseManager
 from src.utils.logging import get_logger
+from src.utils.performance_metrics import annualized_sharpe, newey_west_t_stat, years_required_for_tstat
 
 PROMOTION_BASKET_SIZE = 2
 
@@ -120,6 +121,7 @@ class ShortlistModelService:
 
         xgboost_config = self._normalize_xgboost_config(xgboost_config)
         xgboost_params = self._xgboost_params_for_config(xgboost_config)
+        resolved_oos_stride_dates = max(int(oos_stride_dates) if oos_stride_dates is not None else 1, 1)
         base_feature_columns = model_feature_columns_for_profile(feature_profile)
         expanded_feature_columns = expand_model_feature_columns(base_feature_columns)
         candidate_models = (
@@ -136,7 +138,7 @@ class ShortlistModelService:
             target_column=evaluation_target_column,
             min_train_dates=int(min_train_dates),
             test_window_dates=int(test_window_dates),
-            evaluation_stride_dates=max(int(oos_stride_dates or horizon_days), 1),
+            evaluation_stride_dates=resolved_oos_stride_dates,
             label_horizon_dates=max(int(horizon_days), 1),
             min_feature_ic=min_feature_ic,
             feature_columns_override=expanded_feature_columns,
@@ -158,7 +160,7 @@ class ShortlistModelService:
                 model_name=model_name,
                 min_train_dates=int(min_train_dates),
                 test_window_dates=int(test_window_dates),
-                evaluation_stride_dates=max(int(oos_stride_dates or horizon_days), 1),
+                evaluation_stride_dates=resolved_oos_stride_dates,
                 label_horizon_dates=max(int(horizon_days), 1),
                 model_scope=model_scope,
                 xgboost_params=xgboost_params if model_name == "xgboost_model" else None,
@@ -187,15 +189,18 @@ class ShortlistModelService:
             axis=0,
             ignore_index=True,
         )
+        combined_predictions = self._annotate_oos_artifact_ranks(combined_predictions)
         combined_predictions = self._annotate_calibrated_probabilities(
             combined_predictions,
             target_column=target_column,
         )
         for model_name, predictions in list(model_predictions.items()):
-            model_predictions[model_name] = self._annotate_calibrated_probabilities(
-                predictions,
+            annotated = self._annotate_oos_artifact_ranks(predictions.assign(model_name=model_name))
+            annotated = self._annotate_calibrated_probabilities(
+                annotated,
                 target_column=target_column,
             )
+            model_predictions[model_name] = annotated.drop(columns=["model_name"], errors="ignore")
         full_summaries = pd.DataFrame(
             [
                 self._evaluate_predictions(
@@ -266,7 +271,7 @@ class ShortlistModelService:
                 feature_profile=feature_profile,
                 min_train_dates=int(min_train_dates),
                 test_window_dates=int(test_window_dates),
-                evaluation_stride_dates=max(int(oos_stride_dates or horizon_days), 1),
+                evaluation_stride_dates=resolved_oos_stride_dates,
                 label_horizon_dates=max(int(horizon_days), 1),
                 feature_ic_path=self.db_manager.paths.reports_dir / "feature_ic_report.md",
                 min_feature_ic=min_feature_ic,
@@ -346,7 +351,7 @@ class ShortlistModelService:
             feature_profile=feature_profile,
             min_train_dates=int(min_train_dates),
             test_window_dates=int(test_window_dates),
-            evaluation_stride_dates=max(int(oos_stride_dates or horizon_days), 1),
+            evaluation_stride_dates=resolved_oos_stride_dates,
             label_horizon_dates=max(int(horizon_days), 1),
             feature_ic_path=self.db_manager.paths.reports_dir / "feature_ic_report.md",
             min_feature_ic=min_feature_ic,
@@ -424,6 +429,7 @@ class ShortlistModelService:
                     "model_top_reasons": self._ensure_reason_list(row.get("model_top_reasons")),
                     "model_reason_summary": row.get("model_reason_summary"),
                     "calibrated_p_beat_sector": row.get("calibrated_p_beat_sector"),
+                    "model_rank": row.get("model_rank"),
                 },
             }
             for row in combined_predictions.to_dict(orient="records")
@@ -446,6 +452,7 @@ class ShortlistModelService:
                             "model_top_reasons": self._ensure_reason_list(row.get("model_top_reasons")),
                             "model_reason_summary": row.get("model_reason_summary"),
                             "calibrated_p_beat_sector": row.get("calibrated_p_beat_sector"),
+                            "model_rank": row.get("model_rank"),
                         },
                     }
                     for row in live_frame.to_dict(orient="records")
@@ -1202,6 +1209,22 @@ class ShortlistModelService:
         merged["model_reason_summary"] = merged["model_top_reasons"].apply(self._format_reason_summary)
         return merged
 
+    def _annotate_oos_artifact_ranks(self, frame: pd.DataFrame) -> pd.DataFrame:
+        if frame.empty or not {"snapshot_date", "predicted_alpha"}.issubset(frame.columns):
+            return frame.copy()
+        working = frame.copy()
+        if "model_name" not in working.columns:
+            working["model_name"] = "model"
+        working["model_rank"] = (
+            pd.to_numeric(working["predicted_alpha"], errors="coerce")
+            .groupby([working["model_name"].astype(str), working["snapshot_date"]])
+            .rank(method="first", ascending=False)
+        )
+        for model_name, index in working.groupby("model_name", sort=False).groups.items():
+            rank_column = f"{model_name}_rank"
+            working.loc[index, rank_column] = working.loc[index, "model_rank"]
+        return working
+
     def _prepare_model_matrices(
         self,
         train_frame: pd.DataFrame,
@@ -1584,6 +1607,7 @@ class ShortlistModelService:
     ) -> dict[str, object]:
         if predictions.empty:
             return self._empty_summary(model_name)
+        cost_fraction = self._round_trip_cost_fraction()
         rows: list[dict[str, float | int | pd.Timestamp]] = []
         for snapshot_date, day_frame in predictions.groupby("snapshot_date", sort=True):
             ordered = day_frame.sort_values(["predicted_alpha", "ticker"], ascending=[False, True]).copy()
@@ -1604,8 +1628,9 @@ class ShortlistModelService:
                 {
                     "date": pd.Timestamp(snapshot_date),
                     "pick_count": len(picks.index),
-                    "mean_target": float(target.mean()),
-                    "hit_rate": float((target > 0.0).mean()),
+                    "gross_mean_target": float(target.mean()),
+                    "mean_target": float(target.mean()) - cost_fraction,
+                    "hit_rate": float((target - cost_fraction > 0.0).mean()),
                     "universe_mean_target": float(universe_target.mean()),
                     "spearman": spearman,
                 }
@@ -1613,10 +1638,15 @@ class ShortlistModelService:
         if not rows:
             return self._empty_summary(model_name)
         frame = pd.DataFrame(rows)
+        net_targets = pd.to_numeric(frame["mean_target"], errors="coerce").dropna()
+        gross_targets = pd.to_numeric(frame["gross_mean_target"], errors="coerce").dropna()
+        sharpe = annualized_sharpe(net_targets)
+        nw_t = newey_west_t_stat(net_targets, lag=self._target_horizon_dates(target_column))
         return {
             "model": model_name,
             "dates": len(frame.index),
             "avg_pick_count": float(frame["pick_count"].mean()),
+            "gross_mean_target": float(gross_targets.mean()) if not gross_targets.empty else float("nan"),
             "mean_target": float(frame["mean_target"].mean()),
             "hit_rate": float(frame["hit_rate"].mean()),
             "beat_universe_rate": float((frame["mean_target"] > frame["universe_mean_target"]).mean()),
@@ -1624,7 +1654,18 @@ class ShortlistModelService:
             "positive_date_rate": float((frame["mean_target"] > 0.0).mean()),
             "ge_2pct_rate": float((frame["mean_target"] >= 0.02).mean()),
             "ge_5pct_rate": float((frame["mean_target"] >= 0.05).mean()),
+            "net_sharpe": sharpe,
+            "newey_west_t": nw_t,
+            "years_for_t_1_96": years_required_for_tstat(sharpe),
+            "round_trip_cost": cost_fraction,
         }
+
+    def _round_trip_cost_fraction(self) -> float:
+        config = load_feature_config()
+        payload = config.get("backtest_costs", {}) if isinstance(config, dict) else {}
+        slippage = float(payload.get("slippage_bps_per_side", 0.0) or 0.0)
+        commission = float(payload.get("commission_bps_per_side", 0.0) or 0.0)
+        return ((slippage + commission) * 2.0) / 10_000.0
 
     def _rolling_window_summaries(
         self,
@@ -1937,6 +1978,15 @@ class ShortlistModelService:
             if row.empty:
                 return False
             summary = row.iloc[0]
+            if not self._finite_at_least(summary.get("hit_rate"), promotion_gate.get(f"min_recent_{window}d_hit_rate", 0.50)):
+                return False
+            if not self._finite_at_least(
+                summary.get("beat_universe_rate"),
+                promotion_gate.get(f"min_recent_{window}d_beat_universe_rate", 0.50),
+            ):
+                return False
+            if not self._finite_at_least(summary.get("mean_target"), promotion_gate.get(f"min_recent_{window}d_mean_target", 0.0)):
+                return False
             if not self._finite_at_least(summary.get("spearman"), promotion_gate.get(f"min_recent_{window}d_spearman", 0.0)):
                 return False
         for folds in (1, 3):
@@ -1946,6 +1996,15 @@ class ShortlistModelService:
             if row.empty:
                 return False
             summary = row.iloc[0]
+            if not self._finite_at_least(summary.get("hit_rate"), promotion_gate.get(f"min_recent_{folds}fold_hit_rate", 0.50)):
+                return False
+            if not self._finite_at_least(
+                summary.get("beat_universe_rate"),
+                promotion_gate.get(f"min_recent_{folds}fold_beat_universe_rate", 0.50),
+            ):
+                return False
+            if not self._finite_at_least(summary.get("mean_target"), promotion_gate.get(f"min_recent_{folds}fold_mean_target", 0.0)):
+                return False
             if not self._finite_at_least(summary.get("spearman"), promotion_gate.get(f"min_recent_{folds}fold_spearman", 0.0)):
                 return False
         return True
@@ -1996,6 +2055,7 @@ class ShortlistModelService:
             "model": model_name,
             "dates": 0,
             "avg_pick_count": float("nan"),
+            "gross_mean_target": float("nan"),
             "mean_target": float("nan"),
             "hit_rate": float("nan"),
             "beat_universe_rate": float("nan"),
@@ -2003,6 +2063,10 @@ class ShortlistModelService:
             "positive_date_rate": float("nan"),
             "ge_2pct_rate": float("nan"),
             "ge_5pct_rate": float("nan"),
+            "net_sharpe": float("nan"),
+            "newey_west_t": float("nan"),
+            "years_for_t_1_96": float("nan"),
+            "round_trip_cost": float("nan"),
         }
 
     def _build_report_lines(
@@ -2106,10 +2170,15 @@ class ShortlistModelService:
             lines.append(f"### {row.model}")
             lines.append(f"- dates: {int(row.dates)}")
             lines.append(f"- avg_pick_count: {self._fmt(row.avg_pick_count)}")
-            lines.append(f"- mean_target: {self._fmt(row.mean_target)}")
+            lines.append(f"- gross_mean_target: {self._fmt(getattr(row, 'gross_mean_target', float('nan')))}")
+            lines.append(f"- net_mean_target: {self._fmt(row.mean_target)}")
+            lines.append(f"- round_trip_cost: {self._fmt(getattr(row, 'round_trip_cost', float('nan')))}")
             lines.append(f"- hit_rate: {self._fmt(row.hit_rate)}")
             lines.append(f"- beat_universe_rate: {self._fmt(row.beat_universe_rate)}")
             lines.append(f"- spearman: {self._fmt(getattr(row, 'spearman', float('nan')))}")
+            lines.append(f"- net_sharpe_ann: {self._fmt(getattr(row, 'net_sharpe', float('nan')))}")
+            lines.append(f"- newey_west_t_lag_horizon: {self._fmt(getattr(row, 'newey_west_t', float('nan')))}")
+            lines.append(f"- years_for_t_1_96: {self._fmt(getattr(row, 'years_for_t_1_96', float('nan')))}")
             lines.append(f"- positive_date_rate: {self._fmt(row.positive_date_rate)}")
             lines.append(f"- ge_2pct_rate: {self._fmt(row.ge_2pct_rate)}")
             lines.append(f"- ge_5pct_rate: {self._fmt(row.ge_5pct_rate)}")

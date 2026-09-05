@@ -11,6 +11,12 @@ from src.settings import get_settings
 from src.utils.db_manager import DatabaseManager
 from src.utils.emailer import send_html_email
 from src.utils.logging import get_logger
+from src.utils.performance_metrics import (
+    annualized_sharpe,
+    beta_to_benchmark,
+    newey_west_t_stat,
+    years_required_for_tstat,
+)
 from src.utils.regime import benchmark_etf_for_sector
 
 
@@ -110,6 +116,8 @@ class ScanPerformanceService:
         lines.extend(self._render_selection_source_coverage(enriched))
         lines.extend(self._render_latest_model_selection_audit(candidates))
         lines.extend(self._render_horizon_summary(enriched, horizons=horizons, benchmark=benchmark))
+        lines.extend(self._render_evidence_yardsticks(enriched, horizons=horizons, benchmark=benchmark))
+        lines.extend(self._render_concentration_hygiene(enriched, benchmark=benchmark))
         lines.extend(self._render_20d_timeframe_summary(enriched, benchmark=benchmark))
         lines.extend(self._render_20d_score_bands(enriched, benchmark=benchmark))
         lines.extend(self._render_market_turn_diagnostics(enriched, benchmark=benchmark))
@@ -500,6 +508,141 @@ class ScanPerformanceService:
             lines.append(f"- alpha_iqr: {self._fmt_pct(alpha_p25)} to {self._fmt_pct(alpha_p75)}")
             lines.append(f"- positive_alpha_rate: {self._fmt_pct((alphas > 0.0).mean())}")
             lines.append("")
+        return lines
+
+    def _render_evidence_yardsticks(
+        self,
+        frame: pd.DataFrame,
+        *,
+        horizons: tuple[int, ...],
+        benchmark: str,
+    ) -> list[str]:
+        lines = ["## Evidence Yardsticks", ""]
+        lines.append("- unit: date-level selected basket")
+        lines.append("- t_stat: Newey-West with lag equal to horizon")
+        lines.append("- years_for_t_1_96: (1.96 / annualized Sharpe)^2")
+        lines.append("")
+        initial_line_count = len(lines)
+        for horizon in horizons:
+            return_column = f"fwd_return_{horizon}d"
+            alpha_column = f"alpha_vs_{benchmark}_{horizon}d"
+            if not {"scan_date", return_column, alpha_column}.issubset(frame.columns):
+                continue
+            scoped = frame.dropna(subset=["scan_date", return_column, alpha_column]).copy()
+            if scoped.empty:
+                continue
+            scoped["scan_date"] = pd.to_datetime(scoped["scan_date"]).dt.normalize()
+            scoped[return_column] = pd.to_numeric(scoped[return_column], errors="coerce")
+            scoped[alpha_column] = pd.to_numeric(scoped[alpha_column], errors="coerce")
+            daily = (
+                scoped.groupby("scan_date", as_index=False)
+                .agg(
+                    basket_return=(return_column, "mean"),
+                    basket_alpha=(alpha_column, "mean"),
+                )
+                .dropna()
+            )
+            if daily.empty:
+                continue
+            sharpe = annualized_sharpe(daily["basket_alpha"])
+            t_stat = newey_west_t_stat(daily["basket_alpha"], lag=int(horizon))
+            beta = float("nan")
+            beta_removed_alpha = float("nan")
+            if f"alpha_vs_spy_{horizon}d" in scoped.columns:
+                scoped[f"spy_return_{horizon}d"] = (
+                    pd.to_numeric(scoped[return_column], errors="coerce")
+                    - pd.to_numeric(scoped[f"alpha_vs_spy_{horizon}d"], errors="coerce")
+                )
+                daily_spy = (
+                    scoped.groupby("scan_date", as_index=False)
+                    .agg(
+                        basket_return=(return_column, "mean"),
+                        spy_return=(f"spy_return_{horizon}d", "mean"),
+                    )
+                    .dropna()
+                )
+                beta = beta_to_benchmark(daily_spy["basket_return"], daily_spy["spy_return"])
+                if math.isfinite(beta):
+                    beta_removed_alpha = float((daily_spy["basket_return"] - beta * daily_spy["spy_return"]).mean())
+            lines.append(f"### {int(horizon)}d")
+            lines.append(f"- dates: {len(daily.index)}")
+            lines.append(f"- mean_alpha_vs_{benchmark}: {self._fmt_pct(daily['basket_alpha'].mean())}")
+            lines.append(f"- annualized_sharpe_alpha: {self._fmt_score(sharpe)}")
+            lines.append(f"- newey_west_t: {self._fmt_score(t_stat)}")
+            lines.append(f"- years_for_t_1_96: {self._fmt_score(years_required_for_tstat(sharpe))}")
+            lines.append(f"- beta_vs_spy: {self._fmt_score(beta)}")
+            lines.append(f"- mean_beta_removed_return: {self._fmt_pct(beta_removed_alpha)}")
+            lines.append("")
+        if len(lines) == initial_line_count:
+            lines.append("No matured yardstick observations available.")
+            lines.append("")
+        return lines
+
+    def _render_concentration_hygiene(
+        self,
+        frame: pd.DataFrame,
+        *,
+        benchmark: str,
+    ) -> list[str]:
+        lines = ["## Concentration Hygiene", ""]
+        return_column = "fwd_return_20d"
+        alpha_column = f"alpha_vs_{benchmark}_20d"
+        required = {"ticker", "scan_date", return_column, alpha_column}
+        if not required.issubset(frame.columns):
+            lines.append("- observations: 0")
+            lines.append("- note: 20d outcomes are unavailable.")
+            lines.append("")
+            return lines
+        scoped = frame.dropna(subset=["ticker", "scan_date", return_column, alpha_column]).copy()
+        if scoped.empty:
+            lines.append("- observations: 0")
+            lines.append("")
+            return lines
+        scoped["scan_date"] = pd.to_datetime(scoped["scan_date"]).dt.normalize()
+        scoped[return_column] = pd.to_numeric(scoped[return_column], errors="coerce")
+        scoped[alpha_column] = pd.to_numeric(scoped[alpha_column], errors="coerce")
+        scoped = scoped.dropna(subset=[return_column, alpha_column]).copy()
+        if scoped.empty:
+            lines.append("- observations: 0")
+            lines.append("")
+            return lines
+        total_alpha = float(scoped[alpha_column].sum())
+        by_ticker = (
+            scoped.groupby("ticker", as_index=False)
+            .agg(
+                picks=("ticker", "count"),
+                mean_return=(return_column, "mean"),
+                mean_alpha=(alpha_column, "mean"),
+                alpha_sum=(alpha_column, "sum"),
+            )
+            .sort_values(["picks", "alpha_sum", "ticker"], ascending=[False, False, True])
+            .reset_index(drop=True)
+        )
+        lines.append(f"- observations: {len(scoped.index)}")
+        lines.append(f"- tickers: {int(scoped['ticker'].nunique())}")
+        lines.append("- top_3_by_pick_count:")
+        for row in by_ticker.head(3).itertuples(index=False):
+            contribution = float(row.alpha_sum) / total_alpha if total_alpha else float("nan")
+            lines.append(
+                f"  - {row.ticker}: picks={int(row.picks)}, "
+                f"mean_return={self._fmt_pct(row.mean_return)}, "
+                f"mean_alpha={self._fmt_pct(row.mean_alpha)}, "
+                f"alpha_sum_share={self._fmt_pct(contribution)}"
+            )
+        sndk_excluded = scoped[scoped["ticker"].astype(str) != "SNDK"].copy()
+        lines.append("")
+        lines.append("### SNDK Excluded 20d")
+        lines.append(f"- raw_picks: {len(scoped.index)}")
+        lines.append(f"- adjusted_picks: {len(sndk_excluded.index)}")
+        if sndk_excluded.empty:
+            lines.append("- adjusted_mean_return: n/a")
+            lines.append("- adjusted_mean_alpha: n/a")
+        else:
+            lines.append(f"- adjusted_mean_return: {self._fmt_pct(sndk_excluded[return_column].mean())}")
+            lines.append(f"- adjusted_hit_rate: {self._fmt_pct((sndk_excluded[return_column] > 0.0).mean())}")
+            lines.append(f"- adjusted_mean_alpha_vs_{benchmark}: {self._fmt_pct(sndk_excluded[alpha_column].mean())}")
+            lines.append(f"- adjusted_positive_alpha_rate: {self._fmt_pct((sndk_excluded[alpha_column] > 0.0).mean())}")
+        lines.append("")
         return lines
 
     def _render_20d_timeframe_summary(

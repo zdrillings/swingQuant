@@ -15,6 +15,7 @@
     "profit_target_pct": null,
     "time_limit_days": 20,
     "trailing_stop_atr_mult": 2.5,
-    "profit_target_atr_mult": 4.5
+    "profit_target_atr_mult": 4.5,
+    "hard_stop_pct": 0.05
   }
 }

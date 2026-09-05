@@ -20,7 +20,7 @@ class NightlyPipelineScriptTests(unittest.TestCase):
         self.assertIn("SwingQuant scan skipped - no promotable shortlist champion", script)
         self.assertIn("clear_promotion_failures", script)
         self.assertIn("scan skipped because shortlist-model produced no promotable champion", script)
-        self.assertIn("--oos-stride-dates 60", script)
+        self.assertIn("--oos-stride-dates 1", script)
         self.assertIn("exit \"${shortlist_status}\"", script)
         self.assertLess(
             script.index("echo \"[$(date --iso-8601=seconds)] analyst-snapshot\""),

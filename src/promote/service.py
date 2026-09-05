@@ -4,6 +4,7 @@ import json
 import pandas as pd
 
 from src.evaluate.service import EvaluateService
+from src.settings import load_feature_config
 from src.utils.db_manager import DatabaseManager
 from src.utils.promotion_policy import (
     load_promotion_policy,
@@ -28,6 +29,9 @@ class PromoteService:
         params = json.loads(row["params_json"])
         indicators = {key: float(value) for key, value in params["indicators"].items()}
         exit_rules_payload = params.get("exit_rules", {})
+        hard_stop_pct = exit_rules_payload.get("hard_stop_pct")
+        if hard_stop_pct is None:
+            hard_stop_pct = self._configured_hard_stop_floor()
         sector = str(params.get("sector", "ALL"))
         resolved_slot = slot or self._default_slot_for_sector(sector)
         payload = build_production_strategy_payload(
@@ -61,6 +65,7 @@ class PromoteService:
                     if exit_rules_payload.get("exit_before_earnings_days") is not None
                     else None
                 ),
+                hard_stop_pct=float(hard_stop_pct) if hard_stop_pct is not None else None,
             ),
         )
         strategies_path = self.db_manager.paths.production_strategies_path or (
@@ -167,3 +172,22 @@ class PromoteService:
             return "default"
         normalized = sector.lower().replace("&", "and")
         return "_".join(normalized.split())
+
+    def _configured_hard_stop_floor(self) -> float | None:
+        try:
+            config = load_feature_config()
+        except Exception:
+            return None
+        if not isinstance(config, dict):
+            return None
+        candidates: list[float] = []
+        base = config.get("sweep_grid", {}).get("hard_stop_pct", {})
+        if isinstance(base, dict) and base.get("min") is not None:
+            candidates.append(float(base["min"]))
+        for payload in config.get("sweep_modes", {}).values():
+            if not isinstance(payload, dict):
+                continue
+            hard_stop = payload.get("grid_overrides", {}).get("hard_stop_pct", {})
+            if isinstance(hard_stop, dict) and hard_stop.get("min") is not None:
+                candidates.append(float(hard_stop["min"]))
+        return min(candidates) if candidates else None

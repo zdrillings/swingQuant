@@ -134,6 +134,10 @@ class EvaluateServiceTests(unittest.TestCase):
                 production_strategy_path=root / "production_strategy.json",
             )
             db = DatabaseManager(paths)
+            paths.config_path.write_text(
+                "sweep_grid:\n  hard_stop_pct:\n    min: 0.05\n    max: 0.10\n    step: 0.025\n",
+                encoding="utf-8",
+            )
             with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
                 db.initialize()
             db.insert_backtest_results(
@@ -877,7 +881,9 @@ class PromoteAndTradeTests(unittest.TestCase):
             self.assertEqual(payload["exit_rules"]["time_limit_days"], 20)
             self.assertEqual(payload["exit_rules"]["trailing_stop_atr_mult"], 2.5)
             self.assertEqual(payload["exit_rules"]["profit_target_atr_mult"], 3.0)
+            self.assertEqual(payload["exit_rules"]["hard_stop_pct"], 0.05)
             self.assertEqual(strategies_payload["strategies"]["default"]["strategy_id"], 402)
+            self.assertEqual(strategies_payload["strategies"]["default"]["exit_rules"]["hard_stop_pct"], 0.05)
 
     def test_promote_rejects_result_that_fails_promotion_policy(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

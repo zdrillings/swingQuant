@@ -92,7 +92,7 @@ set +e
   --horizon 20 \
   --min-train-dates 252 \
   --test-window-dates 20 \
-  --oos-stride-dates 60 \
+  --oos-stride-dates 1 \
   --recent-dates 60 \
   --eligible-universe-mode passed_or_trend \
   --model-scope sector_specific \

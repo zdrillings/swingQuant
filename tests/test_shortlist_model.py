@@ -198,6 +198,12 @@ class ShortlistModelServiceTests(unittest.TestCase):
 
             self.assertTrue((paths.reports_dir / "shortlist_model_oos_predictions.csv").exists())
             self.assertTrue((paths.reports_dir / "shortlist_model_live_predictions.csv").exists())
+            oos_predictions = pd.read_csv(paths.reports_dir / "shortlist_model_oos_predictions.csv")
+            self.assertIn("model_rank", oos_predictions.columns)
+            self.assertIn("signal_proxy_rank", oos_predictions.columns)
+            signal_rows = oos_predictions[oos_predictions["model_name"] == "signal_proxy"]
+            self.assertTrue(signal_rows["model_rank"].notna().all())
+            self.assertTrue(signal_rows["signal_proxy_rank"].notna().all())
             self.assertEqual(len(fake_db.run_rows), 1)
             self.assertGreater(len(fake_db.prediction_rows), 0)
 
@@ -813,7 +819,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
             self.assertIn("- selected_model: n/a", report_text)
             self.assertIn("- live_output_top_n: 1", report_text)
             self.assertIn("- promotion_top_n: 2", report_text)
-            self.assertIn("- oos_evaluation_stride_dates: 20", report_text)
+            self.assertIn("- oos_evaluation_stride_dates: 1", report_text)
             self.assertIn("- training_label_policy: horizon-strided non-overlapping dates after label embargo", report_text)
             self.assertIn("- days_since_last_champion: n/a", report_text)
             self.assertTrue((paths.reports_dir / "shortlist_model_oos_predictions.csv").exists())
@@ -931,10 +937,14 @@ class ShortlistModelServiceTests(unittest.TestCase):
         )
         acceptance_summaries = pd.DataFrame(
             [
-                {"model": "xgboost_model_20d", "hit_rate": 0.45, "beat_universe_rate": 0.40, "mean_target": -0.01},
-                {"model": "xgboost_model_60d", "hit_rate": 0.55, "beat_universe_rate": 0.55, "mean_target": 0.04},
-                {"model": "lasso_model_20d", "hit_rate": 0.40, "beat_universe_rate": 0.35, "mean_target": -0.02},
-                {"model": "lasso_model_60d", "hit_rate": 0.52, "beat_universe_rate": 0.52, "mean_target": 0.01},
+                {"model": "xgboost_model_20d", "hit_rate": 0.45, "beat_universe_rate": 0.40, "mean_target": -0.01, "spearman": 0.20},
+                {"model": "xgboost_model_60d", "hit_rate": 0.55, "beat_universe_rate": 0.55, "mean_target": 0.04, "spearman": 0.20},
+                {"model": "xgboost_model_last_1fold", "hit_rate": 0.85, "beat_universe_rate": 0.85, "mean_target": 0.04, "spearman": 0.20},
+                {"model": "xgboost_model_last_3fold", "hit_rate": 0.85, "beat_universe_rate": 0.85, "mean_target": 0.04, "spearman": 0.20},
+                {"model": "lasso_model_20d", "hit_rate": 0.40, "beat_universe_rate": 0.35, "mean_target": -0.02, "spearman": 0.20},
+                {"model": "lasso_model_60d", "hit_rate": 0.52, "beat_universe_rate": 0.52, "mean_target": 0.01, "spearman": 0.20},
+                {"model": "lasso_model_last_1fold", "hit_rate": 0.85, "beat_universe_rate": 0.85, "mean_target": 0.04, "spearman": 0.20},
+                {"model": "lasso_model_last_3fold", "hit_rate": 0.85, "beat_universe_rate": 0.85, "mean_target": 0.04, "spearman": 0.20},
             ]
         )
         promotion_gate = {
@@ -945,6 +955,12 @@ class ShortlistModelServiceTests(unittest.TestCase):
             "min_recent_60d_hit_rate": 0.50,
             "min_recent_60d_beat_universe_rate": 0.50,
             "min_recent_60d_mean_target": 0.0,
+            "min_recent_1fold_hit_rate": 0.50,
+            "min_recent_1fold_beat_universe_rate": 0.50,
+            "min_recent_1fold_mean_target": 0.0,
+            "min_recent_3fold_hit_rate": 0.50,
+            "min_recent_3fold_beat_universe_rate": 0.50,
+            "min_recent_3fold_mean_target": 0.0,
             "min_recent_20d_spearman": 0.0,
             "min_recent_60d_spearman": 0.0,
             "min_recent_1fold_spearman": 0.0,

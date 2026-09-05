@@ -281,10 +281,22 @@ def _passes_runtime_promotion_gate(
         return True
     for window in (20, 60):
         metrics = recent_metrics.get(window, {})
+        if not _finite_at_least(metrics.get("hit_rate"), gate[f"min_recent_{window}d_hit_rate"]):
+            return False
+        if not _finite_at_least(metrics.get("beat_rate"), gate[f"min_recent_{window}d_beat_universe_rate"]):
+            return False
+        if not _finite_at_least(metrics.get("mean_target"), gate[f"min_recent_{window}d_mean_target"]):
+            return False
         if not _finite_at_least(metrics.get("spearman"), gate[f"min_recent_{window}d_spearman"]):
             return False
     for folds in (1, 3):
         metrics = recent_metrics.get(folds, {})
+        if not _finite_at_least(metrics.get("hit_rate"), gate[f"min_recent_{folds}fold_hit_rate"]):
+            return False
+        if not _finite_at_least(metrics.get("beat_rate"), gate[f"min_recent_{folds}fold_beat_universe_rate"]):
+            return False
+        if not _finite_at_least(metrics.get("mean_target"), gate[f"min_recent_{folds}fold_mean_target"]):
+            return False
         if not _finite_at_least(metrics.get("spearman"), gate[f"min_recent_{folds}fold_spearman"]):
             return False
     return True
