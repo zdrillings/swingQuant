@@ -1640,8 +1640,9 @@ class ShortlistModelService:
         frame = pd.DataFrame(rows)
         net_targets = pd.to_numeric(frame["mean_target"], errors="coerce").dropna()
         gross_targets = pd.to_numeric(frame["gross_mean_target"], errors="coerce").dropna()
-        sharpe = annualized_sharpe(net_targets)
-        nw_t = newey_west_t_stat(net_targets, lag=self._target_horizon_dates(target_column))
+        horizon = self._target_horizon_dates(target_column)
+        sharpe = annualized_sharpe(net_targets, periods_per_year=max(252.0 / float(horizon), 1.0))
+        nw_t = newey_west_t_stat(net_targets, lag=horizon)
         return {
             "model": model_name,
             "dates": len(frame.index),

@@ -544,7 +544,10 @@ class ScanPerformanceService:
             )
             if daily.empty:
                 continue
-            sharpe = annualized_sharpe(daily["basket_alpha"])
+            sharpe = annualized_sharpe(
+                daily["basket_alpha"],
+                periods_per_year=max(252.0 / float(horizon), 1.0),
+            )
             t_stat = newey_west_t_stat(daily["basket_alpha"], lag=int(horizon))
             beta = float("nan")
             beta_removed_alpha = float("nan")

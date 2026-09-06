@@ -7,15 +7,73 @@ from unittest.mock import patch
 
 import pandas as pd
 
+from scripts.check_shortlist_oos_reproducibility import _evaluate, _rolling_window_summaries
 from src.cli import build_parser
 from src.research.shortlist_bakeoff_service import MODEL_FEATURE_COLUMNS
 from src.research.shortlist_model_service import ShortlistModelService
 from src.research.shortlist_universe import filter_eligible_universe
 from src.settings import AppPaths
 from src.utils.shortlist_runtime import load_live_shortlist_model_context
+from src.utils.performance_metrics import annualized_sharpe
 
 
 class ShortlistModelServiceTests(unittest.TestCase):
+    def test_oos_reproducibility_helpers_apply_costs_and_acceptance_windows(self) -> None:
+        rows = []
+        for date_index, snapshot_date in enumerate(pd.bdate_range("2026-01-02", periods=65)):
+            rows.extend(
+                [
+                    {
+                        "snapshot_date": snapshot_date,
+                        "ticker": "AAA",
+                        "model_name": "ridge_model",
+                        "predicted_alpha": 0.30,
+                        "alpha_vs_sector_20d": 0.02 + date_index * 0.0001,
+                    },
+                    {
+                        "snapshot_date": snapshot_date,
+                        "ticker": "BBB",
+                        "model_name": "ridge_model",
+                        "predicted_alpha": 0.20,
+                        "alpha_vs_sector_20d": 0.01,
+                    },
+                    {
+                        "snapshot_date": snapshot_date,
+                        "ticker": "CCC",
+                        "model_name": "ridge_model",
+                        "predicted_alpha": 0.10,
+                        "alpha_vs_sector_20d": -0.02,
+                    },
+                ]
+            )
+        frame = pd.DataFrame(rows)
+
+        summary = _evaluate(frame, target_column="alpha_vs_sector_20d", cost_fraction=0.001)
+        windows = dict(
+            _rolling_window_summaries(
+                frame,
+                model_name="ridge_model",
+                target_column="alpha_vs_sector_20d",
+                cost_fraction=0.001,
+            )
+        )
+
+        self.assertAlmostEqual(summary["mean_target"], summary["gross_mean_target"] - 0.001, places=9)
+        self.assertIn("ridge_model_20d", windows)
+        self.assertIn("ridge_model_40d", windows)
+        self.assertIn("ridge_model_60d", windows)
+        self.assertIn("ridge_model_last_1fold", windows)
+        self.assertIn("ridge_model_last_3fold", windows)
+        self.assertEqual(windows["ridge_model_20d"]["dates"], 20)
+
+    def test_twenty_day_basket_sharpe_uses_horizon_frequency(self) -> None:
+        values = pd.Series([0.02, 0.01, -0.01, 0.03, 0.00])
+
+        horizon_sharpe = annualized_sharpe(values, periods_per_year=252 / 20)
+        daily_sharpe = annualized_sharpe(values, periods_per_year=252)
+
+        self.assertLess(horizon_sharpe, daily_sharpe / 3.0)
+
     def test_filter_eligible_universe_passed_or_trend_broadens_research_set(self) -> None:
         frame = pd.DataFrame(
             [
