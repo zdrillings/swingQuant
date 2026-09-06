@@ -259,9 +259,13 @@ class ShortlistModelServiceTests(unittest.TestCase):
             oos_predictions = pd.read_csv(paths.reports_dir / "shortlist_model_oos_predictions.csv")
             self.assertIn("model_rank", oos_predictions.columns)
             self.assertIn("signal_proxy_rank", oos_predictions.columns)
+            self.assertIn("ensemble_model_rank", oos_predictions.columns)
             signal_rows = oos_predictions[oos_predictions["model_name"] == "signal_proxy"]
+            ensemble_rows = oos_predictions[oos_predictions["model_name"] == "ensemble_model"]
             self.assertTrue(signal_rows["model_rank"].notna().all())
             self.assertTrue(signal_rows["signal_proxy_rank"].notna().all())
+            self.assertTrue(ensemble_rows["model_rank"].notna().all())
+            self.assertTrue(ensemble_rows["ensemble_model_rank"].notna().all())
             self.assertEqual(len(fake_db.run_rows), 1)
             self.assertGreater(len(fake_db.prediction_rows), 0)
 

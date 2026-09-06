@@ -5,6 +5,7 @@ cd /home/zdrillings/code/SwingQuant
 
 run_date="$(date +%F)"
 universe_refresh_start="$(date -d "${run_date} - 120 days" +%F)"
+pipeline_lock_file="data/nightly_pipeline.lock"
 
 send_failure_email() {
   local exit_code="$1"
@@ -38,6 +39,19 @@ send_html_email(
 )
 PY
 }
+
+mkdir -p data
+exec 9>"${pipeline_lock_file}"
+if ! flock -n 9; then
+  echo "Another nightly pipeline run is already active; refusing to overlap." >&2
+  send_failure_email \
+    3 \
+    "nightly pipeline lock" \
+    "SwingQuant Nightly Pipeline Already Running" \
+    "Nightly Pipeline Already Running" \
+    "Another nightly pipeline run is active; refusing to overlap." || true
+  exit 3
+fi
 
 promotion_failures_file="data/promotion_failures.txt"
 

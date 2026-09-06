@@ -15,6 +15,8 @@ class NightlyPipelineScriptTests(unittest.TestCase):
         self.assertIn("scan will be skipped", script)
         self.assertIn("shortlist_promotion_failed=1", script)
         self.assertIn("promotion_failures_file=\"data/promotion_failures.txt\"", script)
+        self.assertIn("pipeline_lock_file=\"data/nightly_pipeline.lock\"", script)
+        self.assertIn("flock -n 9", script)
         self.assertIn("record_promotion_failure", script)
         self.assertIn("consecutive_promotion_failures", script)
         self.assertIn("SwingQuant scan skipped - no promotable shortlist champion", script)
