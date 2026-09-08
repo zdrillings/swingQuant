@@ -54,13 +54,26 @@ if ! flock -n 9; then
 fi
 
 promotion_failures_file="data/promotion_failures.txt"
+last_champion_days_file="data/days_since_last_champion.txt"
 
 record_promotion_failure() {
   mkdir -p data
   if [[ ! -f "${promotion_failures_file}" ]] || ! grep -Fxq "${run_date}" "${promotion_failures_file}"; then
     printf '%s\n' "${run_date}" >> "${promotion_failures_file}"
   fi
-  tail -n 3 "${promotion_failures_file}" | wc -l
+  recorded_failures="$(tail -n 30 "${promotion_failures_file}" | wc -l)"
+  days_since_last_champion=0
+  if [[ -f "${last_champion_days_file}" ]]; then
+    days_since_last_champion="$(tr -cd '0-9' < "${last_champion_days_file}")"
+  fi
+  if [[ -z "${days_since_last_champion}" ]]; then
+    days_since_last_champion=0
+  fi
+  if [[ "${days_since_last_champion}" -gt "${recorded_failures}" ]]; then
+    echo "${days_since_last_champion}"
+  else
+    echo "${recorded_failures}"
+  fi
 }
 
 clear_promotion_failures() {
@@ -106,7 +119,7 @@ set +e
   --horizon 20 \
   --min-train-dates 252 \
   --test-window-dates 20 \
-  --oos-stride-dates 1 \
+  --oos-stride-dates 20 \
   --recent-dates 60 \
   --eligible-universe-mode passed_or_trend \
   --model-scope sector_specific \
@@ -118,19 +131,31 @@ if [[ "${shortlist_status}" -ne 0 ]]; then
   if grep -Fq "No shortlist model candidate passed the promotion gate" "${shortlist_log}"; then
     shortlist_promotion_failed=1
     consecutive_promotion_failures="$(record_promotion_failure)"
+    days_since_last_champion="$(grep -E '^- days_since_last_champion:' "${shortlist_log}" | tail -n 1 | awk '{print $3}' || true)"
+    if [[ "${days_since_last_champion}" =~ ^[0-9]+$ ]]; then
+      printf '%s\n' "${days_since_last_champion}" > "${last_champion_days_file}"
+      if [[ "${days_since_last_champion}" -gt "${consecutive_promotion_failures}" ]]; then
+        consecutive_promotion_failures="${days_since_last_champion}"
+      fi
+    fi
     echo "[$(date --iso-8601=seconds)] shortlist-model produced no promotable champion; scan will be skipped"
-    send_failure_email \
+    if send_failure_email \
       0 \
       "scan skipped because shortlist promotion gate failed ${consecutive_promotion_failures} consecutive nights" \
       "SwingQuant scan skipped - no promotable shortlist champion" \
       "Scan Skipped" \
-      "The shortlist model promotion gate failed tonight. Consecutive recorded promotion failures: ${consecutive_promotion_failures}. Scan will be skipped until a champion is promoted." || true
+      "The shortlist model promotion gate failed tonight. Consecutive recorded promotion failures: ${consecutive_promotion_failures}. Scan will be skipped until a champion is promoted."; then
+      echo "[$(date --iso-8601=seconds)] scan-skip email sent"
+    else
+      echo "[$(date --iso-8601=seconds)] scan-skip email failed" >&2
+    fi
   else
     rm -f "${shortlist_log}"
     exit "${shortlist_status}"
   fi
 else
   clear_promotion_failures
+  rm -f "${last_champion_days_file}"
 fi
 rm -f "${shortlist_log}"
 

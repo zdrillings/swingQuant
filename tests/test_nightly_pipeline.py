@@ -19,10 +19,12 @@ class NightlyPipelineScriptTests(unittest.TestCase):
         self.assertIn("flock -n 9", script)
         self.assertIn("record_promotion_failure", script)
         self.assertIn("consecutive_promotion_failures", script)
+        self.assertIn("days_since_last_champion", script)
+        self.assertIn("scan-skip email sent", script)
         self.assertIn("SwingQuant scan skipped - no promotable shortlist champion", script)
         self.assertIn("clear_promotion_failures", script)
         self.assertIn("scan skipped because shortlist-model produced no promotable champion", script)
-        self.assertIn("--oos-stride-dates 1", script)
+        self.assertIn("--oos-stride-dates 20", script)
         self.assertIn("exit \"${shortlist_status}\"", script)
         self.assertLess(
             script.index("echo \"[$(date --iso-8601=seconds)] analyst-snapshot\""),

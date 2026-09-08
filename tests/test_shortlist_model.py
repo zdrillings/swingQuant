@@ -307,6 +307,10 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertEqual(args.model_scope, "sector_specific")
         self.assertEqual(args.xgboost_config, "faster_shallow")
         self.assertEqual(args.feature_profile, "no_gap_risk")
+        self.assertFalse(args.dry_run)
+
+        dry_run_args = parser.parse_args(["shortlist-model", "--dry-run"])
+        self.assertTrue(dry_run_args.dry_run)
 
     def test_runtime_loader_returns_lasso_model_context(self) -> None:
         captured: dict[str, object] = {}
@@ -800,6 +804,86 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertNotIn("spy_roc_20__rank_all", survivors)
         self.assertNotIn("qqq_roc_20__rank_sector", survivors)
 
+    def test_feature_ic_screen_drops_age_features_and_duplicate_survivors(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        rows = []
+        for snapshot_date in pd.bdate_range("2026-01-02", periods=14):
+            for ticker_index, ticker in enumerate(("AAA", "BBB", "CCC")):
+                signal_value = float(ticker_index)
+                rows.append(
+                    {
+                        "snapshot_date": snapshot_date,
+                        "ticker": ticker,
+                        "sector": "Energy",
+                        "rsi_2": signal_value,
+                        "ret_1d": signal_value,
+                        "analyst_snapshot_age_days": signal_value,
+                        "analyst_revision_snapshot_age_days": signal_value,
+                        "alpha_vs_sector_20d": signal_value,
+                    }
+                )
+        survivors = service._feature_ic_survivors_from_frame(
+            pd.DataFrame(rows),
+            target_column="alpha_vs_sector_20d",
+            min_feature_ic=0.50,
+        )
+
+        self.assertIn("rsi_2", survivors)
+        self.assertNotIn("ret_1d", survivors)
+        self.assertNotIn("analyst_snapshot_age_days", survivors)
+        self.assertNotIn("analyst_snapshot_age_days__rank_all", survivors)
+        self.assertNotIn("analyst_revision_snapshot_age_days", survivors)
+
+    def test_feature_ic_report_marks_duplicate_survivors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            paths = AppPaths(
+                root_dir=root,
+                data_dir=root / "data",
+                duckdb_path=root / "data" / "market_data.duckdb",
+                sqlite_path=root / "data" / "ledger.sqlite",
+                reports_dir=root / "reports",
+                logs_dir=root / "logs",
+                config_path=root / "config.yaml",
+                env_path=root / ".env",
+                production_strategy_path=root / "production_strategy.json",
+                production_strategies_path=root / "production_strategies.json",
+            )
+            paths.reports_dir.mkdir(parents=True, exist_ok=True)
+            service = ShortlistModelService(db_manager=type("FakeDB", (), {"paths": paths})())
+            rows = []
+            for snapshot_date in pd.bdate_range("2026-01-02", periods=20):
+                for ticker_index, ticker in enumerate(("AAA", "BBB", "CCC")):
+                    signal_value = float(ticker_index)
+                    rows.append(
+                        {
+                            "snapshot_date": snapshot_date,
+                            "ticker": ticker,
+                            "sector": "Energy",
+                            "rsi_2": signal_value,
+                            "ret_1d": signal_value,
+                            "analyst_snapshot_age_days": signal_value,
+                            "alpha_vs_sector_20d": signal_value,
+                        }
+                    )
+
+            result = service._feature_ic_report(
+                pd.DataFrame(rows),
+                target_column="alpha_vs_sector_20d",
+                min_train_dates=5,
+                test_window_dates=2,
+                evaluation_stride_dates=5,
+                label_horizon_dates=5,
+                min_feature_ic=0.50,
+                feature_columns_override=["rsi_2", "ret_1d", "analyst_snapshot_age_days"],
+            )
+
+            report_text = (paths.reports_dir / "feature_ic_report.md").read_text(encoding="utf-8")
+            self.assertEqual(result["surviving_features"], ["rsi_2"])
+            self.assertIn("| ret_1d |", report_text)
+            self.assertIn("| ret_1d | 1.000000 | 1.000000 | 6 | rsi_2 | false |", report_text)
+            self.assertNotIn("analyst_snapshot_age_days", report_text)
+
     def test_shortlist_model_writes_failure_report_when_no_candidate_passes_gate(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -881,7 +965,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
             self.assertIn("- selected_model: n/a", report_text)
             self.assertIn("- live_output_top_n: 1", report_text)
             self.assertIn("- promotion_top_n: 2", report_text)
-            self.assertIn("- oos_evaluation_stride_dates: 1", report_text)
+            self.assertIn("- oos_evaluation_stride_dates: 20", report_text)
             self.assertIn("- training_label_policy: horizon-strided non-overlapping dates after label embargo", report_text)
             self.assertIn("- days_since_last_champion: n/a", report_text)
             self.assertTrue((paths.reports_dir / "shortlist_model_oos_predictions.csv").exists())
@@ -889,6 +973,92 @@ class ShortlistModelServiceTests(unittest.TestCase):
             self.assertEqual(len(fake_db.decommission_calls), 1)
             self.assertEqual(fake_db.decommission_calls[0]["horizon_days"], 20)
             self.assertEqual(fake_db.decommission_calls[0]["eligible_universe_mode"], "passed_only")
+
+    def test_shortlist_model_dry_run_does_not_persist_or_decommission(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            paths = AppPaths(
+                root_dir=root,
+                data_dir=root / "data",
+                duckdb_path=root / "data" / "market_data.duckdb",
+                sqlite_path=root / "data" / "ledger.sqlite",
+                reports_dir=root / "reports",
+                logs_dir=root / "logs",
+                config_path=root / "config.yaml",
+                env_path=root / ".env",
+                production_strategy_path=root / "production_strategy.json",
+                production_strategies_path=root / "production_strategies.json",
+            )
+            paths.reports_dir.mkdir(parents=True, exist_ok=True)
+            dates = pd.bdate_range("2026-01-02", periods=30)
+            rows = []
+            for date_index, snapshot_date in enumerate(dates):
+                for ticker_index, ticker in enumerate(("AAA", "BBB")):
+                    row = {
+                        "snapshot_date": snapshot_date.strftime("%Y-%m-%d"),
+                        "ticker": ticker,
+                        "sector": "Energy",
+                        "passed_any_strategy": 1,
+                        "passed_slots_json": '["energy"]',
+                        "md_volume_30d": 50_000_000.0,
+                        "adj_close": 100.0,
+                        "alpha_vs_sector_20d": 0.01 * (ticker_index + 1),
+                    }
+                    for feature_index, column in enumerate(MODEL_FEATURE_COLUMNS):
+                        row[column] = float(feature_index + ticker_index + date_index)
+                    rows.append(row)
+
+            class FakeDB:
+                def __init__(self, paths, snapshot_frame):
+                    self.paths = paths
+                    self._snapshot_frame = snapshot_frame
+                    self.decommission_calls = []
+                    self.run_rows = []
+                    self.prediction_rows = []
+
+                def initialize(self): return None
+                def load_universe_daily_snapshots(self, snapshot_date=None):
+                    return self._snapshot_frame.copy()
+                def decommission_shortlist_model_runs(self, **kwargs):
+                    self.decommission_calls.append(kwargs)
+                    return 1
+                def insert_shortlist_model_run(self, *, row):
+                    self.run_rows.append(row)
+                    return 1
+                def replace_shortlist_model_predictions(self, **kwargs):
+                    self.prediction_rows.extend(kwargs.get("rows", []))
+
+            gate = {
+                "scan_policy": {
+                    "shortlist_model": {
+                        "min_feature_ic": 0.0,
+                        "promotion_gate": {
+                            "enabled": True,
+                            "min_recent_20d_hit_rate": 1.01,
+                            "min_recent_20d_beat_universe_rate": 1.01,
+                            "min_recent_20d_mean_target": 1.01,
+                            "min_recent_60d_hit_rate": 1.01,
+                            "min_recent_60d_beat_universe_rate": 1.01,
+                            "min_recent_60d_mean_target": 1.01,
+                            "min_recent_20d_spearman": 1.01,
+                            "min_recent_60d_spearman": 1.01,
+                            "min_recent_1fold_spearman": 1.01,
+                            "min_recent_3fold_spearman": 1.01,
+                        }
+                    }
+                }
+            }
+            fake_db = FakeDB(paths, pd.DataFrame(rows))
+            service = ShortlistModelService(fake_db)
+
+            with patch("src.research.shortlist_model_service.load_feature_config", return_value=gate), \
+                 patch.object(service, "_score_xgboost_model", return_value=None), \
+                 self.assertRaisesRegex(ValueError, "No shortlist model candidate passed"):
+                service.run(top_n=1, min_train_dates=4, test_window_dates=2, persist=False)
+
+            self.assertEqual(fake_db.decommission_calls, [])
+            self.assertEqual(fake_db.run_rows, [])
+            self.assertEqual(fake_db.prediction_rows, [])
 
     def test_runtime_loader_does_not_refresh_stale_model_without_explicit_permission(self) -> None:
         class FakeDB:

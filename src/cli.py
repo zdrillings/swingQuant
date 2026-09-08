@@ -167,6 +167,7 @@ def build_parser() -> argparse.ArgumentParser:
     shortlist_model_parser.add_argument("--target-type", choices=["regression", "classification"], default="regression")
     shortlist_model_parser.add_argument("--xgboost-config", choices=XGBOOST_CONFIG_CHOICES, default="baseline")
     shortlist_model_parser.add_argument("--feature-profile", choices=VALID_SHORTLIST_FEATURE_PROFILES, default="full")
+    shortlist_model_parser.add_argument("--dry-run", action="store_true", help="Write reports without mutating shortlist model run/prediction tables.")
     shortlist_scoreboard_parser = subparsers.add_parser("shortlist-scoreboard", help="Render model scorecards and explicit promotion decisions for shortlist candidates.")
     shortlist_scoreboard_parser.add_argument("--top", type=int, default=10)
     shortlist_scoreboard_parser.add_argument("--horizon", type=int, default=20)
@@ -543,6 +544,7 @@ def main(argv: list[str] | None = None) -> int:
                 feature_profile=args.feature_profile,
                 target_type=args.target_type,
                 oos_stride_dates=args.oos_stride_dates,
+                persist=not args.dry_run,
             )
             print(
                 f"Shortlist model written to {report.output_path} "

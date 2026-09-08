@@ -27,6 +27,10 @@ from src.utils.logging import get_logger
 from src.utils.performance_metrics import annualized_sharpe, newey_west_t_stat, years_required_for_tstat
 
 PROMOTION_BASKET_SIZE = 2
+SHORTLIST_MODEL_EXCLUDED_BASE_FEATURES = {
+    "analyst_snapshot_age_days",
+    "analyst_revision_snapshot_age_days",
+}
 
 
 @dataclass(frozen=True)
@@ -78,6 +82,7 @@ class ShortlistModelService:
         feature_profile: str = "full",
         target_type: str = "regression",
         oos_stride_dates: int | None = None,
+        persist: bool = True,
     ) -> ShortlistModelReport:
         self.db_manager.initialize()
         if target_type == "classification":
@@ -121,9 +126,12 @@ class ShortlistModelService:
 
         xgboost_config = self._normalize_xgboost_config(xgboost_config)
         xgboost_params = self._xgboost_params_for_config(xgboost_config)
-        resolved_oos_stride_dates = max(int(oos_stride_dates) if oos_stride_dates is not None else 1, 1)
+        resolved_oos_stride_dates = max(
+            int(oos_stride_dates) if oos_stride_dates is not None else int(horizon_days),
+            1,
+        )
         base_feature_columns = model_feature_columns_for_profile(feature_profile)
-        expanded_feature_columns = expand_model_feature_columns(base_feature_columns)
+        expanded_feature_columns = self._filter_model_feature_columns(expand_model_feature_columns(base_feature_columns))
         candidate_models = (
             "signal_proxy",
             "ridge_model",
@@ -247,15 +255,16 @@ class ShortlistModelService:
                 promotion_gate=promotion_gate,
             )
         except ValueError as exc:
-            self._decommission_active_champions(
-                generated_at=generated_at,
-                horizon_days=int(horizon_days),
-                eligible_universe_mode=eligible_universe_mode,
-                model_scope=model_scope,
-                xgboost_config=xgboost_config,
-                feature_profile=feature_profile,
-                reason=str(exc),
-            )
+            if persist:
+                self._decommission_active_champions(
+                    generated_at=generated_at,
+                    horizon_days=int(horizon_days),
+                    eligible_universe_mode=eligible_universe_mode,
+                    model_scope=model_scope,
+                    xgboost_config=xgboost_config,
+                    feature_profile=feature_profile,
+                    reason=str(exc),
+                )
             combined_predictions.to_csv(oos_path, index=False)
             lines = self._build_report_lines(
                 target_column=target_column,
@@ -392,79 +401,80 @@ class ShortlistModelService:
         lines.extend(self._render_live_candidates(champion_model=champion_model, frame=live_predictions))
         report_path.write_text("\n".join(lines), encoding="utf-8")
 
-        self.db_manager.insert_shortlist_model_run(
-            row={
-                "generated_at": generated_at,
-                "horizon_days": int(horizon_days),
-                "eligible_universe_mode": eligible_universe_mode,
-                "model_scope": model_scope,
-                "xgboost_config": xgboost_config,
-                "feature_profile": feature_profile,
-                "top_n": int(top_n),
-                "min_train_dates": int(min_train_dates),
-                "test_window_dates": int(test_window_dates),
-                "recent_dates": int(recent_dates),
-                "champion_model": champion_model,
-                "target_column": target_column,
-                "eligible_rows": len(matured.index),
-                "eligible_dates": int(matured["snapshot_date"].nunique()),
-                "oos_dates": int(combined_predictions["snapshot_date"].nunique()),
-                "live_snapshot_date": str(live_predictions_all["snapshot_date"].max().date()) if not live_predictions_all.empty else None,
-                "report_path": str(report_path),
-            }
-        )
-        persistence_rows = [
-            {
-                "model_name": row["model_name"],
-                "dataset_split": "oos",
-                "snapshot_date": str(pd.Timestamp(row["snapshot_date"]).date()),
-                "ticker": row["ticker"],
-                "sector": row.get("sector"),
-                "eligible_universe_mode": eligible_universe_mode,
-                "model_scope": model_scope,
-                "md_volume_30d": row.get("md_volume_30d"),
-                "predicted_alpha": row.get("predicted_alpha"),
-                "actual_alpha_vs_sector": row.get(evaluation_target_column),
-                "details": {
-                    "model_top_reasons": self._ensure_reason_list(row.get("model_top_reasons")),
-                    "model_reason_summary": row.get("model_reason_summary"),
-                    "calibrated_p_beat_sector": row.get("calibrated_p_beat_sector"),
-                    "model_rank": row.get("model_rank"),
-                },
-            }
-            for row in combined_predictions.to_dict(orient="records")
-        ]
-        for model_name, live_frame in live_base_predictions.items():
-            persistence_rows.extend(
-                [
-                    {
-                        "model_name": model_name,
-                        "dataset_split": "live",
-                        "snapshot_date": str(pd.Timestamp(row["snapshot_date"]).date()),
-                        "ticker": row["ticker"],
-                        "sector": row.get("sector"),
-                        "eligible_universe_mode": eligible_universe_mode,
-                        "model_scope": model_scope,
-                        "md_volume_30d": row.get("md_volume_30d"),
-                        "predicted_alpha": row.get("predicted_alpha"),
-                        "actual_alpha_vs_sector": None,
-                        "details": {
-                            "model_top_reasons": self._ensure_reason_list(row.get("model_top_reasons")),
-                            "model_reason_summary": row.get("model_reason_summary"),
-                            "calibrated_p_beat_sector": row.get("calibrated_p_beat_sector"),
-                            "model_rank": row.get("model_rank"),
-                        },
-                    }
-                    for row in live_frame.to_dict(orient="records")
-                ]
+        if persist:
+            self.db_manager.insert_shortlist_model_run(
+                row={
+                    "generated_at": generated_at,
+                    "horizon_days": int(horizon_days),
+                    "eligible_universe_mode": eligible_universe_mode,
+                    "model_scope": model_scope,
+                    "xgboost_config": xgboost_config,
+                    "feature_profile": feature_profile,
+                    "top_n": int(top_n),
+                    "min_train_dates": int(min_train_dates),
+                    "test_window_dates": int(test_window_dates),
+                    "recent_dates": int(recent_dates),
+                    "champion_model": champion_model,
+                    "target_column": target_column,
+                    "eligible_rows": len(matured.index),
+                    "eligible_dates": int(matured["snapshot_date"].nunique()),
+                    "oos_dates": int(combined_predictions["snapshot_date"].nunique()),
+                    "live_snapshot_date": str(live_predictions_all["snapshot_date"].max().date()) if not live_predictions_all.empty else None,
+                    "report_path": str(report_path),
+                }
             )
-        self.db_manager.replace_shortlist_model_predictions(
-            generated_at=generated_at,
-            horizon_days=int(horizon_days),
-            eligible_universe_mode=eligible_universe_mode,
-            model_scope=model_scope,
-            rows=persistence_rows,
-        )
+            persistence_rows = [
+                {
+                    "model_name": row["model_name"],
+                    "dataset_split": "oos",
+                    "snapshot_date": str(pd.Timestamp(row["snapshot_date"]).date()),
+                    "ticker": row["ticker"],
+                    "sector": row.get("sector"),
+                    "eligible_universe_mode": eligible_universe_mode,
+                    "model_scope": model_scope,
+                    "md_volume_30d": row.get("md_volume_30d"),
+                    "predicted_alpha": row.get("predicted_alpha"),
+                    "actual_alpha_vs_sector": row.get(evaluation_target_column),
+                    "details": {
+                        "model_top_reasons": self._ensure_reason_list(row.get("model_top_reasons")),
+                        "model_reason_summary": row.get("model_reason_summary"),
+                        "calibrated_p_beat_sector": row.get("calibrated_p_beat_sector"),
+                        "model_rank": row.get("model_rank"),
+                    },
+                }
+                for row in combined_predictions.to_dict(orient="records")
+            ]
+            for model_name, live_frame in live_base_predictions.items():
+                persistence_rows.extend(
+                    [
+                        {
+                            "model_name": model_name,
+                            "dataset_split": "live",
+                            "snapshot_date": str(pd.Timestamp(row["snapshot_date"]).date()),
+                            "ticker": row["ticker"],
+                            "sector": row.get("sector"),
+                            "eligible_universe_mode": eligible_universe_mode,
+                            "model_scope": model_scope,
+                            "md_volume_30d": row.get("md_volume_30d"),
+                            "predicted_alpha": row.get("predicted_alpha"),
+                            "actual_alpha_vs_sector": None,
+                            "details": {
+                                "model_top_reasons": self._ensure_reason_list(row.get("model_top_reasons")),
+                                "model_reason_summary": row.get("model_reason_summary"),
+                                "calibrated_p_beat_sector": row.get("calibrated_p_beat_sector"),
+                                "model_rank": row.get("model_rank"),
+                            },
+                        }
+                        for row in live_frame.to_dict(orient="records")
+                    ]
+                )
+            self.db_manager.replace_shortlist_model_predictions(
+                generated_at=generated_at,
+                horizon_days=int(horizon_days),
+                eligible_universe_mode=eligible_universe_mode,
+                model_scope=model_scope,
+                rows=persistence_rows,
+            )
 
         return ShortlistModelReport(
             output_path=str(report_path),
@@ -1225,6 +1235,13 @@ class ShortlistModelService:
             working.loc[index, rank_column] = working.loc[index, "model_rank"]
         return working
 
+    def _filter_model_feature_columns(self, feature_columns: list[str] | tuple[str, ...]) -> list[str]:
+        return [
+            str(feature_name)
+            for feature_name in feature_columns
+            if self._base_feature_name(str(feature_name)) not in SHORTLIST_MODEL_EXCLUDED_BASE_FEATURES
+        ]
+
     def _prepare_model_matrices(
         self,
         train_frame: pd.DataFrame,
@@ -1233,7 +1250,9 @@ class ShortlistModelService:
         feature_columns_override: list[str] | None = None,
     ) -> tuple[np.ndarray, np.ndarray, list[str], pd.DataFrame]:
         available_columns = ["snapshot_date", "sector"] + [
-            col for col in MODEL_FEATURE_COLUMNS if col in train_frame.columns
+            col
+            for col in MODEL_FEATURE_COLUMNS
+            if col in train_frame.columns and col not in SHORTLIST_MODEL_EXCLUDED_BASE_FEATURES
         ]
         feature_frame = pd.concat(
             [
@@ -1247,10 +1266,15 @@ class ShortlistModelService:
             if col not in feature_frame.columns:
                 feature_frame[col] = np.nan
         feature_frame, feature_columns = build_rank_augmented_feature_frame(feature_frame)
+        feature_columns = self._filter_model_feature_columns(feature_columns)
         if feature_columns_override is not None:
-            feature_columns = [column for column in feature_columns_override if column in feature_frame.columns]
+            feature_columns = [
+                column
+                for column in self._filter_model_feature_columns(feature_columns_override)
+                if column in feature_frame.columns
+            ]
             if not feature_columns:
-                feature_columns = expand_model_feature_columns(MODEL_FEATURE_COLUMNS)
+                feature_columns = self._filter_model_feature_columns(expand_model_feature_columns(MODEL_FEATURE_COLUMNS))
         feature_frame = feature_frame[feature_columns + ["sector"]].copy()
         feature_frame = pd.get_dummies(feature_frame, columns=["sector"], dummy_na=False)
         train_features = feature_frame.iloc[: len(train_frame.index)].copy()
@@ -1286,15 +1310,19 @@ class ShortlistModelService:
         if frame.empty or target_column not in frame.columns:
             return []
         available_columns = ["snapshot_date", "sector"] + [
-            col for col in MODEL_FEATURE_COLUMNS if col in frame.columns
+            col
+            for col in MODEL_FEATURE_COLUMNS
+            if col in frame.columns and col not in SHORTLIST_MODEL_EXCLUDED_BASE_FEATURES
         ]
         feature_frame = frame[available_columns].copy()
         for col in MODEL_FEATURE_COLUMNS:
             if col not in feature_frame.columns:
                 feature_frame[col] = np.nan
         feature_frame, feature_columns = build_rank_augmented_feature_frame(feature_frame)
+        feature_columns = self._filter_model_feature_columns(feature_columns)
         target = pd.to_numeric(frame[target_column], errors="coerce")
         survivors: list[str] = []
+        survivor_signatures: set[tuple[tuple[int, float | None], ...]] = set()
         min_observations = min(40, max(2, int(len(frame.index) // 2)))
         for feature_name in feature_columns:
             values = pd.to_numeric(feature_frame[feature_name], errors="coerce")
@@ -1312,6 +1340,10 @@ class ShortlistModelService:
                 continue
             ic = values[valid].corr(target[valid], method="spearman")
             if pd.notna(ic) and math.isfinite(float(ic)) and abs(float(ic)) >= float(min_feature_ic):
+                signature = self._feature_value_signature(values=values, valid=valid)
+                if signature in survivor_signatures:
+                    continue
+                survivor_signatures.add(signature)
                 survivors.append(str(feature_name))
         return survivors
 
@@ -1337,6 +1369,16 @@ class ShortlistModelService:
         varied_by_date = base_values[base_valid].groupby(feature_frame.loc[base_valid, "snapshot_date"]).nunique(dropna=True)
         min_varied_dates = min(5, max(1, int(varied_by_date.index.nunique() // 4)))
         return int((varied_by_date > 1).sum()) >= min_varied_dates
+
+    def _feature_value_signature(self, *, values: pd.Series, valid: pd.Series) -> tuple[tuple[int, float | None], ...]:
+        payload: list[tuple[int, float | None]] = []
+        numeric = pd.to_numeric(values, errors="coerce")
+        for index, value in numeric[valid].items():
+            if pd.isna(value) or not math.isfinite(float(value)):
+                payload.append((int(index), None))
+            else:
+                payload.append((int(index), float(value)))
+        return tuple(payload)
 
     def _decommission_active_champions(
         self,
@@ -1438,17 +1480,25 @@ class ShortlistModelService:
 
         oos_frame = frame[frame["snapshot_date"].isin(oos_dates)].copy()
         available_columns = ["snapshot_date", "sector"] + [
-            col for col in MODEL_FEATURE_COLUMNS if col in oos_frame.columns
+            col
+            for col in MODEL_FEATURE_COLUMNS
+            if col in oos_frame.columns and col not in SHORTLIST_MODEL_EXCLUDED_BASE_FEATURES
         ]
         feature_frame = oos_frame[available_columns].copy()
         for col in MODEL_FEATURE_COLUMNS:
             if col not in feature_frame.columns:
                 feature_frame[col] = np.nan
         feature_frame, feature_columns = build_rank_augmented_feature_frame(feature_frame)
+        feature_columns = self._filter_model_feature_columns(feature_columns)
         if feature_columns_override is not None:
-            feature_columns = [column for column in feature_columns_override if column in feature_frame.columns]
+            feature_columns = [
+                column
+                for column in self._filter_model_feature_columns(feature_columns_override)
+                if column in feature_frame.columns
+            ]
         target = pd.to_numeric(oos_frame[target_column], errors="coerce")
         rows: list[dict[str, object]] = []
+        survivor_signatures: dict[tuple[tuple[int, float | None], ...], str] = {}
         for feature_name in feature_columns:
             values = pd.to_numeric(feature_frame[feature_name], errors="coerce")
             valid = values.notna() & target.notna()
@@ -1466,12 +1516,20 @@ class ShortlistModelService:
                 ic = float("nan")
             else:
                 ic = float(values[valid].corr(target[valid], method="spearman"))
+            duplicate_of = None
+            abs_ic = abs(ic) if math.isfinite(ic) else float("nan")
+            if pd.notna(abs_ic) and float(abs_ic) >= float(min_feature_ic):
+                signature = self._feature_value_signature(values=values, valid=valid)
+                duplicate_of = survivor_signatures.get(signature)
+                if duplicate_of is None:
+                    survivor_signatures[signature] = str(feature_name)
             rows.append(
                 {
                     "feature": feature_name,
                     "rank_ic": ic,
-                    "abs_rank_ic": abs(ic) if math.isfinite(ic) else float("nan"),
+                    "abs_rank_ic": abs_ic,
                     "observations": int(valid.sum()),
+                    "duplicate_of": duplicate_of,
                 }
             )
         report = pd.DataFrame(rows)
@@ -1484,6 +1542,7 @@ class ShortlistModelService:
             str(row.feature)
             for row in report.itertuples(index=False)
             if pd.notna(row.abs_rank_ic) and float(row.abs_rank_ic) >= float(min_feature_ic)
+            and pd.isna(row.duplicate_of)
         ]
         lines = [
             "# Feature IC Report",
@@ -1495,18 +1554,19 @@ class ShortlistModelService:
             f"- surviving_features: {len(surviving_features)}",
             f"- surviving_feature_names: {', '.join(surviving_features) if surviving_features else 'none'}",
             "",
-            "| feature | rank_ic | abs_rank_ic | observations | survives |",
-            "|---|---:|---:|---:|---|",
+            "| feature | rank_ic | abs_rank_ic | observations | duplicate_of | survives |",
+            "|---|---:|---:|---:|---|---|",
         ]
         for row in report.itertuples(index=False):
             abs_ic = float(row.abs_rank_ic) if pd.notna(row.abs_rank_ic) else float("nan")
-            survives = abs_ic >= float(min_feature_ic) if math.isfinite(abs_ic) else False
+            survives = (abs_ic >= float(min_feature_ic) and pd.isna(row.duplicate_of)) if math.isfinite(abs_ic) else False
             lines.append(
                 "| "
                 f"{row.feature} | "
                 f"{self._fmt(row.rank_ic)} | "
                 f"{self._fmt(row.abs_rank_ic)} | "
                 f"{int(row.observations)} | "
+                f"{row.duplicate_of if pd.notna(row.duplicate_of) else ''} | "
                 f"{str(survives).lower()} |"
             )
         lines.append("")
