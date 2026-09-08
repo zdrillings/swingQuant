@@ -25,6 +25,11 @@ class NightlyPipelineScriptTests(unittest.TestCase):
         self.assertIn("clear_promotion_failures", script)
         self.assertIn("scan skipped because shortlist-model produced no promotable champion", script)
         self.assertIn("--oos-stride-dates 20", script)
+        self.assertIn("path-label-tearsheet", script)
+        self.assertIn("--target-type path", script)
+        self.assertIn("--dry-run", script)
+        self.assertIn("path-target dry-run failed", script)
+        self.assertIn("phase2-research", script)
         self.assertIn("exit \"${shortlist_status}\"", script)
         self.assertLess(
             script.index("echo \"[$(date --iso-8601=seconds)] analyst-snapshot\""),
@@ -33,6 +38,10 @@ class NightlyPipelineScriptTests(unittest.TestCase):
         self.assertLess(
             script.index("No shortlist model candidate passed the promotion gate"),
             script.index("echo \"[$(date --iso-8601=seconds)] extended-hours-snapshot\""),
+        )
+        self.assertLess(
+            script.index("echo \"[$(date --iso-8601=seconds)] path-label-tearsheet\""),
+            script.index("echo \"[$(date --iso-8601=seconds)] shortlist-model\""),
         )
         self.assertLess(
             script.index("shortlist_promotion_failed=1"),

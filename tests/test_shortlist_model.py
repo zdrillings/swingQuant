@@ -407,7 +407,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
             "BBB in Energy on strong 63d momentum",
         )
 
-    def test_walk_forward_predictions_use_sparse_horizon_spaced_oos_dates(self) -> None:
+    def test_walk_forward_predictions_use_dense_windows_with_sparse_retrain_stride(self) -> None:
         service = ShortlistModelService(db_manager=object())
         dates = pd.bdate_range("2026-01-02", periods=30)
         rows = []
@@ -440,7 +440,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
 
         self.assertIsNotNone(predictions)
         assert predictions is not None
-        self.assertEqual(len(predictions["snapshot_date"].drop_duplicates()), 3)
+        self.assertEqual(len(predictions["snapshot_date"].drop_duplicates()), 6)
 
     def test_walk_forward_predictions_embargo_overlapping_training_labels(self) -> None:
         service = ShortlistModelService(db_manager=object())
@@ -883,7 +883,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
             report_text = (paths.reports_dir / "feature_ic_report.md").read_text(encoding="utf-8")
             self.assertEqual(result["surviving_features"], ["rsi_2"])
             self.assertIn("| ret_1d |", report_text)
-            self.assertIn("| ret_1d | 1.000000 | 1.000000 | 6 | rsi_2 | false |", report_text)
+            self.assertIn("| ret_1d | 1.000000 | 1.000000 | 12 | rsi_2 | false |", report_text)
             self.assertNotIn("analyst_snapshot_age_days", report_text)
 
     def test_shortlist_model_writes_failure_report_when_no_candidate_passes_gate(self) -> None:

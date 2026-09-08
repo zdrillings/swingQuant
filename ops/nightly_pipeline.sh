@@ -109,6 +109,33 @@ echo "[$(date --iso-8601=seconds)] analyst-snapshot"
 echo "[$(date --iso-8601=seconds)] universe-backfill ${universe_refresh_start}..${run_date}"
 ./sq universe-backfill --date-from "${universe_refresh_start}" --date-to "${run_date}" --skip-existing
 
+echo "[$(date --iso-8601=seconds)] path-label-tearsheet"
+./sq path-label-tearsheet --horizon 20
+
+echo "[$(date --iso-8601=seconds)] shortlist-model path-target dry-run"
+path_shortlist_log="$(mktemp)"
+trap - ERR
+set +e
+./sq shortlist-model \
+  --top 10 \
+  --horizon 20 \
+  --target-type path \
+  --min-train-dates 252 \
+  --test-window-dates 20 \
+  --oos-stride-dates 20 \
+  --recent-dates 60 \
+  --eligible-universe-mode passed_or_trend \
+  --model-scope sector_specific \
+  --xgboost-config balanced_depth4 \
+  --dry-run 2>&1 | tee "${path_shortlist_log}"
+path_shortlist_status="${PIPESTATUS[0]}"
+set -e
+trap notify_failure ERR
+if [[ "${path_shortlist_status}" -ne 0 ]]; then
+  echo "[$(date --iso-8601=seconds)] path-target dry-run failed status=${path_shortlist_status}; continuing production shortlist flow" >&2
+fi
+rm -f "${path_shortlist_log}"
+
 echo "[$(date --iso-8601=seconds)] shortlist-model"
 shortlist_log="$(mktemp)"
 shortlist_promotion_failed=0
@@ -168,6 +195,9 @@ if [[ "${shortlist_promotion_failed}" -eq 0 ]]; then
 else
   echo "[$(date --iso-8601=seconds)] scan skipped because shortlist-model produced no promotable champion"
 fi
+
+echo "[$(date --iso-8601=seconds)] phase2-research"
+./sq phase2-research --horizon 20 --top 2
 
 echo "[$(date --iso-8601=seconds)] scan-performance"
 ./sq scan-performance --all-sources --email

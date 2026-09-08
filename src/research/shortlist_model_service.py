@@ -249,6 +249,7 @@ class ShortlistModelService:
                     top_n=promotion_top_n,
                     windows=(20, 60),
                     fold_windows=(1, 3),
+                    fold_size=int(test_window_dates),
                 ).to_dict(orient="records")
             ]
         )
@@ -390,6 +391,7 @@ class ShortlistModelService:
                     top_n=promotion_top_n,
                     windows=(20, 40, 60),
                     fold_windows=(1, 3),
+                    fold_size=int(test_window_dates),
                 ),
                 heading="## Champion Rolling Acceptance Windows",
             )
@@ -553,10 +555,7 @@ class ShortlistModelService:
         stride = max(int(evaluation_stride_dates or test_window_dates), 1)
         label_embargo = max(int(label_horizon_dates or 0), 0)
         while start_index < len(dates):
-            if evaluation_stride_dates is not None:
-                test_dates = [dates[start_index]]
-            else:
-                test_dates = dates[start_index : start_index + max(int(test_window_dates), 1)]
+            test_dates = dates[start_index : start_index + max(int(test_window_dates), 1)]
             if not test_dates:
                 break
             train_end_index = max(0, start_index - label_embargo)
@@ -1452,10 +1451,7 @@ class ShortlistModelService:
         stride = max(int(evaluation_stride_dates or test_window_dates), 1)
         label_embargo = max(int(label_horizon_dates or 0), 0)
         while start_index < len(dates):
-            if evaluation_stride_dates is not None:
-                test_dates = [dates[start_index]]
-            else:
-                test_dates = dates[start_index : start_index + max(int(test_window_dates), 1)]
+            test_dates = dates[start_index : start_index + max(int(test_window_dates), 1)]
             train_end_index = max(0, start_index - label_embargo)
             if len(dates[:train_end_index]) >= int(min_train_dates):
                 oos_dates.extend(test_dates)
@@ -1741,6 +1737,7 @@ class ShortlistModelService:
         top_n: int,
         windows: tuple[int, ...],
         fold_windows: tuple[int, ...] = (),
+        fold_size: int | None = None,
     ) -> pd.DataFrame:
         rows: list[dict[str, object]] = []
         unique_dates = sorted(predictions["snapshot_date"].drop_duplicates().tolist())
@@ -1755,7 +1752,8 @@ class ShortlistModelService:
             )
             rows.append(summary)
         for fold_count in fold_windows:
-            selected_dates = unique_dates[-min(int(fold_count), len(unique_dates)) :]
+            date_count = max(int(fold_count), 1) * max(int(fold_size or 1), 1)
+            selected_dates = unique_dates[-min(date_count, len(unique_dates)) :]
             scoped = predictions[predictions["snapshot_date"].isin(selected_dates)].copy()
             summary = self._evaluate_predictions(
                 predictions=scoped,

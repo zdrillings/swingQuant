@@ -8,6 +8,7 @@ from src.research.alpha_service import AlphaResearchService
 from src.research.exit_analysis_service import ExitAnalysisService
 from src.research.factor_tearsheet_service import FactorTearsheetService
 from src.research.path_label_tearsheet_service import PathLabelTearsheetService
+from src.research.phase2_research_service import Phase2ResearchService
 from src.research.rsi_exit_bakeoff_service import RsiExitBakeoffService
 from src.research.shortlist_bakeoff_service import ShortlistBakeoffService
 from src.research.shortlist_allocation_analysis_service import ShortlistAllocationAnalysisService
@@ -153,6 +154,9 @@ def build_parser() -> argparse.ArgumentParser:
     factor_tearsheet_parser.add_argument("--horizon", type=int, default=10)
     path_label_tearsheet_parser = subparsers.add_parser("path-label-tearsheet", help="Compare fixed-horizon and path-aware shortlist labels.")
     path_label_tearsheet_parser.add_argument("--horizon", type=int, default=20)
+    phase2_research_parser = subparsers.add_parser("phase2-research", help="Render Phase 2 signal research diagnostics.")
+    phase2_research_parser.add_argument("--horizon", type=int, default=20)
+    phase2_research_parser.add_argument("--top", type=int, default=2)
     shortlist_bakeoff_parser = subparsers.add_parser("shortlist-bakeoff", help="Compare shortlist policies directly on forward sector alpha.")
     shortlist_bakeoff_parser.add_argument("--top", type=int, default=6)
     shortlist_bakeoff_parser.add_argument("--horizon", type=int, default=20)
@@ -539,6 +543,14 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"Path label tearsheet written to {report.output_path} "
                 f"(rows={report.rows}, paired_rows={report.paired_rows})"
+            )
+            return 0
+
+        if args.command == "phase2-research":
+            report = Phase2ResearchService(db_manager).run(horizon_days=args.horizon, top_n=args.top)
+            print(
+                f"Phase 2 research written to {report.output_path} "
+                f"(oos_dates={report.oos_dates}, models={report.models})"
             )
             return 0
 
