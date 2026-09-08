@@ -442,6 +442,44 @@ class ShortlistModelServiceTests(unittest.TestCase):
         assert predictions is not None
         self.assertEqual(len(predictions["snapshot_date"].drop_duplicates()), 6)
 
+    def test_walk_forward_predictions_predict_all_dates_between_twenty_day_retrains(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        dates = pd.bdate_range("2026-01-02", periods=30)
+        rows = []
+        for date_index, snapshot_date in enumerate(dates):
+            for ticker in ("AAA", "BBB"):
+                rows.append(
+                    {
+                        "snapshot_date": snapshot_date,
+                        "ticker": ticker,
+                        "sector": "Energy",
+                        "md_volume_30d": 50_000_000.0,
+                        "relative_strength_index_vs_spy": 70.0 + date_index,
+                        "roc_63": 0.1,
+                        "sma_200_dist": 0.1,
+                        "vol_alpha": 1.0,
+                        "alpha_vs_sector_20d": 0.01,
+                    }
+                )
+        frame = pd.DataFrame(rows)
+
+        predictions = service._walk_forward_predictions(
+            frame,
+            target_column="alpha_vs_sector_20d",
+            model_name="signal_proxy",
+            min_train_dates=5,
+            test_window_dates=20,
+            model_scope="global",
+            evaluation_stride_dates=20,
+        )
+
+        self.assertIsNotNone(predictions)
+        assert predictions is not None
+        predicted_dates = sorted(pd.to_datetime(predictions["snapshot_date"]).drop_duplicates().tolist())
+        self.assertEqual(len(predicted_dates), 25)
+        self.assertEqual(predicted_dates[0], dates[5])
+        self.assertEqual(predicted_dates[-1], dates[-1])
+
     def test_walk_forward_predictions_embargo_overlapping_training_labels(self) -> None:
         service = ShortlistModelService(db_manager=object())
         dates = pd.bdate_range("2026-01-02", periods=18)

@@ -30,6 +30,7 @@ class NightlyPipelineScriptTests(unittest.TestCase):
         self.assertIn("--dry-run", script)
         self.assertIn("path-target dry-run failed", script)
         self.assertIn("phase2-research", script)
+        self.assertIn("--trial-count 200", script)
         self.assertIn("exit \"${shortlist_status}\"", script)
         self.assertLess(
             script.index("echo \"[$(date --iso-8601=seconds)] analyst-snapshot\""),

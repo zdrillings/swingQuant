@@ -2770,6 +2770,59 @@ class ScanServiceTests(unittest.TestCase):
         self.assertEqual(rows[0]["passed_slots"], [])
         self.assertFalse(rows[0]["passed_any_strategy"])
 
+    def test_universe_backfill_uses_current_exit_rules_for_historical_path_labels_only(self) -> None:
+        service = UniverseSnapshotBackfillService(db_manager=None)
+        analysis_frame = pd.DataFrame(
+            [
+                {
+                    "ticker": "AAA",
+                    "date": pd.Timestamp("2026-05-01"),
+                    "sector": "Industrials",
+                    "regime_green": True,
+                    "regime_etf": "SPY",
+                    "adj_close": 100.0,
+                    "atr_14": 4.0,
+                    "md_volume_30d": 30_000_000,
+                    "signal_score": 99.0,
+                },
+            ]
+        )
+        future_strategy = ProductionStrategy(
+            strategy_id=1,
+            promoted_at="2026-05-05T17:00:00",
+            indicators={"signal_score_min": 30.0},
+            exit_rules=ExitRules(0.08, 0.20, 20, hard_stop_pct=0.05),
+            slot="industrials",
+            sector="Industrials",
+        )
+        stock_rows = [
+            {"date": pd.Timestamp("2026-05-01"), "adj_close": 100.0, "close": 100.0, "open": 100.0, "high": 100.0, "low": 100.0, "atr_14": 4.0},
+            {"date": pd.Timestamp("2026-05-04"), "adj_close": 98.0, "close": 98.0, "open": 98.0, "high": 106.0, "low": 94.0, "atr_14": 4.0},
+        ]
+        benchmark_rows = [
+            {"date": pd.Timestamp("2026-05-01"), "adj_close": 50.0, "close": 50.0, "open": 50.0, "high": 50.0, "low": 50.0},
+            {"date": pd.Timestamp("2026-05-04"), "adj_close": 51.0, "close": 51.0, "open": 51.0, "high": 51.0, "low": 51.0},
+        ]
+        history_context = {
+            "AAA": {"frame": pd.DataFrame(stock_rows), "index_by_date": {"2026-05-01": 0, "2026-05-04": 1}},
+            "XLI": {"frame": pd.DataFrame(benchmark_rows), "index_by_date": {"2026-05-01": 0, "2026-05-04": 1}},
+        }
+
+        with patch("src.research.universe_snapshot_service.filter_signal_candidates", return_value=analysis_frame.copy()) as gate:
+            rows = service._build_rows_for_date(
+                snapshot_date="2026-05-01",
+                day_frame=analysis_frame,
+                strategies=service._strategies_effective_on({"industrials": future_strategy}, "2026-05-01"),
+                path_label_strategies={"industrials": future_strategy},
+                history_context=history_context,
+            )
+
+        gate.assert_not_called()
+        self.assertEqual(rows[0]["passed_slots"], [])
+        self.assertFalse(rows[0]["passed_any_strategy"])
+        self.assertAlmostEqual(rows[0]["path_return_20d"], -0.05)
+        self.assertEqual(rows[0]["path_exit_reason_20d"], "hard_stop")
+
     def test_universe_backfill_refreshes_stale_existing_dates_even_when_skip_existing_is_true(self) -> None:
         class FakeDB:
             def __init__(self):
@@ -2998,6 +3051,44 @@ class ScanServiceTests(unittest.TestCase):
         self.assertAlmostEqual(payload["path_return_20d"], -0.05)
         self.assertEqual(payload["path_exit_reason_20d"], "hard_stop")
         self.assertAlmostEqual(payload["path_alpha_vs_sector_20d"], -0.07)
+
+    def test_universe_backfill_path_label_fills_gap_through_hard_stop_at_open(self) -> None:
+        service = UniverseSnapshotBackfillService(db_manager=None)
+        exit_rules = ExitRules(
+            trailing_stop_pct=0.08,
+            profit_target_pct=0.20,
+            time_limit_days=20,
+            hard_stop_pct=0.05,
+        )
+        payload = service._outcome_payload(
+            snapshot_date="2026-05-01",
+            ticker="AAA",
+            sector="Industrials",
+            exit_rules=exit_rules,
+            history_context={
+                "AAA": {
+                    "frame": pd.DataFrame(
+                        [
+                            {"date": pd.Timestamp("2026-05-01"), "adj_close": 100.0, "close": 100.0, "open": 100.0, "high": 100.0, "low": 100.0, "atr_14": 4.0},
+                            {"date": pd.Timestamp("2026-05-04"), "adj_close": 90.0, "close": 90.0, "open": 90.0, "high": 92.0, "low": 89.0, "atr_14": 4.0},
+                        ]
+                    ),
+                    "index_by_date": {"2026-05-01": 0, "2026-05-04": 1},
+                },
+                "XLI": {
+                    "frame": pd.DataFrame(
+                        [
+                            {"date": pd.Timestamp("2026-05-01"), "adj_close": 50.0, "close": 50.0, "open": 50.0, "high": 50.0, "low": 50.0},
+                            {"date": pd.Timestamp("2026-05-04"), "adj_close": 50.0, "close": 50.0, "open": 50.0, "high": 50.0, "low": 50.0},
+                        ]
+                    ),
+                    "index_by_date": {"2026-05-01": 0, "2026-05-04": 1},
+                },
+            },
+        )
+
+        self.assertAlmostEqual(payload["path_return_20d"], -0.10)
+        self.assertEqual(payload["path_exit_reason_20d"], "hard_stop_gap")
 
 
 class MonitorServiceTests(unittest.TestCase):

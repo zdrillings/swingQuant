@@ -157,6 +157,7 @@ def build_parser() -> argparse.ArgumentParser:
     phase2_research_parser = subparsers.add_parser("phase2-research", help="Render Phase 2 signal research diagnostics.")
     phase2_research_parser.add_argument("--horizon", type=int, default=20)
     phase2_research_parser.add_argument("--top", type=int, default=2)
+    phase2_research_parser.add_argument("--trial-count", type=int, default=200)
     shortlist_bakeoff_parser = subparsers.add_parser("shortlist-bakeoff", help="Compare shortlist policies directly on forward sector alpha.")
     shortlist_bakeoff_parser.add_argument("--top", type=int, default=6)
     shortlist_bakeoff_parser.add_argument("--horizon", type=int, default=20)
@@ -547,7 +548,11 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "phase2-research":
-            report = Phase2ResearchService(db_manager).run(horizon_days=args.horizon, top_n=args.top)
+            report = Phase2ResearchService(db_manager).run(
+                horizon_days=args.horizon,
+                top_n=args.top,
+                trial_count=args.trial_count,
+            )
             print(
                 f"Phase 2 research written to {report.output_path} "
                 f"(oos_dates={report.oos_dates}, models={report.models})"

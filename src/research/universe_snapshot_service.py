@@ -210,6 +210,7 @@ class UniverseSnapshotBackfillService:
                 snapshot_date=snapshot_date_str,
                 day_frame=day_frame,
                 strategies=self._strategies_effective_on(strategies, snapshot_date_str),
+                path_label_strategies=strategies,
                 history_context=history_context,
                 analyst_context=analyst_context,
                 analyst_revision_context=analyst_revision_context,
@@ -255,6 +256,7 @@ class UniverseSnapshotBackfillService:
         day_frame: pd.DataFrame,
         strategies: dict,
         history_context: dict[str, dict[str, object]],
+        path_label_strategies: dict | None = None,
         analyst_context: dict[str, pd.DataFrame] | None = None,
         analyst_revision_context: dict[str, pd.DataFrame] | None = None,
     ) -> list[dict[str, object]]:
@@ -309,7 +311,7 @@ class UniverseSnapshotBackfillService:
                     sector=sector,
                     history_context=history_context,
                     exit_rules=self._exit_rules_for_snapshot(
-                        strategies=strategies,
+                        strategies=path_label_strategies or strategies,
                         passed_slots=passed_slots,
                         sector=sector,
                     ),
@@ -725,11 +727,14 @@ class UniverseSnapshotBackfillService:
         held_days = 0
         for forward_index in range(start_index, end_index + 1):
             row = ticker_frame.loc[forward_index]
+            open_price = self._optional_float(row.get("open"))
             high = self._optional_float(row.get("high"))
             low = self._optional_float(row.get("low"))
             close = self._optional_float(row.get("adj_close"))
             if close is None:
                 close = self._optional_float(row.get("close"))
+            if open_price is None:
+                open_price = close
             if high is None or low is None or close is None:
                 continue
             held_days += 1
@@ -753,7 +758,9 @@ class UniverseSnapshotBackfillService:
             except ValueError:
                 target_price = None
             if hard_stop is not None and float(low) <= float(hard_stop):
-                return {"return": (float(hard_stop) / float(entry_price)) - 1.0, "exit_reason": "hard_stop", "holding_days": held_days}
+                exit_price = float(open_price) if open_price is not None and float(open_price) < float(hard_stop) else float(hard_stop)
+                reason = "hard_stop_gap" if exit_price < float(hard_stop) else "hard_stop"
+                return {"return": (exit_price / float(entry_price)) - 1.0, "exit_reason": reason, "holding_days": held_days}
             if stop_price is not None and float(low) <= float(stop_price):
                 return {"return": (float(stop_price) / float(entry_price)) - 1.0, "exit_reason": "trailing_stop", "holding_days": held_days}
             if target_price is not None and float(high) >= float(target_price):
