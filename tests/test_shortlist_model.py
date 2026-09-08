@@ -311,6 +311,8 @@ class ShortlistModelServiceTests(unittest.TestCase):
 
         dry_run_args = parser.parse_args(["shortlist-model", "--dry-run"])
         self.assertTrue(dry_run_args.dry_run)
+        path_args = parser.parse_args(["shortlist-model", "--target-type", "path"])
+        self.assertEqual(path_args.target_type, "path")
 
     def test_runtime_loader_returns_lasso_model_context(self) -> None:
         captured: dict[str, object] = {}

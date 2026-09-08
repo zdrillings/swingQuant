@@ -388,6 +388,9 @@ class DatabaseManagerInitializationTests(unittest.TestCase):
                 "alpha_vs_sector_20d_pos": 0,
                 "mfe_20d": 0.12,
                 "mae_20d": -0.05,
+                "path_return_20d": 0.04,
+                "path_alpha_vs_sector_20d": 0.03,
+                "path_exit_reason_20d": "time_limit",
                 "details": {"example": True},
             }
 
@@ -415,6 +418,9 @@ class DatabaseManagerInitializationTests(unittest.TestCase):
                 "spy_realized_vol_20",
                 "qqq_roc_20",
                 "alpha_vs_sector_20d_pos",
+                "path_return_20d",
+                "path_alpha_vs_sector_20d",
+                "path_exit_reason_20d",
             ):
                 self.assertEqual(inserted[column], row[column])
 

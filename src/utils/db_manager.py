@@ -114,6 +114,9 @@ CREATE TABLE IF NOT EXISTS universe_daily_snapshots (
     alpha_vs_sector_20d_pos INTEGER,
     mfe_20d DOUBLE,
     mae_20d DOUBLE,
+    path_return_20d DOUBLE,
+    path_alpha_vs_sector_20d DOUBLE,
+    path_exit_reason_20d VARCHAR,
     details_json VARCHAR,
     PRIMARY KEY (snapshot_date, ticker)
 );
@@ -563,6 +566,9 @@ class DatabaseManager:
             "ALTER TABLE universe_daily_snapshots ADD COLUMN IF NOT EXISTS analyst_snapshot_age_days DOUBLE",
             "ALTER TABLE universe_daily_snapshots ADD COLUMN IF NOT EXISTS analyst_revision_snapshot_age_days DOUBLE",
             "ALTER TABLE universe_daily_snapshots ADD COLUMN IF NOT EXISTS alpha_vs_sector_20d_pos INTEGER",
+            "ALTER TABLE universe_daily_snapshots ADD COLUMN IF NOT EXISTS path_return_20d DOUBLE",
+            "ALTER TABLE universe_daily_snapshots ADD COLUMN IF NOT EXISTS path_alpha_vs_sector_20d DOUBLE",
+            "ALTER TABLE universe_daily_snapshots ADD COLUMN IF NOT EXISTS path_exit_reason_20d VARCHAR",
             "CREATE TABLE IF NOT EXISTS analyst_snapshots (snapshot_date DATE NOT NULL, ticker VARCHAR NOT NULL, provider VARCHAR NOT NULL, captured_at VARCHAR, target_mean DOUBLE, target_median DOUBLE, target_low DOUBLE, target_high DOUBLE, analyst_count INTEGER, recommendation VARCHAR, details_json VARCHAR, PRIMARY KEY (snapshot_date, ticker, provider))",
             "CREATE INDEX IF NOT EXISTS idx_analyst_snapshots_date ON analyst_snapshots (snapshot_date)",
             "ALTER TABLE analyst_snapshots ADD COLUMN IF NOT EXISTS captured_at VARCHAR",
@@ -1838,6 +1844,9 @@ class DatabaseManager:
             "alpha_vs_sector_20d_pos",
             "mfe_20d",
             "mae_20d",
+            "path_return_20d",
+            "path_alpha_vs_sector_20d",
+            "path_exit_reason_20d",
             "details_json",
         ]
         placeholders = ", ".join(["?"] * len(columns))
@@ -1937,6 +1946,9 @@ class DatabaseManager:
                         row.get("alpha_vs_sector_20d_pos"),
                         row.get("mfe_20d"),
                         row.get("mae_20d"),
+                        row.get("path_return_20d"),
+                        row.get("path_alpha_vs_sector_20d"),
+                        row.get("path_exit_reason_20d"),
                         json.dumps(row.get("details", {}), sort_keys=True),
                     )
                     for row in payload
@@ -2001,6 +2013,9 @@ class DatabaseManager:
             "alpha_vs_sector_20d_pos",
             "mfe_20d",
             "mae_20d",
+            "path_return_20d",
+            "path_alpha_vs_sector_20d",
+            "path_exit_reason_20d",
         }
         invalid = [column for column in columns if column not in allowed_columns]
         if invalid:
@@ -2117,6 +2132,9 @@ class DatabaseManager:
                 alpha_vs_sector_20d_pos,
                 mfe_20d,
                 mae_20d,
+                path_return_20d,
+                path_alpha_vs_sector_20d,
+                path_exit_reason_20d,
                 details_json
             FROM universe_daily_snapshots
         """
@@ -2217,6 +2235,9 @@ class DatabaseManager:
                     "alpha_vs_sector_20d_pos",
                     "mfe_20d",
                     "mae_20d",
+                    "path_return_20d",
+                    "path_alpha_vs_sector_20d",
+                    "path_exit_reason_20d",
                     "details_json",
                 ]
             )

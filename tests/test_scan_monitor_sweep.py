@@ -2958,6 +2958,47 @@ class ScanServiceTests(unittest.TestCase):
         self.assertIsNone(payload["alpha_vs_sector_20d"])
         self.assertIsNone(payload["alpha_vs_sector_20d_pos"])
 
+    def test_universe_backfill_builds_path_aware_exit_label(self) -> None:
+        service = UniverseSnapshotBackfillService(db_manager=None)
+        exit_rules = ExitRules(
+            trailing_stop_pct=0.08,
+            profit_target_pct=0.20,
+            time_limit_days=20,
+            hard_stop_pct=0.05,
+        )
+        payload = service._outcome_payload(
+            snapshot_date="2026-05-01",
+            ticker="AAA",
+            sector="Industrials",
+            exit_rules=exit_rules,
+            history_context={
+                "AAA": {
+                    "frame": pd.DataFrame(
+                        [
+                            {"date": pd.Timestamp("2026-05-01"), "adj_close": 100.0, "close": 100.0, "high": 100.0, "low": 100.0, "atr_14": 4.0},
+                            {"date": pd.Timestamp("2026-05-04"), "adj_close": 98.0, "close": 98.0, "high": 106.0, "low": 94.0, "atr_14": 4.0},
+                            {"date": pd.Timestamp("2026-05-05"), "adj_close": 125.0, "close": 125.0, "high": 126.0, "low": 124.0, "atr_14": 4.0},
+                        ]
+                    ),
+                    "index_by_date": {"2026-05-01": 0, "2026-05-04": 1, "2026-05-05": 2},
+                },
+                "XLI": {
+                    "frame": pd.DataFrame(
+                        [
+                            {"date": pd.Timestamp("2026-05-01"), "adj_close": 50.0, "close": 50.0, "high": 50.0, "low": 50.0},
+                            {"date": pd.Timestamp("2026-05-04"), "adj_close": 51.0, "close": 51.0, "high": 51.0, "low": 51.0},
+                            {"date": pd.Timestamp("2026-05-05"), "adj_close": 52.0, "close": 52.0, "high": 52.0, "low": 52.0},
+                        ]
+                    ),
+                    "index_by_date": {"2026-05-01": 0, "2026-05-04": 1, "2026-05-05": 2},
+                },
+            },
+        )
+
+        self.assertAlmostEqual(payload["path_return_20d"], -0.05)
+        self.assertEqual(payload["path_exit_reason_20d"], "hard_stop")
+        self.assertAlmostEqual(payload["path_alpha_vs_sector_20d"], -0.07)
+
 
 class MonitorServiceTests(unittest.TestCase):
     def test_monitor_classifies_hard_capital_floor_as_sell(self) -> None:

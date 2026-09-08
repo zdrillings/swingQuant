@@ -87,9 +87,13 @@ class ShortlistModelService:
         self.db_manager.initialize()
         if target_type == "classification":
             target_column = f"alpha_vs_sector_{int(horizon_days)}d_pos"
+        elif target_type == "path":
+            target_column = f"path_alpha_vs_sector_{int(horizon_days)}d"
         else:
             target_column = f"alpha_vs_sector_{int(horizon_days)}d"
-        evaluation_target_column = f"alpha_vs_sector_{int(horizon_days)}d"
+        evaluation_target_column = (
+            target_column if target_type == "path" else f"alpha_vs_sector_{int(horizon_days)}d"
+        )
         eligible_universe_mode = normalize_eligible_universe_mode(eligible_universe_mode)
         model_scope = normalize_model_scope(model_scope)
         feature_profile = normalize_shortlist_feature_profile(feature_profile)

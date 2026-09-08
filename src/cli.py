@@ -164,7 +164,7 @@ def build_parser() -> argparse.ArgumentParser:
     shortlist_model_parser.add_argument("--recent-dates", type=int, default=60)
     shortlist_model_parser.add_argument("--eligible-universe-mode", choices=VALID_ELIGIBLE_UNIVERSE_MODES, default="passed_only")
     shortlist_model_parser.add_argument("--model-scope", choices=VALID_MODEL_SCOPES, default="global")
-    shortlist_model_parser.add_argument("--target-type", choices=["regression", "classification"], default="regression")
+    shortlist_model_parser.add_argument("--target-type", choices=["regression", "classification", "path"], default="regression")
     shortlist_model_parser.add_argument("--xgboost-config", choices=XGBOOST_CONFIG_CHOICES, default="baseline")
     shortlist_model_parser.add_argument("--feature-profile", choices=VALID_SHORTLIST_FEATURE_PROFILES, default="full")
     shortlist_model_parser.add_argument("--dry-run", action="store_true", help="Write reports without mutating shortlist model run/prediction tables.")

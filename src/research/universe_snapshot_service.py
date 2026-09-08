@@ -12,7 +12,13 @@ from src.utils.db_manager import DatabaseManager
 from src.utils.logging import get_logger
 from src.utils.regime import benchmark_etf_for_sector
 from src.utils.signal_engine import build_analysis_frame, filter_signal_candidates
-from src.utils.strategy import load_active_strategies
+from src.utils.strategy import (
+    ExitRules,
+    entry_stop_price,
+    load_active_strategies,
+    profit_target_price,
+    trailing_stop_price,
+)
 
 
 OUTCOME_HORIZONS = (1, 3, 5, 10, 20)
@@ -39,7 +45,14 @@ SNAPSHOT_OUTCOME_COLUMNS = tuple(
         f"alpha_vs_spy_{horizon}d",
         f"alpha_vs_sector_{horizon}d",
     )
-) + ("alpha_vs_sector_20d_pos", "mfe_20d", "mae_20d")
+) + (
+    "alpha_vs_sector_20d_pos",
+    "mfe_20d",
+    "mae_20d",
+    "path_return_20d",
+    "path_alpha_vs_sector_20d",
+    "path_exit_reason_20d",
+)
 SNAPSHOT_FEATURE_COLUMNS = [
     "md_volume_30d",
     "adj_close",
@@ -295,6 +308,11 @@ class UniverseSnapshotBackfillService:
                     ticker=ticker,
                     sector=sector,
                     history_context=history_context,
+                    exit_rules=self._exit_rules_for_snapshot(
+                        strategies=strategies,
+                        passed_slots=passed_slots,
+                        sector=sector,
+                    ),
                 )
             )
             rows.append(snapshot_row)
@@ -319,6 +337,17 @@ class UniverseSnapshotBackfillService:
                 return pd.Timestamp(value).date()
             except Exception:
                 return None
+
+    def _exit_rules_for_snapshot(self, *, strategies: dict, passed_slots: list[str], sector: str) -> ExitRules | None:
+        for slot in passed_slots:
+            strategy = strategies.get(str(slot))
+            if strategy is not None:
+                return getattr(strategy, "exit_rules", None)
+        for strategy in strategies.values():
+            strategy_sector = str(getattr(strategy, "sector", ""))
+            if strategy_sector == "ALL" or strategy_sector == str(sector):
+                return getattr(strategy, "exit_rules", None)
+        return None
 
     def _history_context(self, history: pd.DataFrame) -> dict[str, dict[str, object]]:
         working = history.copy()
@@ -528,7 +557,16 @@ class UniverseSnapshotBackfillService:
                 ]
             )
         if available_forward_sessions >= 20:
-            required.extend(["alpha_vs_sector_20d_pos", "mfe_20d", "mae_20d"])
+            required.extend(
+                [
+                    "alpha_vs_sector_20d_pos",
+                    "mfe_20d",
+                    "mae_20d",
+                    "path_return_20d",
+                    "path_alpha_vs_sector_20d",
+                    "path_exit_reason_20d",
+                ]
+            )
         return tuple(required)
 
     def _outcome_payload(
@@ -538,6 +576,7 @@ class UniverseSnapshotBackfillService:
         ticker: str,
         sector: str,
         history_context: dict[str, dict[str, object]],
+        exit_rules: ExitRules | None = None,
     ) -> dict[str, float | None]:
         payload: dict[str, float | None] = {}
         ticker_context = history_context.get(ticker)
@@ -585,6 +624,25 @@ class UniverseSnapshotBackfillService:
             column="low",
             use_max=False,
         )
+        path_outcome = self._path_outcome(
+            ticker_frame=ticker_frame,
+            index=int(index),
+            horizon=20,
+            exit_rules=exit_rules,
+        )
+        payload["path_return_20d"] = path_outcome["return"]
+        payload["path_exit_reason_20d"] = path_outcome["exit_reason"]
+        benchmark_ticker = benchmark_etf_for_sector(sector)
+        benchmark_return = self._path_benchmark_return(
+            history_context=history_context,
+            snapshot_date=snapshot_date,
+            horizon=int(path_outcome["holding_days"]) if path_outcome["holding_days"] is not None else 20,
+            benchmark_ticker=benchmark_ticker,
+        )
+        if path_outcome["return"] is None or benchmark_return is None:
+            payload["path_alpha_vs_sector_20d"] = None
+        else:
+            payload["path_alpha_vs_sector_20d"] = float(path_outcome["return"]) - float(benchmark_return)
         return payload
 
     def _forward_return(self, *, ticker_frame: pd.DataFrame, index: int, horizon: int) -> float | None:
@@ -642,6 +700,91 @@ class UniverseSnapshotBackfillService:
         entry_price = float(ticker_frame.loc[index, "adj_close"])
         extreme_price = float(window.max() if use_max else window.min())
         return (extreme_price / entry_price) - 1.0
+
+    def _path_outcome(
+        self,
+        *,
+        ticker_frame: pd.DataFrame,
+        index: int,
+        horizon: int,
+        exit_rules: ExitRules | None,
+    ) -> dict[str, float | str | int | None]:
+        if exit_rules is None:
+            return {"return": None, "exit_reason": None, "holding_days": None}
+        entry_price = self._optional_float(ticker_frame.loc[index, "adj_close"])
+        if entry_price is None or entry_price <= 0:
+            return {"return": None, "exit_reason": None, "holding_days": None}
+        entry_atr = self._optional_float(ticker_frame.loc[index].get("atr_14"))
+        start_index = int(index) + 1
+        max_horizon = min(int(horizon), int(exit_rules.time_limit_days or horizon))
+        end_index = min(int(index) + max_horizon, len(ticker_frame.index) - 1)
+        if start_index > end_index:
+            return {"return": None, "exit_reason": None, "holding_days": None}
+        max_price_seen = float(entry_price)
+        last_close = None
+        held_days = 0
+        for forward_index in range(start_index, end_index + 1):
+            row = ticker_frame.loc[forward_index]
+            high = self._optional_float(row.get("high"))
+            low = self._optional_float(row.get("low"))
+            close = self._optional_float(row.get("adj_close"))
+            if close is None:
+                close = self._optional_float(row.get("close"))
+            if high is None or low is None or close is None:
+                continue
+            held_days += 1
+            max_price_seen = max(max_price_seen, float(high))
+            last_close = float(close)
+            hard_stop = entry_stop_price(entry_price=float(entry_price), exit_rules=exit_rules)
+            try:
+                stop_price = trailing_stop_price(
+                    max_price_seen=max_price_seen,
+                    entry_atr=entry_atr,
+                    exit_rules=exit_rules,
+                )
+            except ValueError:
+                stop_price = None
+            try:
+                target_price = profit_target_price(
+                    entry_price=float(entry_price),
+                    entry_atr=entry_atr,
+                    exit_rules=exit_rules,
+                )
+            except ValueError:
+                target_price = None
+            if hard_stop is not None and float(low) <= float(hard_stop):
+                return {"return": (float(hard_stop) / float(entry_price)) - 1.0, "exit_reason": "hard_stop", "holding_days": held_days}
+            if stop_price is not None and float(low) <= float(stop_price):
+                return {"return": (float(stop_price) / float(entry_price)) - 1.0, "exit_reason": "trailing_stop", "holding_days": held_days}
+            if target_price is not None and float(high) >= float(target_price):
+                return {"return": (float(target_price) / float(entry_price)) - 1.0, "exit_reason": "profit_target", "holding_days": held_days}
+            if held_days >= int(exit_rules.time_limit_days):
+                return {"return": (float(close) / float(entry_price)) - 1.0, "exit_reason": "time_limit", "holding_days": held_days}
+        if last_close is None:
+            return {"return": None, "exit_reason": None, "holding_days": None}
+        return {"return": (float(last_close) / float(entry_price)) - 1.0, "exit_reason": "time_limit", "holding_days": held_days}
+
+    def _path_benchmark_return(
+        self,
+        *,
+        history_context: dict[str, dict[str, object]],
+        snapshot_date: str,
+        horizon: int,
+        benchmark_ticker: str | None,
+    ) -> float | None:
+        if benchmark_ticker in (None, ""):
+            return None
+        benchmark_context = history_context.get(str(benchmark_ticker))
+        if benchmark_context is None:
+            return None
+        benchmark_index = benchmark_context["index_by_date"].get(snapshot_date)
+        if benchmark_index is None:
+            return None
+        return self._forward_return(
+            ticker_frame=benchmark_context["frame"],
+            index=int(benchmark_index),
+            horizon=horizon,
+        )
 
     def _optional_float(self, value) -> float | None:
         try:
