@@ -30,6 +30,9 @@ class NightlyPipelineScriptTests(unittest.TestCase):
         self.assertIn("--target-type path", script)
         self.assertIn("--dry-run", script)
         self.assertIn("path-target dry-run failed", script)
+        self.assertIn("regime-meter --latest", script)
+        self.assertIn("regime-meter --report", script)
+        self.assertIn("regime-meter report failed; continuing", script)
         self.assertIn("phase2-research", script)
         self.assertIn("--trial-count 200", script)
         self.assertIn("exit \"${shortlist_status}\"", script)
@@ -44,6 +47,14 @@ class NightlyPipelineScriptTests(unittest.TestCase):
         self.assertLess(
             script.index("echo \"[$(date --iso-8601=seconds)] path-label-tearsheet\""),
             script.index("echo \"[$(date --iso-8601=seconds)] shortlist-model\""),
+        )
+        self.assertLess(
+            script.index("echo \"[$(date --iso-8601=seconds)] universe-backfill"),
+            script.index("echo \"[$(date --iso-8601=seconds)] regime-meter latest\""),
+        )
+        self.assertLess(
+            script.index("echo \"[$(date --iso-8601=seconds)] regime-meter report\""),
+            script.index("echo \"[$(date --iso-8601=seconds)] path-label-tearsheet\""),
         )
         self.assertLess(
             script.index("shortlist_promotion_failed=1"),

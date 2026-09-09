@@ -129,6 +129,7 @@ class ScanPerformanceService:
         report_text = "\n".join(lines)
         report_path.write_text(report_text, encoding="utf-8")
         if email:
+            regime_line = self._load_regime_line(as_of_date=max(scoped_dates).date())
             dashboard = self._build_performance_dashboard(
                 enriched=enriched,
                 horizons=horizons,
@@ -140,7 +141,14 @@ class ScanPerformanceService:
             try:
                 self.email_sender(
                     subject=f"SwingQuant Performance ({benchmark})",
-                    html_body=self._render_performance_email(enriched, dashboard, horizons, benchmark, forward_predictions),
+                    html_body=self._render_performance_email(
+                        enriched,
+                        dashboard,
+                        horizons,
+                        benchmark,
+                        forward_predictions,
+                        regime_line=regime_line,
+                    ),
                     settings=settings,
                 )
             except Exception as exc:
@@ -153,6 +161,24 @@ class ScanPerformanceService:
             scan_dates=len(scoped_dates),
             benchmark=benchmark,
         )
+
+    def _load_regime_line(self, *, as_of_date) -> str:
+        loader = getattr(self.db_manager, "load_latest_regime_meter", None)
+        if not callable(loader):
+            return "regime: unavailable (mom_ic_20d nan)"
+        try:
+            row = loader(as_of_date=str(as_of_date), horizon_sessions=20)
+        except Exception as exc:
+            self.logger.warning("Unable to load regime meter for scan performance email: %s", exc)
+            return "regime: unavailable (mom_ic_20d nan)"
+        if not row:
+            return "regime: unavailable (mom_ic_20d nan)"
+        value = row.get("mom_ic_20d_avg")
+        try:
+            value_text = f"{float(value):.3f}" if value is not None and math.isfinite(float(value)) else "nan"
+        except (TypeError, ValueError):
+            value_text = "nan"
+        return f"regime: {row.get('classification') or 'neutral'} (mom_ic_20d {value_text})"
 
     def _persist_selected_outcomes(self, enriched: pd.DataFrame) -> None:
         if enriched.empty or not hasattr(self.db_manager, "update_scan_candidate_outcomes"):
@@ -1605,6 +1631,7 @@ class ScanPerformanceService:
         horizons: tuple[int, ...],
         benchmark: str,
         forward_predictions: pd.DataFrame | None = None,
+        regime_line: str | None = None,
     ) -> str:
         rec = str(dashboard.get("recommendation", "monitor"))
         rec_colors = {
@@ -1623,7 +1650,7 @@ class ScanPerformanceService:
         sections.append(f"""
         <div style="background:{rec_color};color:#fff;padding:16px 20px;border-radius:6px;margin-bottom:16px;">
             <h2 style="margin:0 0 4px 0;font-size:18px;">{rec_text}</h2>
-            <p style="margin:0;font-size:13px;opacity:0.9;">trend: {trend_text} | model: {dashboard.get('model_name', 'unknown')} | scope: {dashboard.get('scope', 'all')}</p>
+            <p style="margin:0;font-size:13px;opacity:0.9;">{escape(regime_line or 'regime: unavailable (mom_ic_20d nan)')} | trend: {trend_text} | model: {dashboard.get('model_name', 'unknown')} | scope: {dashboard.get('scope', 'all')}</p>
         </div>
         """)
 

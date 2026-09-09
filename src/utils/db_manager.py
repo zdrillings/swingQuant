@@ -184,6 +184,21 @@ CREATE INDEX IF NOT EXISTS idx_extended_hours_snapshots_date
 ON extended_hours_snapshots (snapshot_date);
 """
 
+REGIME_METER_SCHEMA = """
+CREATE TABLE IF NOT EXISTS regime_meter (
+    snapshot_date DATE NOT NULL,
+    mom_ic_daily DOUBLE,
+    wml_20d_alpha DOUBLE,
+    wml_1d DOUBLE,
+    mom_ic_20d_avg DOUBLE,
+    mom_ic_60d_avg DOUBLE,
+    classification VARCHAR,
+    PRIMARY KEY (snapshot_date)
+);
+CREATE INDEX IF NOT EXISTS idx_regime_meter_date
+ON regime_meter (snapshot_date);
+"""
+
 SQLITE_SCHEMA = """
 CREATE TABLE IF NOT EXISTS Universe (
     ticker TEXT PRIMARY KEY,
@@ -392,6 +407,7 @@ class DatabaseManager:
             duckdb_conn.execute(ANALYST_SNAPSHOTS_SCHEMA)
             duckdb_conn.execute(ANALYST_REVISION_SNAPSHOTS_SCHEMA)
             duckdb_conn.execute(EXTENDED_HOURS_SNAPSHOTS_SCHEMA)
+            duckdb_conn.execute(REGIME_METER_SCHEMA)
             self._migrate_duckdb_schema(duckdb_conn)
 
     def sqlite_connection(self) -> sqlite3.Connection:
@@ -603,6 +619,8 @@ class DatabaseManager:
             "ALTER TABLE extended_hours_snapshots ADD COLUMN IF NOT EXISTS sector_etf_extended_return DOUBLE",
             "ALTER TABLE extended_hours_snapshots ADD COLUMN IF NOT EXISTS relative_extended_return DOUBLE",
             "ALTER TABLE extended_hours_snapshots ADD COLUMN IF NOT EXISTS details_json VARCHAR",
+            "CREATE TABLE IF NOT EXISTS regime_meter (snapshot_date DATE NOT NULL, mom_ic_daily DOUBLE, wml_20d_alpha DOUBLE, wml_1d DOUBLE, mom_ic_20d_avg DOUBLE, mom_ic_60d_avg DOUBLE, classification VARCHAR, PRIMARY KEY (snapshot_date))",
+            "CREATE INDEX IF NOT EXISTS idx_regime_meter_date ON regime_meter (snapshot_date)",
         ]:
             connection.execute(statement)
 
@@ -1955,6 +1973,130 @@ class DatabaseManager:
                 ],
             )
         return len(payload)
+
+    def replace_regime_meter_rows(self, rows: Iterable[dict]) -> int:
+        payload = list(rows)
+        if not payload:
+            return 0
+        columns = [
+            "snapshot_date",
+            "mom_ic_daily",
+            "wml_20d_alpha",
+            "wml_1d",
+            "mom_ic_20d_avg",
+            "mom_ic_60d_avg",
+            "classification",
+        ]
+        dates = sorted({str(row["snapshot_date"]) for row in payload})
+        placeholders = ", ".join(["?"] * len(columns))
+        with self.duckdb_connection() as connection:
+            connection.executemany("DELETE FROM regime_meter WHERE snapshot_date = ?", [(value,) for value in dates])
+            connection.executemany(
+                f"""
+                INSERT OR REPLACE INTO regime_meter ({", ".join(columns)})
+                VALUES ({placeholders})
+                """,
+                [
+                    (
+                        str(row["snapshot_date"]),
+                        row.get("mom_ic_daily"),
+                        row.get("wml_20d_alpha"),
+                        row.get("wml_1d"),
+                        row.get("mom_ic_20d_avg"),
+                        row.get("mom_ic_60d_avg"),
+                        row.get("classification"),
+                    )
+                    for row in payload
+                ],
+            )
+        return len(payload)
+
+    def load_regime_meter(self):
+        query = """
+            SELECT
+                snapshot_date,
+                mom_ic_daily,
+                wml_20d_alpha,
+                wml_1d,
+                mom_ic_20d_avg,
+                mom_ic_60d_avg,
+                classification
+            FROM regime_meter
+            ORDER BY snapshot_date ASC
+        """
+        with self.duckdb_connection() as connection:
+            return connection.execute(query).fetchdf()
+
+    def latest_matured_universe_snapshot_date(
+        self,
+        *,
+        as_of_date: str | None = None,
+        horizon_sessions: int = 20,
+    ) -> str | None:
+        if as_of_date:
+            query = """
+                SELECT DISTINCT snapshot_date
+                FROM universe_daily_snapshots
+                WHERE snapshot_date <= ?
+                ORDER BY snapshot_date ASC
+            """
+            params: list[object] = [as_of_date]
+        else:
+            query = """
+                SELECT DISTINCT snapshot_date
+                FROM universe_daily_snapshots
+                WHERE alpha_vs_sector_20d IS NOT NULL
+                  AND roc_126 IS NOT NULL
+                ORDER BY snapshot_date ASC
+            """
+            params = []
+        with self.duckdb_connection() as connection:
+            rows = connection.execute(query, params).fetchall()
+        dates = [str(row[0]) for row in rows]
+        if not dates:
+            return None
+        if as_of_date:
+            offset = max(int(horizon_sessions), 0)
+            if len(dates) > offset:
+                return dates[-offset - 1]
+            return None
+        return dates[-1]
+
+    def load_latest_regime_meter(
+        self,
+        *,
+        as_of_date: str | None = None,
+        horizon_sessions: int = 20,
+    ):
+        import pandas as pd
+
+        cutoff = self.latest_matured_universe_snapshot_date(
+            as_of_date=as_of_date,
+            horizon_sessions=horizon_sessions,
+        )
+        if cutoff is None:
+            return None
+        query = """
+            SELECT
+                snapshot_date,
+                mom_ic_daily,
+                wml_20d_alpha,
+                wml_1d,
+                mom_ic_20d_avg,
+                mom_ic_60d_avg,
+                classification
+            FROM regime_meter
+            WHERE snapshot_date <= ?
+            ORDER BY snapshot_date DESC
+            LIMIT 1
+        """
+        with self.duckdb_connection() as connection:
+            frame = connection.execute(query, (cutoff,)).fetchdf()
+        if frame.empty:
+            return None
+        row = frame.iloc[0].to_dict()
+        row["snapshot_date"] = pd.to_datetime(row["snapshot_date"]).date()
+        return row
 
     def list_universe_daily_snapshot_dates(self) -> list[str]:
         with self.duckdb_connection() as connection:

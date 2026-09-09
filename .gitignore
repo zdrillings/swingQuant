@@ -215,6 +215,7 @@ reports/earnings_confirmation_live_comparison.md
 reports/extended_hours_snapshots.md
 reports/factor_tearsheet_*_20d.md
 reports/healthcare_param_sweeps/
+reports/regime_report.md
 
 # Ruff stuff:
 .ruff_cache/

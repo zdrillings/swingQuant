@@ -71,6 +71,30 @@ class ShortlistModelPolicy:
 
 
 @dataclass(frozen=True)
+class RegimeGatePolicy:
+    reversal_ic_threshold: float
+    trending_ic_threshold: float
+    enforce: bool
+    stand_down_slots: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class RegimeGateState:
+    classification: str
+    snapshot_date: date | None
+    mom_ic_20d_avg: float | None
+    mom_ic_60d_avg: float | None
+    wml_20d_alpha: float | None
+    enforce: bool
+    stand_down_slots: tuple[str, ...]
+
+    @property
+    def line(self) -> str:
+        value = "nan" if self.mom_ic_20d_avg is None or pd.isna(self.mom_ic_20d_avg) else f"{float(self.mom_ic_20d_avg):.3f}"
+        return f"regime: {self.classification} (mom_ic_20d {value})"
+
+
+@dataclass(frozen=True)
 class ScanPolicy:
     max_candidates_total: int
     max_candidates_per_slot: int
@@ -245,6 +269,7 @@ class ScanService:
         settings = get_settings()
         config = load_feature_config()
         scan_policy = ScanPolicy.from_config(config)
+        regime_policy = self._regime_gate_policy(config)
         universe_rows = self.db_manager.list_universe_rows(active_only=True)
         if not universe_rows:
             raise ValueError("Universe is empty. Run `sq sync` first.")
@@ -267,10 +292,49 @@ class ScanService:
         analysis_frame = self._filter_to_completed_scan_sessions(analysis_frame)
         snapshot = latest_snapshot(analysis_frame)
         self._validate_snapshot_freshness(snapshot=snapshot, scan_policy=scan_policy)
+        scan_date = self._max_frame_date(snapshot) or date.today()
+        regime_state = self._load_regime_gate_state(
+            policy=regime_policy,
+            scan_date=scan_date,
+        )
+        if regime_state is not None:
+            self.logger.info("%s enforce=%s", regime_state.line, regime_state.enforce)
         snapshot = snapshot[
             snapshot["ticker"].isin(universe_tickers)
             & snapshot["regime_green"].fillna(False)
         ].copy()
+        stood_down_slots = self._stood_down_slots(
+            regime_state=regime_state,
+            scan_strategies=scan_strategies,
+        )
+        if stood_down_slots:
+            self.logger.info(
+                "Regime stand-down active for slots=%s classification=%s.",
+                ",".join(stood_down_slots),
+                regime_state.classification if regime_state else "unknown",
+            )
+            scan_strategies = {
+                slot: strategy
+                for slot, strategy in scan_strategies.items()
+                if str(slot) not in stood_down_slots
+            }
+        if not scan_strategies:
+            if callable(scan_candidate_writer):
+                scan_candidate_writer(scan_date=date.today().isoformat(), rows=[])
+            if not dry_run:
+                self.email_sender(
+                    subject=self._regime_stand_down_subject(regime_state),
+                    html_body=self._build_regime_stand_down_email(regime_state),
+                    settings=settings,
+                )
+            return ScanReport(
+                candidate_count=0,
+                emailed=not dry_run,
+                learned_ranker_enabled=False,
+                learned_ranker_train_rows=0,
+                learned_ranker_train_dates=0,
+                learned_ranker_reason="Regime stand-down.",
+            )
         sector_map = {row["ticker"]: row["sector"] for row in universe_rows}
         overlap_context = self._build_overlap_context(
             open_trades=open_trades,
@@ -544,6 +608,7 @@ class ScanService:
             extended_hours=self._load_extended_hours_snapshot(),
             data_freshness_rows=data_freshness_rows,
             shortlist_model_context=shortlist_model_context,
+            regime_state=regime_state,
         )
         self.email_sender(
             subject="Evening Brief",
@@ -1104,6 +1169,79 @@ class ScanService:
             self.logger.warning("Unable to load shortlist model context; falling back to heuristic selector: %s", exc)
             return None
 
+    def _regime_gate_policy(self, config: dict) -> RegimeGatePolicy:
+        raw = config.get("regime_gating", {}) if isinstance(config, dict) else {}
+        slots = raw.get("stand_down_slots", [])
+        if slots is None:
+            slots = []
+        return RegimeGatePolicy(
+            reversal_ic_threshold=float(raw.get("reversal_ic_threshold", -0.05)),
+            trending_ic_threshold=float(raw.get("trending_ic_threshold", 0.05)),
+            enforce=bool(raw.get("enforce", False)),
+            stand_down_slots=tuple(str(slot) for slot in slots),
+        )
+
+    def _load_regime_gate_state(self, *, policy: RegimeGatePolicy, scan_date: date) -> RegimeGateState | None:
+        loader = getattr(self.db_manager, "load_latest_regime_meter", None)
+        if not callable(loader):
+            return None
+        try:
+            row = loader(as_of_date=scan_date.isoformat(), horizon_sessions=20)
+        except Exception as exc:
+            self.logger.warning("Unable to load regime meter state: %s", exc)
+            return None
+        if not row:
+            return None
+        return RegimeGateState(
+            classification=str(row.get("classification") or "neutral"),
+            snapshot_date=self._parse_date(row.get("snapshot_date")),
+            mom_ic_20d_avg=self._optional_float(row.get("mom_ic_20d_avg")),
+            mom_ic_60d_avg=self._optional_float(row.get("mom_ic_60d_avg")),
+            wml_20d_alpha=self._optional_float(row.get("wml_20d_alpha")),
+            enforce=policy.enforce,
+            stand_down_slots=policy.stand_down_slots,
+        )
+
+    def _stood_down_slots(
+        self,
+        *,
+        regime_state: RegimeGateState | None,
+        scan_strategies: dict[str, ProductionStrategy],
+    ) -> set[str]:
+        if regime_state is None or not regime_state.enforce or regime_state.classification != "reversal":
+            return set()
+        configured = {str(slot) for slot in regime_state.stand_down_slots if str(slot)}
+        if not configured:
+            return {str(slot) for slot in scan_strategies}
+        return {str(slot) for slot in scan_strategies if str(slot) in configured}
+
+    def _regime_stand_down_subject(self, regime_state: RegimeGateState | None) -> str:
+        if regime_state is None:
+            return "REGIME STAND-DOWN - no picks emitted"
+        value = "nan" if regime_state.mom_ic_20d_avg is None else f"{regime_state.mom_ic_20d_avg:.3f}"
+        return f"REGIME STAND-DOWN - momentum IC {value}, no picks emitted"
+
+    def _build_regime_stand_down_email(self, regime_state: RegimeGateState | None) -> str:
+        line = regime_state.line if regime_state is not None else "regime: unavailable"
+        latest = (
+            regime_state.snapshot_date.isoformat()
+            if regime_state is not None and regime_state.snapshot_date is not None
+            else "unknown"
+        )
+        wml = (
+            "nan"
+            if regime_state is None or regime_state.wml_20d_alpha is None
+            else f"{regime_state.wml_20d_alpha:.3f}"
+        )
+        return (
+            "<html><body style=\"font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:720px;margin:0 auto;padding:16px;color:#212529;\">"
+            "<h1 style=\"font-size:16px;\">REGIME STAND-DOWN</h1>"
+            f"<p>{escape(line)}</p>"
+            f"<p>metrics as of {escape(latest)} (20-session label lag by design).</p>"
+            f"<p>wml_20d_alpha: {escape(wml)}. No picks emitted.</p>"
+            "</body></html>"
+        )
+
     def _drop_stale_shortlist_model_context(self, shortlist_model_context, *, snapshot: pd.DataFrame):
         if shortlist_model_context is None or snapshot.empty or "date" not in snapshot.columns:
             return shortlist_model_context
@@ -1238,6 +1376,16 @@ class ScanService:
         if pd.isna(parsed):
             return None
         return parsed.date()
+
+    @staticmethod
+    def _optional_float(value) -> float | None:
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(parsed):
+            return None
+        return parsed
 
     @staticmethod
     def _format_freshness_date(value) -> str:
@@ -1494,6 +1642,7 @@ class ScanService:
         extended_hours: pd.DataFrame | None = None,
         data_freshness_rows: list[dict[str, str]] | None = None,
         shortlist_model_context=None,
+        regime_state: RegimeGateState | None = None,
     ) -> str:
         sections: list[str] = []
         analyst_contexts = analyst_contexts or {}
@@ -1617,6 +1766,7 @@ class ScanService:
             candidates=candidates,
             scan_policy=scan_policy,
             shortlist_model_context=shortlist_model_context,
+            regime_state=regime_state,
         )
         return (
             "<html><body style=\"font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:720px;margin:0 auto;padding:16px;color:#212529;\">"
@@ -1639,6 +1789,7 @@ class ScanService:
         candidates: pd.DataFrame,
         scan_policy: ScanPolicy,
         shortlist_model_context=None,
+        regime_state: RegimeGateState | None = None,
     ) -> str:
         pick_count = len(candidates.index)
         model_active = shortlist_model_context is not None
@@ -1664,9 +1815,15 @@ class ScanService:
             gate_color = "#6c757d"
             gate_level = "FALLBACK"
             gate_note = "using per-slot signal gates"
+        regime_line = (
+            regime_state.line
+            if regime_state is not None
+            else "regime: unavailable (mom_ic_20d nan)"
+        )
         return f"""
         <div style="background:#f8f9fa;border-radius:6px;padding:12px 16px;margin-bottom:12px;font-size:12px;line-height:1.5;">
             <strong style="font-size:13px;">Scan Status</strong><br>
+            {escape(regime_line)}<br>
             picks: {pick_count} | {model_line}
         </div>
         """

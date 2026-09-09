@@ -283,6 +283,9 @@ class ScanPerformanceServiceTests(unittest.TestCase):
                         ]
                     )
 
+                def load_latest_regime_meter(self, *, as_of_date=None, horizon_sessions=20):
+                    return {"classification": "reversal", "mom_ic_20d_avg": -0.123}
+
             report = ScanPerformanceService(FakeDB()).run(
                 recent_scan_dates=60,
                 recent_picks=5,
@@ -608,6 +611,9 @@ class ScanPerformanceServiceTests(unittest.TestCase):
                         ]
                     )
 
+                def load_latest_regime_meter(self, *, as_of_date=None, horizon_sessions=20):
+                    return {"classification": "reversal", "mom_ic_20d_avg": -0.123}
+
             email_calls = []
 
             class FakeSettings:
@@ -630,6 +636,7 @@ class ScanPerformanceServiceTests(unittest.TestCase):
             subject, html_body, _ = email_calls[0]
             self.assertIn("SwingQuant Performance", subject)
             self.assertIn("<html>", html_body)
+            self.assertIn("regime: reversal (mom_ic_20d -0.123)", html_body)
             self.assertIn("Horizon Summary", html_body)
 
     def test_scan_performance_email_failure_does_not_fail_report(self) -> None:

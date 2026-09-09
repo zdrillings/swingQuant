@@ -275,6 +275,11 @@ signal_model:
 backtest_costs:
   slippage_bps_per_side: 5
   commission_bps_per_side: 0
+regime_gating:
+  reversal_ic_threshold: -0.05
+  trending_ic_threshold: 0.05
+  enforce: false
+  stand_down_slots: []
 scan_policy:
   max_candidates_total: 6
   max_candidates_per_slot: 3
