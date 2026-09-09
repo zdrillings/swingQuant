@@ -143,6 +143,7 @@ class UniverseSnapshotBackfillService:
         if not universe_rows:
             raise ValueError("Universe is empty. Run `sq sync` first.")
 
+        universe_rows = self._dedupe_universe_rows(universe_rows)
         universe_tickers = [row["ticker"] for row in universe_rows]
         tickers = sorted(set(universe_tickers).union(REFERENCE_TICKERS))
         price_history = self.db_manager.load_price_history(tickers)
@@ -206,6 +207,7 @@ class UniverseSnapshotBackfillService:
                 (pd.to_datetime(analysis_frame["date"]).dt.normalize() == snapshot_date)
                 & analysis_frame["ticker"].isin(universe_tickers)
             ].copy()
+            day_frame = self._dedupe_day_frame(day_frame)
             rows = self._build_rows_for_date(
                 snapshot_date=snapshot_date_str,
                 day_frame=day_frame,
@@ -232,6 +234,24 @@ class UniverseSnapshotBackfillService:
             snapshot_dates_skipped=skipped,
             total_rows=total_rows,
         )
+
+    def _dedupe_universe_rows(self, universe_rows: list[dict[str, object]]) -> list[dict[str, object]]:
+        deduped: dict[str, dict[str, object]] = {}
+        for row in universe_rows:
+            ticker = str(row.get("ticker", "")).strip().upper()
+            if not ticker:
+                continue
+            normalized = dict(row)
+            normalized["ticker"] = ticker
+            deduped[ticker] = normalized
+        return [deduped[ticker] for ticker in sorted(deduped)]
+
+    def _dedupe_day_frame(self, day_frame: pd.DataFrame) -> pd.DataFrame:
+        if day_frame.empty or "ticker" not in day_frame.columns:
+            return day_frame
+        working = day_frame.copy()
+        working["ticker"] = working["ticker"].astype(str).str.strip().str.upper()
+        return working.drop_duplicates(subset=["ticker"], keep="last").reset_index(drop=True)
 
     def _snapshot_dates(
         self,

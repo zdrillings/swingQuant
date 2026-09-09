@@ -2823,6 +2823,29 @@ class ScanServiceTests(unittest.TestCase):
         self.assertAlmostEqual(rows[0]["path_return_20d"], -0.05)
         self.assertEqual(rows[0]["path_exit_reason_20d"], "hard_stop")
 
+    def test_universe_backfill_dedupes_active_universe_and_day_rows_by_ticker(self) -> None:
+        service = UniverseSnapshotBackfillService(db_manager=None)
+        universe_rows = [
+            {"ticker": " a ", "sector": "Industrials", "md_volume_30d": 1.0},
+            {"ticker": "A", "sector": "Industrials", "md_volume_30d": 2.0},
+            {"ticker": "BBB", "sector": "Energy", "md_volume_30d": 3.0},
+        ]
+        day_frame = pd.DataFrame(
+            [
+                {"ticker": " a ", "date": pd.Timestamp("2026-05-01"), "adj_close": 10.0},
+                {"ticker": "A", "date": pd.Timestamp("2026-05-01"), "adj_close": 11.0},
+                {"ticker": "BBB", "date": pd.Timestamp("2026-05-01"), "adj_close": 20.0},
+            ]
+        )
+
+        deduped_universe = service._dedupe_universe_rows(universe_rows)
+        deduped_day = service._dedupe_day_frame(day_frame)
+
+        self.assertEqual([row["ticker"] for row in deduped_universe], ["A", "BBB"])
+        self.assertEqual(deduped_universe[0]["md_volume_30d"], 2.0)
+        self.assertEqual(deduped_day["ticker"].tolist(), ["A", "BBB"])
+        self.assertEqual(float(deduped_day.loc[deduped_day["ticker"] == "A", "adj_close"].iloc[0]), 11.0)
+
     def test_universe_backfill_refreshes_stale_existing_dates_even_when_skip_existing_is_true(self) -> None:
         class FakeDB:
             def __init__(self):
