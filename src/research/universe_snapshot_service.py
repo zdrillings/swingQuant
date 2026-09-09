@@ -238,10 +238,10 @@ class UniverseSnapshotBackfillService:
     def _dedupe_universe_rows(self, universe_rows: list[dict[str, object]]) -> list[dict[str, object]]:
         deduped: dict[str, dict[str, object]] = {}
         for row in universe_rows:
-            ticker = str(row.get("ticker", "")).strip().upper()
+            normalized = dict(row)
+            ticker = str(normalized.get("ticker", "")).strip().upper()
             if not ticker:
                 continue
-            normalized = dict(row)
             normalized["ticker"] = ticker
             deduped[ticker] = normalized
         return [deduped[ticker] for ticker in sorted(deduped)]
