@@ -399,11 +399,12 @@ class DatabaseManagerInitializationTests(unittest.TestCase):
 
             self.assertEqual(inserted, 1)
             statement, rows = fake_duckdb.executemany_calls[-1]
+            self.assertIn("INSERT OR REPLACE INTO universe_daily_snapshots", statement)
             placeholder_count = statement.count("?")
             self.assertEqual(placeholder_count, len(rows[0]))
             inserted_columns = [
                 column.strip()
-                for column in statement.split("INSERT INTO universe_daily_snapshots (", 1)[1]
+                for column in statement.split("INSERT OR REPLACE INTO universe_daily_snapshots (", 1)[1]
                 .split(")", 1)[0]
                 .split(",")
             ]

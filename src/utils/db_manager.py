@@ -1856,7 +1856,7 @@ class DatabaseManager:
                 return 0
             connection.executemany(
                 f"""
-                INSERT INTO universe_daily_snapshots ({", ".join(columns)})
+                INSERT OR REPLACE INTO universe_daily_snapshots ({", ".join(columns)})
                 VALUES ({placeholders})
                 """,
                 [
