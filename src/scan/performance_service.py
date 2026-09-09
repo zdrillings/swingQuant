@@ -1627,7 +1627,8 @@ class ScanPerformanceService:
         </div>
         """)
 
-        # performance summary cards
+        # performance summary cards — trailing windows of recent scan dates only
+        trailing_labels = {"20d": "last 20 days", "3m": "last 3 months", "1y": "last 1 year"}
         cards_html = ""
         for label in ("20d", "3m", "1y"):
             w = dashboard.get(f"window_{label}")
@@ -1639,12 +1640,13 @@ class ScanPerformanceService:
             alpha_color = "#28a745" if alpha > 0.02 else ("#dc3545" if alpha < 0 else "#6c757d")
             cards_html += f"""
             <div style="flex:1;min-width:140px;background:#f8f9fa;border-radius:6px;padding:12px;text-align:center;margin:4px;">
-                <div style="font-size:11px;color:#6c757d;text-transform:uppercase;letter-spacing:0.5px;">{label} window</div>
+                <div style="font-size:11px;color:#6c757d;text-transform:uppercase;letter-spacing:0.5px;">{trailing_labels[label]}</div>
                 <div style="font-size:24px;font-weight:700;color:{alpha_color};margin:4px 0;">{alpha:+.1%}</div>
                 <div style="font-size:12px;color:#495057;">mean alpha</div>
                 <div style="margin-top:6px;font-size:12px;color:#6c757d;">
                     hit {hit:.0%} &middot; beat {beat:.0%}
                 </div>
+                <div style="margin-top:2px;font-size:11px;color:#6c757d;">{w.get('dates', '')} scan dates</div>
             </div>
             """
         sections.append(f'<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;">{cards_html}</div>')
@@ -1675,7 +1677,8 @@ class ScanPerformanceService:
             </tr>
             """
         sections.append(f"""
-        <h3 style="font-size:14px;color:#495057;margin-bottom:8px;">Horizon Summary</h3>
+        <h3 style="font-size:14px;color:#495057;margin-bottom:4px;">Horizon Summary — full history, all scan dates</h3>
+        <p style="font-size:11px;color:#6c757d;margin:0 0 8px 0;">These rows cover the entire scan history by holding horizon. The cards above are trailing windows of recent scan dates only; the two sections are different scopes.</p>
         <table style="width:100%;border-collapse:collapse;font-size:12px;margin-bottom:16px;">
             <tr style="background:#e9ecef;">
                 <th style="padding:6px 12px;text-align:left;">Horizon</th>
