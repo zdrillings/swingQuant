@@ -32,6 +32,7 @@ class NightlyPipelineScriptTests(unittest.TestCase):
         self.assertIn("path-target dry-run failed", script)
         self.assertIn("regime-meter --latest", script)
         self.assertIn("regime-meter --report", script)
+        self.assertIn("regime-meter latest failed; continuing", script)
         self.assertIn("regime-meter report failed; continuing", script)
         self.assertIn("phase2-research", script)
         self.assertIn("--trial-count 200", script)

@@ -110,7 +110,7 @@ echo "[$(date --iso-8601=seconds)] universe-backfill ${universe_refresh_start}..
 ./sq universe-backfill --date-from "${universe_refresh_start}" --date-to "${run_date}" --skip-existing
 
 echo "[$(date --iso-8601=seconds)] regime-meter latest"
-./sq regime-meter --latest
+./sq regime-meter --latest || echo "[$(date --iso-8601=seconds)] regime-meter latest failed; continuing"
 
 echo "[$(date --iso-8601=seconds)] regime-meter report"
 ./sq regime-meter --report || echo "[$(date --iso-8601=seconds)] regime-meter report failed; continuing"
