@@ -25,6 +25,7 @@ class NightlyPipelineScriptTests(unittest.TestCase):
         self.assertIn("clear_promotion_failures", script)
         self.assertIn("scan skipped because shortlist-model produced no promotable champion", script)
         self.assertIn("--oos-stride-dates 20", script)
+        self.assertIn("--max-train-dates 252", script)
         self.assertIn("path-label-tearsheet", script)
         self.assertIn("--target-type path", script)
         self.assertIn("--dry-run", script)

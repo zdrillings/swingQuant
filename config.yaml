@@ -348,8 +348,10 @@ scan_policy:
     horizon_days: 20
     top_n: 10
     min_feature_ic: 0.03
+    min_feature_ic_observation_fraction: 0.20
     min_opportunity_score: 0.30
     min_train_dates: 252
+    max_train_dates: 252
     test_window_dates: 20
     recent_dates: 60
     refresh_if_stale: true
@@ -378,6 +380,10 @@ scan_policy:
       min_recent_60d_spearman: 0.0
       min_recent_1fold_spearman: 0.0
       min_recent_3fold_spearman: 0.0
+      max_recent_20d_top_ticker_date_rate: 0.40
+      max_recent_60d_top_ticker_date_rate: 0.40
+      max_recent_1fold_top_ticker_date_rate: 0.40
+      max_recent_3fold_top_ticker_date_rate: 0.40
 monitor_policy:
   sell_signal:
     max_loss_pct: 0.15

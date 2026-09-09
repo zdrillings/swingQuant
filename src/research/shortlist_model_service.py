@@ -82,6 +82,7 @@ class ShortlistModelService:
         feature_profile: str = "full",
         target_type: str = "regression",
         oos_stride_dates: int | None = None,
+        max_train_dates: int | None = None,
         persist: bool = True,
     ) -> ShortlistModelReport:
         self.db_manager.initialize()
@@ -134,6 +135,10 @@ class ShortlistModelService:
             int(oos_stride_dates) if oos_stride_dates is not None else int(horizon_days),
             1,
         )
+        resolved_max_train_dates = self._resolve_max_train_dates(
+            max_train_dates=max_train_dates,
+            min_train_dates=int(min_train_dates),
+        )
         base_feature_columns = model_feature_columns_for_profile(feature_profile)
         expanded_feature_columns = self._filter_model_feature_columns(expand_model_feature_columns(base_feature_columns))
         candidate_models = (
@@ -145,6 +150,7 @@ class ShortlistModelService:
             "xgboost_model",
         )
         min_feature_ic = self._load_min_feature_ic()
+        min_feature_ic_observation_fraction = self._load_min_feature_ic_observation_fraction()
         feature_ic_report = self._feature_ic_report(
             matured,
             target_column=evaluation_target_column,
@@ -153,6 +159,7 @@ class ShortlistModelService:
             evaluation_stride_dates=resolved_oos_stride_dates,
             label_horizon_dates=max(int(horizon_days), 1),
             min_feature_ic=min_feature_ic,
+            min_observation_fraction=min_feature_ic_observation_fraction,
             feature_columns_override=expanded_feature_columns,
         )
         feature_columns_override = feature_ic_report["surviving_features"]
@@ -171,6 +178,7 @@ class ShortlistModelService:
                 evaluation_target_column=evaluation_target_column,
                 model_name=model_name,
                 min_train_dates=int(min_train_dates),
+                max_train_dates=resolved_max_train_dates,
                 test_window_dates=int(test_window_dates),
                 evaluation_stride_dates=resolved_oos_stride_dates,
                 label_horizon_dates=max(int(horizon_days), 1),
@@ -178,6 +186,7 @@ class ShortlistModelService:
                 xgboost_params=xgboost_params if model_name == "xgboost_model" else None,
                 feature_columns_override=expanded_feature_columns,
                 min_feature_ic=min_feature_ic,
+                min_feature_ic_observation_fraction=min_feature_ic_observation_fraction,
             )
             if predicted is not None and not predicted.empty:
                 model_predictions[model_name] = predicted
@@ -284,12 +293,14 @@ class ShortlistModelService:
                 xgboost_config=xgboost_config,
                 feature_profile=feature_profile,
                 min_train_dates=int(min_train_dates),
+                max_train_dates=resolved_max_train_dates,
                 test_window_dates=int(test_window_dates),
                 evaluation_stride_dates=resolved_oos_stride_dates,
                 label_horizon_dates=max(int(horizon_days), 1),
                 feature_ic_path=self.db_manager.paths.reports_dir / "feature_ic_report.md",
                 min_feature_ic=min_feature_ic,
                 surviving_features=feature_columns_override,
+                min_feature_ic_observation_fraction=min_feature_ic_observation_fraction,
                 eligible_rows=len(matured.index),
                 eligible_dates=int(matured["snapshot_date"].nunique()),
                 oos_prediction_dates=int(combined_predictions["snapshot_date"].nunique()),
@@ -325,6 +336,8 @@ class ShortlistModelService:
                 xgboost_params=xgboost_params if model_name == "xgboost_model" else None,
                 feature_columns_override=expanded_feature_columns,
                 min_feature_ic=min_feature_ic,
+                min_feature_ic_observation_fraction=min_feature_ic_observation_fraction,
+                max_train_dates=resolved_max_train_dates,
             )
             if scored is not None and not scored.empty:
                 scored = self._apply_calibration_from_oos(
@@ -364,12 +377,14 @@ class ShortlistModelService:
             xgboost_config=xgboost_config,
             feature_profile=feature_profile,
             min_train_dates=int(min_train_dates),
+            max_train_dates=resolved_max_train_dates,
             test_window_dates=int(test_window_dates),
             evaluation_stride_dates=resolved_oos_stride_dates,
             label_horizon_dates=max(int(horizon_days), 1),
             feature_ic_path=self.db_manager.paths.reports_dir / "feature_ic_report.md",
             min_feature_ic=min_feature_ic,
             surviving_features=feature_columns_override,
+            min_feature_ic_observation_fraction=min_feature_ic_observation_fraction,
             eligible_rows=len(matured.index),
             eligible_dates=int(matured["snapshot_date"].nunique()),
             oos_prediction_dates=int(combined_predictions["snapshot_date"].nunique()),
@@ -547,6 +562,8 @@ class ShortlistModelService:
         xgboost_params: dict[str, float | int] | None = None,
         feature_columns_override: list[str] | None = None,
         min_feature_ic: float | None = None,
+        min_feature_ic_observation_fraction: float = 0.20,
+        max_train_dates: int | None = None,
     ) -> pd.DataFrame | None:
         dates = sorted(frame["snapshot_date"].drop_duplicates().tolist())
         evaluation_target_column = evaluation_target_column or target_column
@@ -559,7 +576,10 @@ class ShortlistModelService:
             if not test_dates:
                 break
             train_end_index = max(0, start_index - label_embargo)
-            train_dates = set(dates[:train_end_index])
+            train_date_window = dates[:train_end_index]
+            if max_train_dates is not None:
+                train_date_window = train_date_window[-max(int(max_train_dates), 1):]
+            train_dates = set(train_date_window)
             if len(train_dates) < int(min_train_dates):
                 start_index += stride
                 continue
@@ -584,6 +604,7 @@ class ShortlistModelService:
                     train_frame,
                     target_column=evaluation_target_column,
                     min_feature_ic=float(min_feature_ic),
+                    min_observation_fraction=float(min_feature_ic_observation_fraction),
                 )
                 if feature_columns_override is None:
                     fold_feature_columns = ic_survivors
@@ -664,6 +685,8 @@ class ShortlistModelService:
         xgboost_params: dict[str, float | int] | None = None,
         feature_columns_override: list[str] | None = None,
         min_feature_ic: float | None = None,
+        min_feature_ic_observation_fraction: float = 0.20,
+        max_train_dates: int | None = None,
     ) -> pd.DataFrame:
         latest_date = all_snapshots["snapshot_date"].max()
         feature_ic_target_column = feature_ic_target_column or target_column
@@ -678,6 +701,9 @@ class ShortlistModelService:
         if safe_train.empty:
             safe_train = matured
         safe_train_dates = sorted(safe_train["snapshot_date"].drop_duplicates().tolist())
+        if max_train_dates is not None and len(safe_train_dates) > int(max_train_dates):
+            safe_train_dates = safe_train_dates[-max(int(max_train_dates), 1):]
+            safe_train = safe_train[safe_train["snapshot_date"].isin(safe_train_dates)].copy()
         if len(safe_train_dates) > 1:
             safe_train = self._stride_training_labels(
                 safe_train,
@@ -691,6 +717,7 @@ class ShortlistModelService:
                 safe_train,
                 target_column=feature_ic_target_column,
                 min_feature_ic=float(min_feature_ic),
+                min_observation_fraction=float(min_feature_ic_observation_fraction),
             )
             if feature_columns_override is None:
                 live_feature_columns = ic_survivors
@@ -1303,12 +1330,39 @@ class ShortlistModelService:
         )
         return float(payload.get("min_feature_ic", 0.03))
 
+    def _load_min_feature_ic_observation_fraction(self) -> float:
+        config = load_feature_config()
+        payload = (
+            config.get("scan_policy", {})
+            .get("shortlist_model", {})
+            if isinstance(config, dict)
+            else {}
+        )
+        return max(0.0, min(float(payload.get("min_feature_ic_observation_fraction", 0.20)), 1.0))
+
+    def _resolve_max_train_dates(self, *, max_train_dates: int | None, min_train_dates: int) -> int | None:
+        if max_train_dates is None:
+            config = load_feature_config()
+            payload = (
+                config.get("scan_policy", {})
+                .get("shortlist_model", {})
+                if isinstance(config, dict)
+                else {}
+            )
+            configured = payload.get("max_train_dates")
+            if configured in (None, ""):
+                return None
+            max_train_dates = int(configured)
+        resolved = max(int(max_train_dates), int(min_train_dates))
+        return resolved
+
     def _feature_ic_survivors_from_frame(
         self,
         frame: pd.DataFrame,
         *,
         target_column: str,
         min_feature_ic: float,
+        min_observation_fraction: float = 0.20,
     ) -> list[str]:
         if frame.empty or target_column not in frame.columns:
             return []
@@ -1326,7 +1380,10 @@ class ShortlistModelService:
         target = pd.to_numeric(frame[target_column], errors="coerce")
         survivors: list[str] = []
         survivor_signatures: set[tuple[tuple[int, float | None], ...]] = set()
-        min_observations = min(40, max(2, int(len(frame.index) // 2)))
+        min_observations = self._feature_ic_min_observations(
+            len(frame.index),
+            min_observation_fraction=min_observation_fraction,
+        )
         for feature_name in feature_columns:
             values = pd.to_numeric(feature_frame[feature_name], errors="coerce")
             valid = values.notna() & target.notna()
@@ -1349,6 +1406,12 @@ class ShortlistModelService:
                 survivor_signatures.add(signature)
                 survivors.append(str(feature_name))
         return survivors
+
+    def _feature_ic_min_observations(self, row_count: int, *, min_observation_fraction: float) -> int:
+        if row_count <= 0:
+            return 0
+        fraction = max(0.0, min(float(min_observation_fraction), 1.0))
+        return max(2, int(math.ceil(float(row_count) * fraction)))
 
     def _base_feature_name(self, feature_name: str) -> str:
         for suffix in ("__rank_all", "__rank_sector"):
@@ -1443,6 +1506,7 @@ class ShortlistModelService:
         evaluation_stride_dates: int,
         label_horizon_dates: int,
         min_feature_ic: float,
+        min_observation_fraction: float = 0.20,
         feature_columns_override: list[str] | None = None,
     ) -> dict[str, object]:
         dates = sorted(frame["snapshot_date"].drop_duplicates().tolist())
@@ -1467,6 +1531,7 @@ class ShortlistModelService:
                         "",
                         f"- target_column: {target_column}",
                         f"- min_feature_ic: {float(min_feature_ic):.4f}",
+                        f"- min_feature_ic_observation_fraction: {float(min_observation_fraction):.4f}",
                         "- oos_dates: 0",
                         "- surviving_features: 0",
                         "",
@@ -1497,6 +1562,10 @@ class ShortlistModelService:
                 if column in feature_frame.columns
             ]
         target = pd.to_numeric(oos_frame[target_column], errors="coerce")
+        min_observations = self._feature_ic_min_observations(
+            len(oos_frame.index),
+            min_observation_fraction=min_observation_fraction,
+        )
         rows: list[dict[str, object]] = []
         survivor_signatures: dict[tuple[tuple[int, float | None], ...], str] = {}
         for feature_name in feature_columns:
@@ -1508,7 +1577,7 @@ class ShortlistModelService:
                 valid=valid,
             )
             if (
-                int(valid.sum()) < 2
+                int(valid.sum()) < min_observations
                 or not has_cross_sectional_variation
                 or values[valid].nunique(dropna=True) < 2
                 or target[valid].nunique(dropna=True) < 2
@@ -1542,6 +1611,7 @@ class ShortlistModelService:
             str(row.feature)
             for row in report.itertuples(index=False)
             if pd.notna(row.abs_rank_ic) and float(row.abs_rank_ic) >= float(min_feature_ic)
+            and int(row.observations) >= min_observations
             and pd.isna(row.duplicate_of)
         ]
         lines = [
@@ -1549,6 +1619,8 @@ class ShortlistModelService:
             "",
             f"- target_column: {target_column}",
             f"- min_feature_ic: {float(min_feature_ic):.4f}",
+            f"- min_feature_ic_observation_fraction: {float(min_observation_fraction):.4f}",
+            f"- min_feature_ic_observations: {int(min_observations)}",
             f"- oos_dates: {len(set(oos_dates))}",
             f"- oos_rows: {len(oos_frame.index)}",
             f"- surviving_features: {len(surviving_features)}",
@@ -1560,6 +1632,7 @@ class ShortlistModelService:
         for row in report.itertuples(index=False):
             abs_ic = float(row.abs_rank_ic) if pd.notna(row.abs_rank_ic) else float("nan")
             survives = (abs_ic >= float(min_feature_ic) and pd.isna(row.duplicate_of)) if math.isfinite(abs_ic) else False
+            survives = survives and int(row.observations) >= min_observations
             lines.append(
                 "| "
                 f"{row.feature} | "
@@ -1672,8 +1745,8 @@ class ShortlistModelService:
         for snapshot_date, day_frame in predictions.groupby("snapshot_date", sort=True):
             ordered = day_frame.sort_values(["predicted_alpha", "ticker"], ascending=[False, True]).copy()
             picks = ordered.head(int(top_n)).copy()
-            target = pd.to_numeric(picks[target_column], errors="coerce").dropna()
-            universe_target = pd.to_numeric(day_frame[target_column], errors="coerce").dropna()
+            target = pd.to_numeric(picks[target_column], errors="coerce").clip(lower=-1.0, upper=1.0).dropna()
+            universe_target = pd.to_numeric(day_frame[target_column], errors="coerce").clip(lower=-1.0, upper=1.0).dropna()
             if target.empty or universe_target.empty:
                 continue
             full_target = pd.to_numeric(ordered[target_column], errors="coerce")
@@ -1691,7 +1764,7 @@ class ShortlistModelService:
                     "gross_mean_target": float(target.mean()),
                     "mean_target": float(target.mean()) - cost_fraction,
                     "hit_rate": float((target - cost_fraction > 0.0).mean()),
-                    "universe_mean_target": float(universe_target.mean()),
+                    "universe_mean_target": float(universe_target.mean()) - cost_fraction,
                     "spearman": spearman,
                 }
             )
@@ -1701,6 +1774,11 @@ class ShortlistModelService:
         net_targets = pd.to_numeric(frame["mean_target"], errors="coerce").dropna()
         gross_targets = pd.to_numeric(frame["gross_mean_target"], errors="coerce").dropna()
         horizon = self._target_horizon_dates(target_column)
+        concentration = self._top_ticker_concentration(
+            predictions=predictions,
+            target_column=target_column,
+            top_n=top_n,
+        )
         sharpe = annualized_sharpe(net_targets, periods_per_year=max(252.0 / float(horizon), 1.0))
         nw_t = newey_west_t_stat(net_targets, lag=horizon)
         return {
@@ -1715,10 +1793,41 @@ class ShortlistModelService:
             "positive_date_rate": float((frame["mean_target"] > 0.0).mean()),
             "ge_2pct_rate": float((frame["mean_target"] >= 0.02).mean()),
             "ge_5pct_rate": float((frame["mean_target"] >= 0.05).mean()),
+            "top_ticker": concentration["top_ticker"],
+            "top_ticker_date_rate": concentration["top_ticker_date_rate"],
+            "top_ticker_pick_share": concentration["top_ticker_pick_share"],
             "net_sharpe": sharpe,
             "newey_west_t": nw_t,
             "years_for_t_1_96": years_required_for_tstat(sharpe),
             "round_trip_cost": cost_fraction,
+        }
+
+    def _top_ticker_concentration(
+        self,
+        *,
+        predictions: pd.DataFrame,
+        target_column: str,
+        top_n: int,
+    ) -> dict[str, object]:
+        rows: list[dict[str, object]] = []
+        for snapshot_date, day_frame in predictions.groupby("snapshot_date", sort=True):
+            ordered = day_frame.dropna(subset=[target_column]).sort_values(["predicted_alpha", "ticker"], ascending=[False, True])
+            picks = ordered.head(int(top_n)).copy()
+            if picks.empty:
+                continue
+            for ticker in picks["ticker"].astype(str).tolist():
+                rows.append({"snapshot_date": pd.Timestamp(snapshot_date), "ticker": ticker})
+        if not rows:
+            return {"top_ticker": None, "top_ticker_date_rate": float("nan"), "top_ticker_pick_share": float("nan")}
+        frame = pd.DataFrame(rows)
+        ticker_pick_counts = frame["ticker"].value_counts()
+        top_ticker = str(ticker_pick_counts.index[0])
+        total_dates = max(int(frame["snapshot_date"].nunique()), 1)
+        ticker_dates = int(frame.loc[frame["ticker"] == top_ticker, "snapshot_date"].nunique())
+        return {
+            "top_ticker": top_ticker,
+            "top_ticker_date_rate": float(ticker_dates) / float(total_dates),
+            "top_ticker_pick_share": float(ticker_pick_counts.iloc[0]) / float(len(frame.index)),
         }
 
     def _round_trip_cost_fraction(self) -> float:
@@ -1985,6 +2094,10 @@ class ShortlistModelService:
             "min_recent_60d_spearman": float(payload.get("min_recent_60d_spearman", 0.0)),
             "min_recent_1fold_spearman": float(payload.get("min_recent_1fold_spearman", 0.0)),
             "min_recent_3fold_spearman": float(payload.get("min_recent_3fold_spearman", 0.0)),
+            "max_recent_20d_top_ticker_date_rate": float(payload.get("max_recent_20d_top_ticker_date_rate", 0.40)),
+            "max_recent_60d_top_ticker_date_rate": float(payload.get("max_recent_60d_top_ticker_date_rate", 0.40)),
+            "max_recent_1fold_top_ticker_date_rate": float(payload.get("max_recent_1fold_top_ticker_date_rate", 0.40)),
+            "max_recent_3fold_top_ticker_date_rate": float(payload.get("max_recent_3fold_top_ticker_date_rate", 0.40)),
         }
 
     def _choose_champion_model(
@@ -2052,6 +2165,8 @@ class ShortlistModelService:
                 return False
             if not self._finite_at_least(summary.get("spearman"), promotion_gate.get(f"min_recent_{window}d_spearman", 0.0)):
                 return False
+            if self._finite_above(summary.get("top_ticker_date_rate"), promotion_gate.get(f"max_recent_{window}d_top_ticker_date_rate", 0.40)):
+                return False
         for folds in (1, 3):
             row = acceptance_summaries[
                 acceptance_summaries["model"].astype(str) == f"{model_name}_last_{folds}fold"
@@ -2070,6 +2185,8 @@ class ShortlistModelService:
                 return False
             if not self._finite_at_least(summary.get("spearman"), promotion_gate.get(f"min_recent_{folds}fold_spearman", 0.0)):
                 return False
+            if self._finite_above(summary.get("top_ticker_date_rate"), promotion_gate.get(f"max_recent_{folds}fold_top_ticker_date_rate", 0.40)):
+                return False
         return True
 
     def _finite_at_least(self, value, threshold) -> bool:
@@ -2079,6 +2196,14 @@ class ShortlistModelService:
         except (TypeError, ValueError):
             return False
         return math.isfinite(numeric) and numeric >= required
+
+    def _finite_above(self, value, threshold) -> bool:
+        try:
+            numeric = float(value)
+            maximum = float(threshold)
+        except (TypeError, ValueError):
+            return False
+        return math.isfinite(numeric) and numeric > maximum
 
     def _render_promotion_gate(self, *, promotion_gate: dict[str, float | int], summaries: pd.DataFrame) -> list[str]:
         lines = ["## Promotion Gate", ""]
@@ -2106,7 +2231,12 @@ class ShortlistModelService:
                 f"- min_recent_60d_spearman: {float(promotion_gate['min_recent_60d_spearman']):.4f}",
                 f"- min_recent_1fold_spearman: {float(promotion_gate['min_recent_1fold_spearman']):.4f}",
                 f"- min_recent_3fold_spearman: {float(promotion_gate['min_recent_3fold_spearman']):.4f}",
+                f"- max_recent_20d_top_ticker_date_rate: {float(promotion_gate.get('max_recent_20d_top_ticker_date_rate', 0.40)):.2f}",
+                f"- max_recent_60d_top_ticker_date_rate: {float(promotion_gate.get('max_recent_60d_top_ticker_date_rate', 0.40)):.2f}",
+                f"- max_recent_1fold_top_ticker_date_rate: {float(promotion_gate.get('max_recent_1fold_top_ticker_date_rate', 0.40)):.2f}",
+                f"- max_recent_3fold_top_ticker_date_rate: {float(promotion_gate.get('max_recent_3fold_top_ticker_date_rate', 0.40)):.2f}",
                 "- gate_metric: per-date cross-sectional Spearman over the full OOS slice",
+                "- target_winsorization: acceptance-window basket targets clipped to [-1.0, 1.0] before mean, hit, and beat calculations",
                 "",
             ]
         )
@@ -2146,11 +2276,13 @@ class ShortlistModelService:
         xgboost_config: str,
         feature_profile: str,
         min_train_dates: int,
+        max_train_dates: int | None,
         test_window_dates: int,
         evaluation_stride_dates: int,
         label_horizon_dates: int,
         feature_ic_path,
         min_feature_ic: float,
+        min_feature_ic_observation_fraction: float,
         surviving_features: list[str],
         eligible_rows: int,
         eligible_dates: int,
@@ -2182,6 +2314,7 @@ class ShortlistModelService:
             f"- xgboost_config: {xgboost_config}",
             f"- feature_profile: {feature_profile}",
             f"- min_train_dates: {int(min_train_dates)}",
+            f"- max_train_dates: {int(max_train_dates) if max_train_dates is not None else 'none'}",
             f"- test_window_dates: {int(test_window_dates)}",
             f"- oos_evaluation_stride_dates: {int(evaluation_stride_dates)}",
             f"- label_horizon_dates: {int(label_horizon_dates)}",
@@ -2192,6 +2325,7 @@ class ShortlistModelService:
             "- feature_matrix: raw features plus date-wise cross-sectional ranks and sector-relative ranks",
             f"- feature_ic_report: {feature_ic_path}",
             f"- min_feature_ic: {float(min_feature_ic):.4f}",
+            f"- min_feature_ic_observation_fraction: {float(min_feature_ic_observation_fraction):.4f}",
             f"- surviving_features: {len(surviving_features)}",
             "",
             f"- eligible_rows: {int(eligible_rows)}",
@@ -2245,6 +2379,9 @@ class ShortlistModelService:
             lines.append(f"- positive_date_rate: {self._fmt(row.positive_date_rate)}")
             lines.append(f"- ge_2pct_rate: {self._fmt(row.ge_2pct_rate)}")
             lines.append(f"- ge_5pct_rate: {self._fmt(row.ge_5pct_rate)}")
+            lines.append(f"- top_ticker: {getattr(row, 'top_ticker', None) or 'n/a'}")
+            lines.append(f"- top_ticker_date_rate: {self._fmt(getattr(row, 'top_ticker_date_rate', float('nan')))}")
+            lines.append(f"- top_ticker_pick_share: {self._fmt(getattr(row, 'top_ticker_pick_share', float('nan')))}")
             lines.append("")
         return lines
 

@@ -74,6 +74,36 @@ class ShortlistModelServiceTests(unittest.TestCase):
 
         self.assertLess(horizon_sharpe, daily_sharpe / 3.0)
 
+    def test_shortlist_evaluation_winsorizes_extreme_acceptance_targets(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        frame = pd.DataFrame(
+            [
+                {
+                    "snapshot_date": pd.Timestamp("2026-01-02"),
+                    "ticker": "AAA",
+                    "sector": "Energy",
+                    "predicted_alpha": 2.0,
+                    "alpha_vs_sector_20d": 5.0,
+                },
+                {
+                    "snapshot_date": pd.Timestamp("2026-01-02"),
+                    "ticker": "BBB",
+                    "sector": "Energy",
+                    "predicted_alpha": 1.0,
+                    "alpha_vs_sector_20d": -5.0,
+                },
+            ]
+        )
+
+        summary = service._evaluate_predictions(
+            predictions=frame,
+            top_n=2,
+            target_column="alpha_vs_sector_20d",
+            model_name="ridge_model",
+        )
+
+        self.assertAlmostEqual(summary["gross_mean_target"], 0.0)
+
     def test_filter_eligible_universe_passed_or_trend_broadens_research_set(self) -> None:
         frame = pd.DataFrame(
             [
@@ -228,14 +258,45 @@ class ShortlistModelServiceTests(unittest.TestCase):
 
             fake_db = FakeDB(paths, snapshot_frame)
             service = ShortlistModelService(fake_db)
-            report = service.run(
-                top_n=2,
-                horizon_days=20,
-                min_train_dates=6,
-                test_window_dates=2,
-                recent_dates=4,
-                xgboost_config="balanced_depth4",
-            )
+            config = {
+                "scan_policy": {
+                    "shortlist_model": {
+                        "min_feature_ic": 0.0,
+                        "promotion_gate": {
+                            "enabled": True,
+                            "min_recent_20d_hit_rate": 0.0,
+                            "min_recent_20d_beat_universe_rate": 0.0,
+                            "min_recent_20d_mean_target": -1.0,
+                            "min_recent_60d_hit_rate": 0.0,
+                            "min_recent_60d_beat_universe_rate": 0.0,
+                            "min_recent_60d_mean_target": -1.0,
+                            "min_recent_1fold_hit_rate": 0.0,
+                            "min_recent_1fold_beat_universe_rate": 0.0,
+                            "min_recent_1fold_mean_target": -1.0,
+                            "min_recent_3fold_hit_rate": 0.0,
+                            "min_recent_3fold_beat_universe_rate": 0.0,
+                            "min_recent_3fold_mean_target": -1.0,
+                            "min_recent_20d_spearman": -1.0,
+                            "min_recent_60d_spearman": -1.0,
+                            "min_recent_1fold_spearman": -1.0,
+                            "min_recent_3fold_spearman": -1.0,
+                            "max_recent_20d_top_ticker_date_rate": 1.0,
+                            "max_recent_60d_top_ticker_date_rate": 1.0,
+                            "max_recent_1fold_top_ticker_date_rate": 1.0,
+                            "max_recent_3fold_top_ticker_date_rate": 1.0,
+                        },
+                    },
+                },
+            }
+            with patch("src.research.shortlist_model_service.load_feature_config", return_value=config):
+                report = service.run(
+                    top_n=2,
+                    horizon_days=20,
+                    min_train_dates=6,
+                    test_window_dates=2,
+                    recent_dates=4,
+                    xgboost_config="balanced_depth4",
+                )
 
             self.assertEqual(report.target_column, "alpha_vs_sector_20d")
             self.assertGreater(report.oos_dates, 0)
@@ -280,6 +341,8 @@ class ShortlistModelServiceTests(unittest.TestCase):
                 "20",
                 "--min-train-dates",
                 "200",
+                "--max-train-dates",
+                "252",
                 "--test-window-dates",
                 "15",
                 "--oos-stride-dates",
@@ -300,6 +363,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertEqual(args.top, 8)
         self.assertEqual(args.horizon, 20)
         self.assertEqual(args.min_train_dates, 200)
+        self.assertEqual(args.max_train_dates, 252)
         self.assertEqual(args.test_window_dates, 15)
         self.assertEqual(args.oos_stride_dates, 60)
         self.assertEqual(args.recent_dates, 30)
@@ -763,6 +827,55 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertIsNotNone(predictions)
         self.assertEqual(train_date_counts, [1, 2, 3])
 
+    def test_walk_forward_predictions_caps_training_window_before_label_stride(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        dates = pd.bdate_range("2026-01-02", periods=30)
+        rows = []
+        for date_index, snapshot_date in enumerate(dates):
+            for ticker in ("AAA", "BBB"):
+                rows.append(
+                    {
+                        "snapshot_date": snapshot_date,
+                        "ticker": ticker,
+                        "sector": "Energy",
+                        "md_volume_30d": 50_000_000.0,
+                        "relative_strength_index_vs_spy": 70.0 + date_index,
+                        "roc_63": 0.1,
+                        "sma_200_dist": 0.1,
+                        "vol_alpha": 1.0,
+                        "alpha_vs_sector_20d": 0.01,
+                    }
+                )
+        frame = pd.DataFrame(rows)
+        observed_train_dates: list[list[pd.Timestamp]] = []
+
+        def fake_score_model(**kwargs):
+            train_frame = kwargs["train_frame"]
+            test_frame = kwargs["test_frame"]
+            observed_train_dates.append(sorted(pd.to_datetime(train_frame["snapshot_date"]).drop_duplicates().tolist()))
+            scored = test_frame.copy()
+            scored["predicted_alpha"] = 0.0
+            scored["model_top_reasons"] = [[] for _ in range(len(scored.index))]
+            scored["model_reason_summary"] = None
+            return scored
+
+        with patch.object(service, "_score_model", side_effect=fake_score_model):
+            predictions = service._walk_forward_predictions(
+                frame,
+                target_column="alpha_vs_sector_20d",
+                model_name="ridge_model",
+                min_train_dates=5,
+                max_train_dates=8,
+                test_window_dates=2,
+                model_scope="global",
+                evaluation_stride_dates=10,
+                label_horizon_dates=1,
+            )
+
+        self.assertIsNotNone(predictions)
+        self.assertTrue(observed_train_dates)
+        self.assertLessEqual(max(len(train_dates) for train_dates in observed_train_dates), 8)
+
     def test_feature_ic_report_writes_ranked_survivor_table(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -873,6 +986,33 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertNotIn("analyst_snapshot_age_days", survivors)
         self.assertNotIn("analyst_snapshot_age_days__rank_all", survivors)
         self.assertNotIn("analyst_revision_snapshot_age_days", survivors)
+
+    def test_feature_ic_screen_applies_min_observation_floor(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        rows = []
+        for date_index, snapshot_date in enumerate(pd.bdate_range("2026-01-02", periods=40)):
+            for ticker_index, ticker in enumerate(("AAA", "BBB", "CCC", "DDD", "EEE")):
+                full_signal = float(ticker_index)
+                sparse_signal = full_signal if date_index < 4 else None
+                rows.append(
+                    {
+                        "snapshot_date": snapshot_date,
+                        "ticker": ticker,
+                        "sector": "Energy",
+                        "rsi_2": full_signal,
+                        "analyst_target_upside": sparse_signal,
+                        "alpha_vs_sector_20d": full_signal,
+                    }
+                )
+        survivors = service._feature_ic_survivors_from_frame(
+            pd.DataFrame(rows),
+            target_column="alpha_vs_sector_20d",
+            min_feature_ic=0.50,
+            min_observation_fraction=0.20,
+        )
+
+        self.assertIn("rsi_2", survivors)
+        self.assertNotIn("analyst_target_upside", survivors)
 
     def test_feature_ic_report_marks_duplicate_survivors(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1280,6 +1420,58 @@ class ShortlistModelServiceTests(unittest.TestCase):
             "min_recent_1fold_spearman": 0.0,
             "min_recent_3fold_spearman": 0.0,
         }
+
+        with self.assertRaisesRegex(ValueError, "No shortlist model candidate passed the promotion gate"):
+            service._choose_champion_model(
+                full_summaries=full_summaries,
+                acceptance_summaries=acceptance_summaries,
+                promotion_gate=promotion_gate,
+            )
+
+    def test_champion_selection_refuses_ticker_concentrated_acceptance_window(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        full_summaries = pd.DataFrame(
+            [
+                {"model": "ridge_model", "mean_target": 0.08, "beat_universe_rate": 0.80, "positive_date_rate": 0.80},
+            ]
+        )
+        acceptance_summaries = pd.DataFrame(
+            [
+                {
+                    "model": "ridge_model_20d",
+                    "hit_rate": 0.85,
+                    "beat_universe_rate": 0.85,
+                    "mean_target": 0.04,
+                    "spearman": 0.04,
+                    "top_ticker_date_rate": 0.45,
+                },
+                {
+                    "model": "ridge_model_60d",
+                    "hit_rate": 0.85,
+                    "beat_universe_rate": 0.85,
+                    "mean_target": 0.04,
+                    "spearman": 0.04,
+                    "top_ticker_date_rate": 0.20,
+                },
+                {
+                    "model": "ridge_model_last_1fold",
+                    "hit_rate": 0.85,
+                    "beat_universe_rate": 0.85,
+                    "mean_target": 0.04,
+                    "spearman": 0.04,
+                    "top_ticker_date_rate": 0.45,
+                },
+                {
+                    "model": "ridge_model_last_3fold",
+                    "hit_rate": 0.85,
+                    "beat_universe_rate": 0.85,
+                    "mean_target": 0.04,
+                    "spearman": 0.04,
+                    "top_ticker_date_rate": 0.20,
+                },
+            ]
+        )
+        promotion_gate = service._load_promotion_gate()
 
         with self.assertRaisesRegex(ValueError, "No shortlist model candidate passed the promotion gate"):
             service._choose_champion_model(

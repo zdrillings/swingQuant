@@ -167,6 +167,7 @@ def build_parser() -> argparse.ArgumentParser:
     shortlist_model_parser.add_argument("--top", type=int, default=10)
     shortlist_model_parser.add_argument("--horizon", type=int, default=20)
     shortlist_model_parser.add_argument("--min-train-dates", type=int, default=252)
+    shortlist_model_parser.add_argument("--max-train-dates", type=int, default=None)
     shortlist_model_parser.add_argument("--test-window-dates", type=int, default=20)
     shortlist_model_parser.add_argument("--oos-stride-dates", type=int, default=None)
     shortlist_model_parser.add_argument("--recent-dates", type=int, default=60)
@@ -564,6 +565,7 @@ def main(argv: list[str] | None = None) -> int:
                 top_n=args.top,
                 horizon_days=args.horizon,
                 min_train_dates=args.min_train_dates,
+                max_train_dates=args.max_train_dates,
                 test_window_dates=args.test_window_dates,
                 recent_dates=args.recent_dates,
                 eligible_universe_mode=args.eligible_universe_mode,

@@ -121,6 +121,7 @@ set +e
   --horizon 20 \
   --target-type path \
   --min-train-dates 252 \
+  --max-train-dates 252 \
   --test-window-dates 20 \
   --oos-stride-dates 20 \
   --recent-dates 60 \
@@ -145,6 +146,7 @@ set +e
   --top 10 \
   --horizon 20 \
   --min-train-dates 252 \
+  --max-train-dates 252 \
   --test-window-dates 20 \
   --oos-stride-dates 20 \
   --recent-dates 60 \
