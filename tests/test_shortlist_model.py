@@ -104,6 +104,42 @@ class ShortlistModelServiceTests(unittest.TestCase):
 
         self.assertAlmostEqual(summary["gross_mean_target"], 0.0)
 
+    def test_regime_conditional_score_flip_uses_lagged_reversal_classification(self) -> None:
+        dates = pd.bdate_range("2026-01-02", periods=8)
+
+        class FakeDB:
+            def load_regime_meter(self):
+                return pd.DataFrame(
+                    [
+                        {"snapshot_date": dates[0], "classification": "neutral"},
+                        {"snapshot_date": dates[2], "classification": "reversal"},
+                        {"snapshot_date": dates[5], "classification": "trending"},
+                    ]
+                )
+
+            def list_universe_daily_snapshot_dates(self):
+                return [snapshot_date.strftime("%Y-%m-%d") for snapshot_date in dates]
+
+        service = ShortlistModelService(db_manager=FakeDB())
+        frame = pd.DataFrame(
+            [
+                {"snapshot_date": dates[3], "ticker": "AAA", "predicted_alpha": 0.10},
+                {"snapshot_date": dates[5], "ticker": "BBB", "predicted_alpha": 0.20},
+                {"snapshot_date": dates[7], "ticker": "CCC", "predicted_alpha": 0.30},
+            ]
+        )
+
+        flipped = service._apply_regime_conditional_score_flip(frame, horizon_sessions=2)
+
+        self.assertEqual(flipped.loc[0, "regime_classification"], "neutral")
+        self.assertFalse(bool(flipped.loc[0, "regime_flip_applied"]))
+        self.assertEqual(flipped.loc[1, "regime_classification"], "reversal")
+        self.assertTrue(bool(flipped.loc[1, "regime_flip_applied"]))
+        self.assertAlmostEqual(float(flipped.loc[1, "predicted_alpha"]), -0.20)
+        self.assertAlmostEqual(float(flipped.loc[1, "raw_predicted_alpha"]), 0.20)
+        self.assertEqual(flipped.loc[2, "regime_classification"], "trending")
+        self.assertFalse(bool(flipped.loc[2, "regime_flip_applied"]))
+
     def test_filter_eligible_universe_passed_or_trend_broadens_research_set(self) -> None:
         frame = pd.DataFrame(
             [

@@ -342,6 +342,35 @@ class ScanPerformanceServiceTests(unittest.TestCase):
         self.assertIn("mean_return=5.00%", report_text)
         self.assertIn("median_alpha=3.00%", report_text)
 
+    def test_evidence_yardsticks_disclose_and_exclude_20d_alpha_outliers(self) -> None:
+        service = ScanPerformanceService(db_manager=None)
+        frame = pd.DataFrame(
+            [
+                {"scan_date": "2026-05-01", "ticker": "CENX", "fwd_return_20d": 0.20, "alpha_vs_sector_20d": 0.20},
+                *[
+                    {
+                        "scan_date": f"2026-05-{index + 2:02d}",
+                        "ticker": f"T{index:02d}",
+                        "fwd_return_20d": 0.02,
+                        "alpha_vs_sector_20d": 0.02,
+                    }
+                    for index in range(20)
+                ],
+            ]
+        )
+
+        report_text = "\n".join(
+            service._render_evidence_yardsticks(
+                frame,
+                horizons=(20,),
+                benchmark="sector",
+            )
+        )
+
+        self.assertIn("- outlier_exclusion_policy: 20d excludes SNDK plus tickers above 10% absolute alpha-sum share", report_text)
+        self.assertIn("- excluded_20d_tickers: CENX", report_text)
+        self.assertIn("- mean_alpha_vs_sector: 2.00%", report_text)
+
     def test_scan_performance_renders_market_turn_diagnostics(self) -> None:
         class FakeDB:
             def load_price_history(self, tickers):

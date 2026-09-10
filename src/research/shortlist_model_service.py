@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from bisect import bisect_right
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import math
@@ -189,6 +190,10 @@ class ShortlistModelService:
                 min_feature_ic_observation_fraction=min_feature_ic_observation_fraction,
             )
             if predicted is not None and not predicted.empty:
+                predicted = self._apply_regime_conditional_score_flip(
+                    predicted,
+                    horizon_sessions=max(int(horizon_days), 1),
+                )
                 model_predictions[model_name] = predicted
         ensemble_predictions = self._build_ensemble_predictions(model_predictions)
         if ensemble_predictions is not None:
@@ -340,6 +345,10 @@ class ShortlistModelService:
                 max_train_dates=resolved_max_train_dates,
             )
             if scored is not None and not scored.empty:
+                scored = self._apply_regime_conditional_score_flip(
+                    scored,
+                    horizon_sessions=max(int(horizon_days), 1),
+                )
                 scored = self._apply_calibration_from_oos(
                     scored,
                     model_predictions.get(model_name, pd.DataFrame()),
@@ -461,6 +470,9 @@ class ShortlistModelService:
                         "model_reason_summary": row.get("model_reason_summary"),
                         "calibrated_p_beat_sector": row.get("calibrated_p_beat_sector"),
                         "model_rank": row.get("model_rank"),
+                        "raw_predicted_alpha": row.get("raw_predicted_alpha"),
+                        "regime_classification": row.get("regime_classification"),
+                        "regime_flip_applied": row.get("regime_flip_applied"),
                     },
                 }
                 for row in combined_predictions.to_dict(orient="records")
@@ -484,6 +496,9 @@ class ShortlistModelService:
                                 "model_reason_summary": row.get("model_reason_summary"),
                                 "calibrated_p_beat_sector": row.get("calibrated_p_beat_sector"),
                                 "model_rank": row.get("model_rank"),
+                                "raw_predicted_alpha": row.get("raw_predicted_alpha"),
+                                "regime_classification": row.get("regime_classification"),
+                                "regime_flip_applied": row.get("regime_flip_applied"),
                             },
                         }
                         for row in live_frame.to_dict(orient="records")
@@ -736,6 +751,89 @@ class ShortlistModelService:
         if scored is None or scored.empty:
             return live_snapshot.assign(predicted_alpha=pd.Series(dtype=float))
         return scored
+
+    def _apply_regime_conditional_score_flip(
+        self,
+        predictions: pd.DataFrame,
+        *,
+        horizon_sessions: int,
+    ) -> pd.DataFrame:
+        if predictions.empty or "snapshot_date" not in predictions.columns or "predicted_alpha" not in predictions.columns:
+            return predictions.copy()
+        working = predictions.copy()
+        score = pd.to_numeric(working["predicted_alpha"], errors="coerce")
+        if "raw_predicted_alpha" not in working.columns:
+            working["raw_predicted_alpha"] = score
+        classifications = self._regime_classifications_by_prediction_date(
+            working["snapshot_date"].dropna().tolist(),
+            horizon_sessions=horizon_sessions,
+        )
+        if not classifications:
+            working["regime_classification"] = working.get("regime_classification", pd.Series("unknown", index=working.index))
+            working["regime_flip_applied"] = False
+            return working
+        normalized_dates = pd.to_datetime(working["snapshot_date"], errors="coerce").dt.normalize()
+        working["regime_classification"] = normalized_dates.map(classifications).fillna("unknown")
+        flip_mask = working["regime_classification"].astype(str).eq("reversal") & score.notna()
+        working["regime_flip_applied"] = flip_mask
+        working.loc[flip_mask, "predicted_alpha"] = -score.loc[flip_mask]
+        return working
+
+    def _regime_classifications_by_prediction_date(
+        self,
+        prediction_dates: list,
+        *,
+        horizon_sessions: int,
+    ) -> dict[pd.Timestamp, str]:
+        regime_loader = getattr(self.db_manager, "load_regime_meter", None)
+        if not callable(regime_loader):
+            return {}
+        try:
+            regime = regime_loader()
+        except Exception as exc:
+            self.logger.warning("Unable to load regime meter for shortlist score flip: %s", exc)
+            return {}
+        if regime is None or regime.empty or not {"snapshot_date", "classification"}.issubset(regime.columns):
+            return {}
+        regime = regime.copy()
+        regime["snapshot_date"] = pd.to_datetime(regime["snapshot_date"], errors="coerce").dt.normalize()
+        regime = regime.dropna(subset=["snapshot_date"]).sort_values("snapshot_date").reset_index(drop=True)
+        if regime.empty:
+            return {}
+        universe_dates = self._universe_snapshot_dates_for_regime_lookup(regime)
+        if not universe_dates:
+            return {}
+        regime_dates = regime["snapshot_date"].tolist()
+        regime_classes = regime["classification"].astype(str).tolist()
+        horizon = max(int(horizon_sessions or 0), 0)
+        output: dict[pd.Timestamp, str] = {}
+        for raw_date in prediction_dates:
+            prediction_date = pd.to_datetime(raw_date, errors="coerce")
+            if pd.isna(prediction_date):
+                continue
+            prediction_date = prediction_date.normalize()
+            source_index = bisect_right(universe_dates, prediction_date) - horizon - 1
+            if source_index < 0:
+                continue
+            cutoff = universe_dates[source_index]
+            regime_index = bisect_right(regime_dates, cutoff) - 1
+            if regime_index < 0:
+                continue
+            output[prediction_date] = regime_classes[regime_index]
+        return output
+
+    def _universe_snapshot_dates_for_regime_lookup(self, regime: pd.DataFrame) -> list[pd.Timestamp]:
+        loader = getattr(self.db_manager, "list_universe_daily_snapshot_dates", None)
+        if callable(loader):
+            try:
+                dates = loader()
+            except Exception as exc:
+                self.logger.warning("Unable to load universe dates for regime score flip: %s", exc)
+                dates = []
+            parsed = pd.to_datetime(pd.Series(list(dates)), errors="coerce").dropna()
+            if not parsed.empty:
+                return sorted(parsed.dt.normalize().drop_duplicates().tolist())
+        return sorted(regime["snapshot_date"].drop_duplicates().tolist())
 
     def _target_horizon_dates(self, target_column: str) -> int:
         for piece in str(target_column).split("_"):
@@ -2320,6 +2418,7 @@ class ShortlistModelService:
             f"- label_horizon_dates: {int(label_horizon_dates)}",
             "- training_label_policy: horizon-strided non-overlapping dates after label embargo",
             "- feature_selection_policy: fold-local train-only rank IC screen; feature_ic_report is diagnostic",
+            "- regime_flip_applied: predicted_alpha is negated on reversal-classified dates using only regime rows at least label_horizon_dates sessions old",
             "- objective: walk-forward cross-sectional ranking of the eligible universe on forward sector-relative alpha",
             f"- universe: {eligible_universe_mode_description(eligible_universe_mode)}",
             "- feature_matrix: raw features plus date-wise cross-sectional ranks and sector-relative ranks",

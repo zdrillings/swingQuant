@@ -547,6 +547,12 @@ class ScanPerformanceService:
         lines.append("- unit: date-level selected basket")
         lines.append("- t_stat: Newey-West with lag equal to horizon")
         lines.append("- years_for_t_1_96: (1.96 / annualized Sharpe)^2")
+        excluded_20d = self._yardstick_excluded_tickers(frame, benchmark=benchmark)
+        lines.append("- outlier_exclusion_policy: 20d excludes SNDK plus tickers above 10% absolute alpha-sum share")
+        lines.append(
+            "- excluded_20d_tickers: "
+            + (", ".join(excluded_20d) if excluded_20d else "none")
+        )
         lines.append("")
         initial_line_count = len(lines)
         for horizon in horizons:
@@ -555,6 +561,8 @@ class ScanPerformanceService:
             if not {"scan_date", return_column, alpha_column}.issubset(frame.columns):
                 continue
             scoped = frame.dropna(subset=["scan_date", return_column, alpha_column]).copy()
+            if int(horizon) == 20 and excluded_20d and "ticker" in scoped.columns:
+                scoped = scoped[~scoped["ticker"].astype(str).isin(excluded_20d)].copy()
             if scoped.empty:
                 continue
             scoped["scan_date"] = pd.to_datetime(scoped["scan_date"]).dt.normalize()
@@ -658,21 +666,51 @@ class ScanPerformanceService:
                 f"mean_alpha={self._fmt_pct(row.mean_alpha)}, "
                 f"alpha_sum_share={self._fmt_pct(contribution)}"
             )
-        sndk_excluded = scoped[scoped["ticker"].astype(str) != "SNDK"].copy()
+        excluded_tickers = self._yardstick_excluded_tickers(scoped, benchmark=benchmark)
+        outlier_excluded = scoped[~scoped["ticker"].astype(str).isin(excluded_tickers)].copy()
         lines.append("")
-        lines.append("### SNDK Excluded 20d")
+        lines.append("### Outlier Excluded 20d")
+        lines.append("- excluded_tickers: " + (", ".join(excluded_tickers) if excluded_tickers else "none"))
         lines.append(f"- raw_picks: {len(scoped.index)}")
-        lines.append(f"- adjusted_picks: {len(sndk_excluded.index)}")
-        if sndk_excluded.empty:
+        lines.append(f"- adjusted_picks: {len(outlier_excluded.index)}")
+        if outlier_excluded.empty:
             lines.append("- adjusted_mean_return: n/a")
             lines.append("- adjusted_mean_alpha: n/a")
         else:
-            lines.append(f"- adjusted_mean_return: {self._fmt_pct(sndk_excluded[return_column].mean())}")
-            lines.append(f"- adjusted_hit_rate: {self._fmt_pct((sndk_excluded[return_column] > 0.0).mean())}")
-            lines.append(f"- adjusted_mean_alpha_vs_{benchmark}: {self._fmt_pct(sndk_excluded[alpha_column].mean())}")
-            lines.append(f"- adjusted_positive_alpha_rate: {self._fmt_pct((sndk_excluded[alpha_column] > 0.0).mean())}")
+            lines.append(f"- adjusted_mean_return: {self._fmt_pct(outlier_excluded[return_column].mean())}")
+            lines.append(f"- adjusted_hit_rate: {self._fmt_pct((outlier_excluded[return_column] > 0.0).mean())}")
+            lines.append(f"- adjusted_mean_alpha_vs_{benchmark}: {self._fmt_pct(outlier_excluded[alpha_column].mean())}")
+            lines.append(f"- adjusted_positive_alpha_rate: {self._fmt_pct((outlier_excluded[alpha_column] > 0.0).mean())}")
         lines.append("")
         return lines
+
+    def _yardstick_excluded_tickers(
+        self,
+        frame: pd.DataFrame,
+        *,
+        benchmark: str,
+        alpha_sum_share_threshold: float = 0.10,
+    ) -> list[str]:
+        alpha_column = f"alpha_vs_{benchmark}_20d"
+        if frame.empty or "ticker" not in frame.columns or alpha_column not in frame.columns:
+            return []
+        scoped = frame.dropna(subset=["ticker", alpha_column]).copy()
+        if scoped.empty:
+            return []
+        scoped[alpha_column] = pd.to_numeric(scoped[alpha_column], errors="coerce")
+        scoped = scoped.dropna(subset=[alpha_column]).copy()
+        if scoped.empty:
+            return []
+        total_alpha = float(scoped[alpha_column].sum())
+        excluded = {"SNDK"} if scoped["ticker"].astype(str).eq("SNDK").any() else set()
+        if total_alpha:
+            by_ticker = scoped.groupby("ticker", as_index=False).agg(alpha_sum=(alpha_column, "sum"))
+            denominator = abs(total_alpha)
+            for row in by_ticker.itertuples(index=False):
+                share = abs(float(row.alpha_sum)) / denominator
+                if share > float(alpha_sum_share_threshold):
+                    excluded.add(str(row.ticker))
+        return sorted(excluded)
 
     def _render_20d_timeframe_summary(
         self,
