@@ -80,6 +80,39 @@ class ScanServiceTests(unittest.TestCase):
         self.assertAlmostEqual(scores["BBB"], 0.62)
         self.assertTrue((scored["model_score_label"] == "Model Score").all())
 
+    def test_shortlist_model_selection_uses_alpha_rank_when_calibration_degenerates(self) -> None:
+        service = ScanService(db_manager=None)
+        context = type(
+            "ModelContext",
+            (),
+            {
+                "generated_at": "2026-09-03T18:00:00+00:00",
+                "champion_model": "ensemble_model",
+                "target_column": "alpha_vs_sector_20d_pos",
+                "live_predictions": pd.DataFrame(
+                    [
+                        {"ticker": "AAA", "predicted_alpha": 0.30, "calibrated_p_beat_sector": 0.50, "model_rank": 1},
+                        {"ticker": "BBB", "predicted_alpha": 0.10, "calibrated_p_beat_sector": 0.50, "model_rank": 2},
+                        {"ticker": "CCC", "predicted_alpha": 0.20, "calibrated_p_beat_sector": 0.51, "model_rank": 3},
+                    ]
+                ),
+            },
+        )()
+        candidates = pd.DataFrame(
+            [
+                {"ticker": "AAA", "strategy_slot": "energy", "strategy_sector": "Energy", "signal_score": 10.0},
+                {"ticker": "BBB", "strategy_slot": "energy", "strategy_sector": "Energy", "signal_score": 10.0},
+                {"ticker": "CCC", "strategy_slot": "energy", "strategy_sector": "Energy", "signal_score": 10.0},
+            ]
+        )
+
+        scored = service._apply_shortlist_model_selection(candidates, context)
+
+        scores = dict(zip(scored["ticker"], scored["selection_score"], strict=True))
+        self.assertGreater(scores["AAA"], scores["CCC"])
+        self.assertGreater(scores["CCC"], scores["BBB"])
+        self.assertNotEqual(scores["AAA"], 0.50)
+
     def test_score_candidate_caps_selection_opportunity_but_preserves_raw_score(self) -> None:
         service = ScanService(db_manager=None)
         strategy = ProductionStrategy(

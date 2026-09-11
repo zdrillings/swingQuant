@@ -140,6 +140,92 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertEqual(flipped.loc[2, "regime_classification"], "trending")
         self.assertFalse(bool(flipped.loc[2, "regime_flip_applied"]))
 
+        matched_frame = frame.iloc[[1]].copy()
+        matched_frame["regime_matched_training_applied"] = True
+        matched = service._apply_regime_conditional_score_flip(
+            matched_frame,
+            horizon_sessions=2,
+            fallback_only=True,
+        )
+        self.assertFalse(bool(matched.loc[1, "regime_flip_applied"]))
+        self.assertAlmostEqual(float(matched.loc[1, "predicted_alpha"]), 0.20)
+
+    def test_walk_forward_predictions_use_regime_matched_training_rows(self) -> None:
+        dates = pd.bdate_range("2026-01-02", periods=10)
+
+        class FakeDB:
+            def load_regime_meter(self):
+                return pd.DataFrame(
+                    [
+                        {
+                            "snapshot_date": snapshot_date,
+                            "classification": "reversal" if index <= 5 else "trending",
+                        }
+                        for index, snapshot_date in enumerate(dates)
+                    ]
+                )
+
+            def list_universe_daily_snapshot_dates(self):
+                return [snapshot_date.strftime("%Y-%m-%d") for snapshot_date in dates]
+
+        service = ShortlistModelService(db_manager=FakeDB())
+        rows = []
+        for date_index, snapshot_date in enumerate(dates):
+            for ticker in ("AAA", "BBB"):
+                rows.append(
+                    {
+                        "snapshot_date": snapshot_date,
+                        "ticker": ticker,
+                        "sector": "Energy",
+                        "md_volume_30d": 50_000_000.0,
+                        "relative_strength_index_vs_spy": 70.0 + date_index,
+                        "roc_63": 0.1,
+                        "sma_200_dist": 0.1,
+                        "vol_alpha": 1.0,
+                        "alpha_vs_sector_20d": 0.01,
+                    }
+                )
+        frame = pd.DataFrame(rows)
+        observed_train_dates: list[pd.Timestamp] = []
+
+        def fake_score_model(**kwargs):
+            train_frame = kwargs["train_frame"]
+            test_frame = kwargs["test_frame"]
+            observed_train_dates.extend(sorted(pd.to_datetime(train_frame["snapshot_date"]).drop_duplicates().tolist()))
+            scored = test_frame.copy()
+            scored["predicted_alpha"] = 0.0
+            scored["model_top_reasons"] = [[] for _ in range(len(scored.index))]
+            scored["model_reason_summary"] = None
+            return scored
+
+        stats = {
+            "attempted_folds": 0,
+            "matched_folds": 0,
+            "fallback_folds": 0,
+            "unknown_folds": 0,
+            "live_matched": 0,
+            "live_fallback": 0,
+        }
+        with patch.object(service, "_score_model", side_effect=fake_score_model):
+            predictions = service._walk_forward_predictions(
+                frame,
+                target_column="alpha_vs_sector_20d",
+                model_name="ridge_model",
+                min_train_dates=3,
+                max_train_dates=6,
+                test_window_dates=2,
+                model_scope="global",
+                evaluation_stride_dates=3,
+                label_horizon_dates=1,
+                regime_matching_mode="train_only",
+                regime_matching_stats=stats,
+            )
+
+        self.assertIsNotNone(predictions)
+        self.assertEqual(stats["matched_folds"], 1)
+        self.assertTrue(bool(predictions["regime_matched_training_applied"].any()))
+        self.assertEqual(observed_train_dates[:4], list(dates[1:5]))
+
     def test_filter_eligible_universe_passed_or_trend_broadens_research_set(self) -> None:
         frame = pd.DataFrame(
             [

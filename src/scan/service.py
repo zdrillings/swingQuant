@@ -667,14 +667,7 @@ class ScanService:
         merged["model_predicted_alpha"] = pd.to_numeric(merged["model_predicted_alpha"], errors="coerce")
         if "calibrated_p_beat_sector" in merged.columns:
             merged["calibrated_p_beat_sector"] = pd.to_numeric(merged["calibrated_p_beat_sector"], errors="coerce")
-        merged["selection_score"] = pd.to_numeric(
-            merged.get("calibrated_p_beat_sector", merged["model_predicted_alpha"]),
-            errors="coerce",
-        )
-        merged["selection_score"] = merged["selection_score"].where(
-            merged["selection_score"].notna(),
-            merged["model_predicted_alpha"],
-        )
+        merged["selection_score"] = self._shortlist_model_selection_score(merged)
         merged["selection_source"] = "shortlist_model"
         merged["model_generated_at"] = shortlist_model_context.generated_at
         merged["model_name"] = shortlist_model_context.champion_model
@@ -1443,10 +1436,7 @@ class ScanService:
         merged = scored.merge(predictions, on="ticker", how="left")
         if "calibrated_p_beat_sector" in merged.columns:
             merged["calibrated_p_beat_sector"] = pd.to_numeric(merged["calibrated_p_beat_sector"], errors="coerce")
-        merged["selection_score"] = pd.to_numeric(
-            merged.get("calibrated_p_beat_sector", merged["model_predicted_alpha"]),
-            errors="coerce",
-        )
+        merged["selection_score"] = self._shortlist_model_selection_score(merged)
         merged["selection_score"] = merged["selection_score"].where(
             merged["selection_score"].notna(),
             pd.to_numeric(merged["model_predicted_alpha"], errors="coerce"),
@@ -1482,6 +1472,28 @@ class ScanService:
         merged["ranker_top_positive_reasons"] = [tuple() for _ in range(len(merged.index))]
         merged["ranker_top_negative_reasons"] = [tuple() for _ in range(len(merged.index))]
         return merged
+
+    def _shortlist_model_selection_score(self, frame: pd.DataFrame) -> pd.Series:
+        predicted_alpha = pd.to_numeric(
+            frame["model_predicted_alpha"] if "model_predicted_alpha" in frame.columns else pd.Series(pd.NA, index=frame.index),
+            errors="coerce",
+        )
+        calibrated = pd.to_numeric(
+            frame["calibrated_p_beat_sector"] if "calibrated_p_beat_sector" in frame.columns else pd.Series(pd.NA, index=frame.index),
+            errors="coerce",
+        )
+        if self._calibrated_probability_degenerate(calibrated, total_rows=len(frame.index)):
+            ranked_alpha = predicted_alpha.rank(method="first", pct=True, ascending=True)
+            return ranked_alpha.where(ranked_alpha.notna(), predicted_alpha)
+        score = calibrated.where(calibrated.notna(), predicted_alpha)
+        return pd.to_numeric(score, errors="coerce")
+
+    def _calibrated_probability_degenerate(self, calibrated: pd.Series, *, total_rows: int) -> bool:
+        if calibrated is None or total_rows <= 0:
+            return False
+        values = pd.to_numeric(calibrated, errors="coerce")
+        exact_midpoint_count = int(values.eq(0.5).sum())
+        return exact_midpoint_count > (int(total_rows) / 2.0)
 
     def _attach_selection_metadata_to_persisted_candidates(
         self,
