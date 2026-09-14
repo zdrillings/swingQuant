@@ -2584,6 +2584,12 @@ class ShortlistModelService:
             f"- generated_at: {generated_at}",
             "",
         ]
+        lines.extend(
+            self._render_regime_matching(
+                mode=regime_matching_mode,
+                stats=regime_matching_stats,
+            )
+        )
         if failure_reason:
             lines.extend(
                 [
@@ -2599,6 +2605,30 @@ class ShortlistModelService:
         lines.extend(self._render_summary_table(recent_summaries, heading=f"## Recent {int(recent_dates)} Walk-Forward Dates"))
         lines.extend(self._render_promotion_gate(promotion_gate=promotion_gate, summaries=acceptance_summaries))
         return lines
+
+    def _render_regime_matching(self, *, mode: str, stats: dict[str, int]) -> list[str]:
+        attempted = int(stats.get("attempted_folds", 0))
+        matched = int(stats.get("matched_folds", 0))
+        fallback = int(stats.get("fallback_folds", 0))
+        unknown = int(stats.get("unknown_folds", 0))
+        live_matched = int(stats.get("live_matched", 0))
+        live_fallback = int(stats.get("live_fallback", 0))
+        denominator = max(attempted, 1)
+        return [
+            "## Regime Matching",
+            "",
+            f"- mode: {mode}",
+            f"- attempted_folds: {attempted}",
+            f"- matched_folds: {matched}",
+            f"- fallback_folds: {fallback}",
+            f"- unknown_folds: {unknown}",
+            f"- matched_fold_rate: {matched / denominator:.6f}",
+            f"- fallback_fold_rate: {fallback / denominator:.6f}",
+            f"- unknown_fold_rate: {unknown / denominator:.6f}",
+            f"- live_matched: {live_matched}",
+            f"- live_fallback: {live_fallback}",
+            "",
+        ]
 
     def _render_summary_table(self, frame: pd.DataFrame, *, heading: str) -> list[str]:
         lines = [heading, ""]
