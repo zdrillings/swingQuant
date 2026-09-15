@@ -45,7 +45,7 @@ class MonitorService:
         self.email_sender = email_sender
         self.logger = get_logger("monitor")
 
-    def run(self) -> MonitorReport:
+    def run(self, *, send_email: bool = False) -> MonitorReport:
         self.db_manager.initialize()
         strategies = load_active_strategies()
         settings = get_settings()
@@ -359,21 +359,24 @@ class MonitorService:
             )
         )
         triggered_rows = [row for row in holding_rows if row["recommended_action"] == "sell"]
-        html = self._build_digest_html(
-            holding_rows=holding_rows,
-            triggered_rows=triggered_rows,
-            model_context_summary=model_context_summary,
-        )
-        subject = self._build_digest_subject(
-            holding_rows=holding_rows,
-            triggered_rows=triggered_rows,
-            model_context_summary=model_context_summary,
-        )
-        self.email_sender(subject=subject, html_body=html, settings=settings)
+        emailed = False
+        if send_email:
+            html = self._build_digest_html(
+                holding_rows=holding_rows,
+                triggered_rows=triggered_rows,
+                model_context_summary=model_context_summary,
+            )
+            subject = self._build_digest_subject(
+                holding_rows=holding_rows,
+                triggered_rows=triggered_rows,
+                model_context_summary=model_context_summary,
+            )
+            self.email_sender(subject=subject, html_body=html, settings=settings)
+            emailed = True
         return MonitorReport(
             watchlist_size=len(open_trades),
             triggered_count=len(triggered_rows),
-            emailed=True,
+            emailed=emailed,
         )
 
     def _load_shortlist_model_context(self):

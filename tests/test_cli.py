@@ -17,6 +17,14 @@ class CliTests(unittest.TestCase):
         self.assertTrue(args.latest)
         self.assertTrue(args.report)
 
+    def test_monitor_parser_disables_email_by_default(self) -> None:
+        default_args = build_parser().parse_args(["monitor"])
+        email_args = build_parser().parse_args(["monitor", "--email"])
+
+        self.assertEqual(default_args.command, "monitor")
+        self.assertFalse(default_args.email)
+        self.assertTrue(email_args.email)
+
     def test_scan_failure_sends_failure_email(self) -> None:
         settings = RuntimeSettings(
             paths=AppPaths(

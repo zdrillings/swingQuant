@@ -3352,7 +3352,8 @@ class MonitorServiceTests(unittest.TestCase):
             def load_recent_highs(self, ticker, limit=2):
                 return pd.DataFrame([{"date": "2026-05-05", "high": 105.0}, {"date": "2026-05-04", "high": 105.0}])
 
-        service = MonitorService(FakeDB(), email_sender=lambda subject, html_body, settings: None)
+        email_calls: list[EmailCall] = []
+        service = MonitorService(FakeDB(), email_sender=lambda subject, html_body, settings: email_calls.append(EmailCall(subject, html_body)))
         settings = RuntimeSettings(
             paths=AppPaths(
                 root_dir=Path("."),
@@ -3401,8 +3402,9 @@ class MonitorServiceTests(unittest.TestCase):
              patch("src.monitor.service.latest_rsi_2_with_intraday", return_value=20.0):
             report = service.run()
 
-        self.assertTrue(report.emailed)
+        self.assertFalse(report.emailed)
         self.assertEqual(report.watchlist_size, 1)
+        self.assertEqual(email_calls, [])
         self.assertEqual(service.db_manager.assigned, [(7, 10, "materials")])
 
     def test_monitor_fetches_recent_history_for_open_trade_missing_from_duckdb(self) -> None:
@@ -3486,7 +3488,7 @@ class MonitorServiceTests(unittest.TestCase):
              patch("src.monitor.service.latest_rsi_2_with_intraday", return_value=20.0):
             report = service.run()
 
-        self.assertTrue(report.emailed)
+        self.assertFalse(report.emailed)
         self.assertEqual(report.watchlist_size, 1)
         self.assertEqual(report.triggered_count, 0)
 
@@ -3573,7 +3575,7 @@ class MonitorServiceTests(unittest.TestCase):
              patch("src.monitor.service.load_active_strategies", return_value={"technology": strategy}), \
              patch("src.monitor.service.build_analysis_frame", return_value=(analysis_frame, [])), \
              patch("src.monitor.service.latest_rsi_2_with_intraday", side_effect=AssertionError("RSI needs a current price")):
-            report = service.run()
+            report = service.run(send_email=True)
 
         self.assertTrue(report.emailed)
         self.assertEqual(report.triggered_count, 1)
@@ -3666,7 +3668,7 @@ class MonitorServiceTests(unittest.TestCase):
              patch("src.monitor.service.latest_rsi_2_with_intraday", return_value=20.0):
             report = service.run()
 
-        self.assertTrue(report.emailed)
+        self.assertFalse(report.emailed)
         self.assertEqual(report.watchlist_size, 1)
 
     def test_monitor_includes_unresolved_strategy_positions_for_manual_review(self) -> None:
@@ -3752,7 +3754,7 @@ class MonitorServiceTests(unittest.TestCase):
              patch.object(service, "_download_recent_daily_history", return_value=pd.DataFrame()), \
              patch("src.monitor.service.get_settings", return_value=settings), \
              patch("src.monitor.service.load_active_strategies", return_value={"materials": materials, "industrials": industrials}):
-            report = service.run()
+            report = service.run(send_email=True)
 
         self.assertTrue(report.emailed)
         self.assertEqual(report.triggered_count, 0)
@@ -3853,7 +3855,7 @@ class MonitorServiceTests(unittest.TestCase):
              patch("src.monitor.service.load_active_strategies", return_value={"industrials": strategy, "information_technology": ProductionStrategy(strategy_id=2, promoted_at='2026-05-05T17:00:00', indicators={'rsi_14_max': 35.0}, exit_rules=ExitRules(0.05, 0.12, 20), slot='information_technology', sector='Information Technology')}), \
              patch("src.monitor.service.build_analysis_frame", return_value=(analysis_frame, [])), \
              patch("src.monitor.service.latest_rsi_2_with_intraday", side_effect=lambda price_history, ticker, current_price, as_of: 95.0 if ticker == "CCC" else 20.0):
-            report = service.run()
+            report = service.run(send_email=True)
 
         self.assertTrue(report.emailed)
         self.assertEqual(report.triggered_count, 1)
@@ -3954,7 +3956,7 @@ class MonitorServiceTests(unittest.TestCase):
              patch("src.monitor.service.load_active_strategies", return_value={"industrials": strategy}), \
              patch("src.monitor.service.build_analysis_frame", return_value=(analysis_frame, [])), \
              patch("src.monitor.service.latest_rsi_2_with_intraday", return_value=95.0):
-            report = service.run()
+            report = service.run(send_email=True)
 
         self.assertTrue(report.emailed)
         self.assertEqual(report.triggered_count, 0)
@@ -4042,7 +4044,7 @@ class MonitorServiceTests(unittest.TestCase):
              patch("src.monitor.service.load_active_strategies", return_value={"default": strategy}), \
              patch("src.monitor.service.build_analysis_frame", return_value=(analysis_frame, [])), \
              patch("src.monitor.service.latest_rsi_2_with_intraday", return_value=20.0):
-            report = service.run()
+            report = service.run(send_email=True)
 
         self.assertTrue(report.emailed)
         self.assertEqual(report.triggered_count, 1)
@@ -4126,7 +4128,7 @@ class MonitorServiceTests(unittest.TestCase):
              patch("src.monitor.service.load_active_strategies", return_value={"default": strategy}), \
              patch("src.monitor.service.build_analysis_frame", return_value=(analysis_frame, [])), \
              patch("src.monitor.service.latest_rsi_2_with_intraday", return_value=20.0):
-            report = service.run()
+            report = service.run(send_email=True)
 
         self.assertTrue(report.emailed)
         self.assertEqual(report.triggered_count, 0)
@@ -4213,7 +4215,7 @@ class MonitorServiceTests(unittest.TestCase):
              patch("src.monitor.service.load_active_strategies", return_value={"default": strategy}), \
              patch("src.monitor.service.build_analysis_frame", return_value=(analysis_frame, [])), \
              patch("src.monitor.service.latest_rsi_2_with_intraday", return_value=20.0):
-            report = service.run()
+            report = service.run(send_email=True)
 
         self.assertTrue(report.emailed)
         self.assertEqual(report.triggered_count, 1)
@@ -4303,7 +4305,7 @@ class MonitorServiceTests(unittest.TestCase):
              patch("src.monitor.service.load_active_strategies", return_value={"default": strategy}), \
              patch("src.monitor.service.build_analysis_frame", return_value=(analysis_frame, [])), \
              patch("src.monitor.service.latest_rsi_2_with_intraday", return_value=20.0):
-            report = service.run()
+            report = service.run(send_email=True)
 
         self.assertTrue(report.emailed)
         self.assertEqual(report.triggered_count, 1)
@@ -4416,7 +4418,7 @@ class MonitorServiceTests(unittest.TestCase):
              patch("src.monitor.service.build_analysis_frame", return_value=(analysis_frame, [])), \
              patch("src.monitor.service.latest_rsi_2_with_intraday", return_value=20.0), \
              patch("src.monitor.service.load_live_shortlist_model_context", return_value=model_context):
-            report = service.run()
+            report = service.run(send_email=True)
 
         self.assertTrue(report.emailed)
         html = email_calls[0].html_body

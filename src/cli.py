@@ -282,7 +282,8 @@ def build_parser() -> argparse.ArgumentParser:
     schwab_parser.add_argument("--ignore-ticker", action="append", default=None, help="Ticker to exclude from Schwab ledger reconciliation.")
     schwab_parser.add_argument("--include-funds", action="store_true", help="Include Schwab fund/ETF positions in ledger reconciliation.")
     schwab_parser.add_argument("--close-missing", action="store_true", help="Close local ledger trades missing from Schwab positions.")
-    subparsers.add_parser("monitor", help="Run the intraday monitor and send a consolidated digest.")
+    monitor_parser = subparsers.add_parser("monitor", help="Run the intraday monitor without sending hourly email.")
+    monitor_parser.add_argument("--email", action="store_true", help="Send a consolidated monitor digest email for this run.")
     return parser
 
 
@@ -843,7 +844,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 0
 
         if args.command == "monitor":
-            report = MonitorService(db_manager).run()
+            report = MonitorService(db_manager).run(send_email=args.email)
             print(
                 f"Monitor completed: watchlist={report.watchlist_size} "
                 f"triggered={report.triggered_count} emailed={report.emailed}"
