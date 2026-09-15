@@ -33,6 +33,20 @@ SHORTLIST_MODEL_EXCLUDED_BASE_FEATURES = {
     "analyst_snapshot_age_days",
     "analyst_revision_snapshot_age_days",
 }
+REVERSAL_RULE_FEATURES = (
+    "rsi_2",
+    "rsi_14",
+    "ret_1d",
+    "ret_5d",
+    "close_vs_20d_low",
+    "distance_above_20d_high",
+    "base_volume_dryup_ratio_20",
+    "distance_from_52w_high",
+    "sma_50_dist",
+    "roc_63",
+    "roc_126",
+)
+REVERSAL_CORE_FEATURES = {"rsi_2", "ret_1d", "close_vs_20d_low"}
 
 
 @dataclass(frozen=True)
@@ -145,6 +159,7 @@ class ShortlistModelService:
         expanded_feature_columns = self._filter_model_feature_columns(expand_model_feature_columns(base_feature_columns))
         candidate_models = (
             "signal_proxy",
+            "reversal_rules",
             "ridge_model",
             "lasso_model",
             "elastic_net_model",
@@ -154,6 +169,7 @@ class ShortlistModelService:
         min_feature_ic = self._load_min_feature_ic()
         min_feature_ic_observation_fraction = self._load_min_feature_ic_observation_fraction()
         regime_matching_mode = self._load_regime_matching_mode()
+        min_regime_train_dates = self._load_min_regime_train_dates()
         regime_matching_stats = {
             "attempted_folds": 0,
             "matched_folds": 0,
@@ -162,6 +178,7 @@ class ShortlistModelService:
             "live_matched": 0,
             "live_fallback": 0,
         }
+        regime_feature_stats: dict[str, dict[str, object]] = {}
         feature_ic_report = self._feature_ic_report(
             matured,
             target_column=evaluation_target_column,
@@ -199,7 +216,9 @@ class ShortlistModelService:
                 min_feature_ic=min_feature_ic,
                 min_feature_ic_observation_fraction=min_feature_ic_observation_fraction,
                 regime_matching_mode=regime_matching_mode,
+                min_regime_train_dates=min_regime_train_dates,
                 regime_matching_stats=regime_matching_stats,
+                regime_feature_stats=regime_feature_stats,
             )
             if predicted is not None and not predicted.empty:
                 if regime_matching_mode == "train_and_flip":
@@ -322,6 +341,7 @@ class ShortlistModelService:
                 min_feature_ic_observation_fraction=min_feature_ic_observation_fraction,
                 regime_matching_mode=regime_matching_mode,
                 regime_matching_stats=regime_matching_stats,
+                regime_feature_stats=regime_feature_stats,
                 eligible_rows=len(matured.index),
                 eligible_dates=int(matured["snapshot_date"].nunique()),
                 oos_prediction_dates=int(combined_predictions["snapshot_date"].nunique()),
@@ -360,7 +380,9 @@ class ShortlistModelService:
                 min_feature_ic_observation_fraction=min_feature_ic_observation_fraction,
                 max_train_dates=resolved_max_train_dates,
                 regime_matching_mode=regime_matching_mode,
+                min_regime_train_dates=min_regime_train_dates,
                 regime_matching_stats=regime_matching_stats,
+                regime_feature_stats=regime_feature_stats,
             )
             if scored is not None and not scored.empty:
                 if regime_matching_mode == "train_and_flip":
@@ -416,6 +438,7 @@ class ShortlistModelService:
             min_feature_ic_observation_fraction=min_feature_ic_observation_fraction,
             regime_matching_mode=regime_matching_mode,
             regime_matching_stats=regime_matching_stats,
+            regime_feature_stats=regime_feature_stats,
             eligible_rows=len(matured.index),
             eligible_dates=int(matured["snapshot_date"].nunique()),
             oos_prediction_dates=int(combined_predictions["snapshot_date"].nunique()),
@@ -571,18 +594,73 @@ class ShortlistModelService:
         working = frame.copy()
         working[target_column] = pd.to_numeric(working[target_column], errors="coerce")
         working = working.dropna(subset=["snapshot_date", target_column]).copy()
+        matured_rows = working
         working = filter_eligible_universe(
-            working,
+            matured_rows,
             eligible_universe_mode=eligible_universe_mode,
+        )
+        working = self._extend_reversal_eligible_universe(
+            base_frame=matured_rows,
+            eligible_frame=working,
+            horizon_sessions=self._target_horizon_dates(target_column),
         )
         return working.sort_values(["snapshot_date", "ticker"]).reset_index(drop=True)
 
-    def _build_live_eligible_universe(self, frame: pd.DataFrame, *, eligible_universe_mode: str) -> pd.DataFrame:
+    def _build_live_eligible_universe(
+        self,
+        frame: pd.DataFrame,
+        *,
+        eligible_universe_mode: str,
+        horizon_sessions: int | None = None,
+    ) -> pd.DataFrame:
         working = filter_eligible_universe(
             frame.copy(),
             eligible_universe_mode=eligible_universe_mode,
         )
+        working = self._extend_reversal_eligible_universe(
+            base_frame=frame,
+            eligible_frame=working,
+            horizon_sessions=int(horizon_sessions or 20),
+        )
         return working.sort_values(["snapshot_date", "ticker"]).reset_index(drop=True)
+
+    def _extend_reversal_eligible_universe(
+        self,
+        *,
+        base_frame: pd.DataFrame,
+        eligible_frame: pd.DataFrame,
+        horizon_sessions: int,
+    ) -> pd.DataFrame:
+        required = {"snapshot_date", "ticker", "md_volume_30d", "adj_close", "sma_200_dist", "roc_63", "rsi_14"}
+        if base_frame.empty or not required.issubset(base_frame.columns):
+            return eligible_frame.copy()
+        regime_by_date = self._regime_classifications_by_prediction_date(
+            base_frame["snapshot_date"].dropna().drop_duplicates().tolist(),
+            horizon_sessions=horizon_sessions,
+        )
+        if not regime_by_date:
+            return eligible_frame.copy()
+        working = base_frame.copy()
+        normalized_dates = pd.to_datetime(working["snapshot_date"], errors="coerce").dt.normalize()
+        working["_lagged_regime"] = normalized_dates.map(regime_by_date).fillna("unknown")
+        liquidity = pd.to_numeric(working["md_volume_30d"], errors="coerce")
+        close = pd.to_numeric(working["adj_close"], errors="coerce")
+        sma_200 = pd.to_numeric(working["sma_200_dist"], errors="coerce")
+        roc_63 = pd.to_numeric(working["roc_63"], errors="coerce")
+        rsi_14 = pd.to_numeric(working["rsi_14"], errors="coerce")
+        pullback_mask = (
+            working["_lagged_regime"].astype(str).eq("reversal")
+            & liquidity.ge(20_000_000.0)
+            & close.gt(0.0)
+            & sma_200.ge(-0.10)
+            & roc_63.le(0.0)
+            & rsi_14.lt(60.0)
+        )
+        extension = working.loc[pullback_mask].drop(columns=["_lagged_regime"]).copy()
+        if extension.empty:
+            return eligible_frame.copy()
+        combined = pd.concat([eligible_frame.copy(), extension], axis=0, ignore_index=True)
+        return combined.drop_duplicates(subset=["snapshot_date", "ticker"], keep="first").copy()
 
     def _walk_forward_predictions(
         self,
@@ -602,7 +680,9 @@ class ShortlistModelService:
         min_feature_ic_observation_fraction: float = 0.20,
         max_train_dates: int | None = None,
         regime_matching_mode: str = "off",
+        min_regime_train_dates: int = 120,
         regime_matching_stats: dict[str, int] | None = None,
+        regime_feature_stats: dict[str, dict[str, object]] | None = None,
     ) -> pd.DataFrame | None:
         dates = sorted(frame["snapshot_date"].drop_duplicates().tolist())
         evaluation_target_column = evaluation_target_column or target_column
@@ -621,20 +701,21 @@ class ShortlistModelService:
             if not test_dates:
                 break
             train_end_index = max(0, start_index - label_embargo)
-            train_date_window = dates[:train_end_index]
-            if max_train_dates is not None:
-                train_date_window = train_date_window[-max(int(max_train_dates), 1):]
-            if len(train_date_window) < int(min_train_dates):
+            train_pool_dates = dates[:train_end_index]
+            if len(train_pool_dates) < int(min_train_dates):
                 start_index += stride
                 continue
-            train_date_window, matched_training = self._regime_matched_train_dates(
-                train_date_window=train_date_window,
+            train_date_window, matched_training, test_regime, feature_screen_dates = self._regime_matched_train_dates(
+                train_date_window=train_pool_dates,
                 test_dates=test_dates,
-                min_train_dates=int(min_train_dates),
+                min_train_dates=int(min_regime_train_dates),
+                max_train_dates=max_train_dates,
                 regime_by_date=regime_by_date,
                 mode=normalized_regime_mode,
                 stats=regime_matching_stats,
             )
+            if normalized_regime_mode == "off" and max_train_dates is not None:
+                train_date_window = train_date_window[-max(int(max_train_dates), 1):]
             train_dates = set(train_date_window)
             train_frame = frame[frame["snapshot_date"].isin(train_dates)].copy()
             raw_train_rows = len(train_frame.index)
@@ -652,13 +733,30 @@ class ShortlistModelService:
             )
             test_frame = frame[frame["snapshot_date"].isin(test_dates)].copy()
             test_frame["regime_matched_training_applied"] = bool(matched_training)
+            test_frame["regime_matching_test_regime"] = test_regime or "unknown"
             fold_feature_columns = feature_columns_override
-            if min_feature_ic is not None and model_name != "signal_proxy":
+            if min_feature_ic is not None and model_name not in {"signal_proxy", "reversal_rules"}:
+                feature_screen_frame = train_frame
+                if feature_screen_dates and str(test_regime or "unknown") != "neutral":
+                    feature_screen_dates_set = set(feature_screen_dates)
+                    scoped = frame[frame["snapshot_date"].isin(feature_screen_dates_set)].copy()
+                    if not scoped.empty:
+                        feature_screen_frame = self._stride_training_labels(
+                            scoped,
+                            dates=dates,
+                            anchor_index=start_index,
+                            label_horizon_dates=label_embargo,
+                        )
                 ic_survivors = self._feature_ic_survivors_from_frame(
-                    train_frame,
+                    feature_screen_frame,
                     target_column=evaluation_target_column,
                     min_feature_ic=float(min_feature_ic),
                     min_observation_fraction=float(min_feature_ic_observation_fraction),
+                )
+                self._record_regime_feature_survivors(
+                    regime_feature_stats,
+                    regime=test_regime,
+                    survivors=ic_survivors,
                 )
                 if feature_columns_override is None:
                     fold_feature_columns = ic_survivors
@@ -696,6 +794,7 @@ class ShortlistModelService:
                     "model_top_reasons",
                     "model_reason_summary",
                     "regime_matched_training_applied",
+                    "regime_matching_test_regime",
                 ]
                 if evaluation_target_column != target_column and evaluation_target_column in scored.columns:
                     output_columns.insert(5, evaluation_target_column)
@@ -743,7 +842,9 @@ class ShortlistModelService:
         min_feature_ic_observation_fraction: float = 0.20,
         max_train_dates: int | None = None,
         regime_matching_mode: str = "off",
+        min_regime_train_dates: int = 120,
         regime_matching_stats: dict[str, int] | None = None,
+        regime_feature_stats: dict[str, dict[str, object]] | None = None,
     ) -> pd.DataFrame:
         latest_date = all_snapshots["snapshot_date"].max()
         feature_ic_target_column = feature_ic_target_column or target_column
@@ -751,6 +852,7 @@ class ShortlistModelService:
         live_snapshot = self._build_live_eligible_universe(
             live_snapshot,
             eligible_universe_mode=eligible_universe_mode,
+            horizon_sessions=self._target_horizon_dates(target_column),
         )
         if live_snapshot.empty:
             return live_snapshot.assign(predicted_alpha=pd.Series(dtype=float))
@@ -758,28 +860,33 @@ class ShortlistModelService:
         if safe_train.empty:
             safe_train = matured
         safe_train_dates = sorted(safe_train["snapshot_date"].drop_duplicates().tolist())
-        if max_train_dates is not None and len(safe_train_dates) > int(max_train_dates):
-            safe_train_dates = safe_train_dates[-max(int(max_train_dates), 1):]
-            safe_train = safe_train[safe_train["snapshot_date"].isin(safe_train_dates)].copy()
         normalized_regime_mode = self._normalize_regime_matching_mode(regime_matching_mode)
+        test_regime = "unknown"
+        feature_screen_dates: list = []
         if normalized_regime_mode != "off":
             regime_by_date = self._regime_classifications_by_prediction_date(
                 safe_train_dates + [latest_date],
                 horizon_sessions=self._target_horizon_dates(target_column),
             )
-            safe_train_dates, matched_training = self._regime_matched_train_dates(
+            safe_train_dates, matched_training, resolved_test_regime, feature_screen_dates = self._regime_matched_train_dates(
                 train_date_window=safe_train_dates,
                 test_dates=[latest_date],
-                min_train_dates=int(max_train_dates or len(safe_train_dates) or 1),
+                min_train_dates=int(min_regime_train_dates),
+                max_train_dates=max_train_dates,
                 regime_by_date=regime_by_date,
                 mode=normalized_regime_mode,
                 stats=regime_matching_stats,
                 live=True,
             )
+            test_regime = resolved_test_regime or "unknown"
             safe_train = safe_train[safe_train["snapshot_date"].isin(set(safe_train_dates))].copy()
             live_snapshot["regime_matched_training_applied"] = bool(matched_training)
         else:
+            if max_train_dates is not None and len(safe_train_dates) > int(max_train_dates):
+                safe_train_dates = safe_train_dates[-max(int(max_train_dates), 1):]
+                safe_train = safe_train[safe_train["snapshot_date"].isin(safe_train_dates)].copy()
             live_snapshot["regime_matched_training_applied"] = False
+        live_snapshot["regime_matching_test_regime"] = test_regime
         if len(safe_train_dates) > 1:
             safe_train = self._stride_training_labels(
                 safe_train,
@@ -788,12 +895,22 @@ class ShortlistModelService:
                 label_horizon_dates=self._target_horizon_dates(target_column),
             )
         live_feature_columns = feature_columns_override
-        if min_feature_ic is not None and model_name != "signal_proxy":
+        if min_feature_ic is not None and model_name not in {"signal_proxy", "reversal_rules"}:
+            feature_screen_frame = safe_train
+            if feature_screen_dates and str(test_regime or "unknown") != "neutral":
+                scoped = matured[matured["snapshot_date"].isin(set(feature_screen_dates))].copy()
+                if not scoped.empty:
+                    feature_screen_frame = scoped
             ic_survivors = self._feature_ic_survivors_from_frame(
-                safe_train,
+                feature_screen_frame,
                 target_column=feature_ic_target_column,
                 min_feature_ic=float(min_feature_ic),
                 min_observation_fraction=float(min_feature_ic_observation_fraction),
+            )
+            self._record_regime_feature_survivors(
+                regime_feature_stats,
+                regime=test_regime,
+                survivors=ic_survivors,
             )
             if feature_columns_override is None:
                 live_feature_columns = ic_survivors
@@ -850,13 +967,17 @@ class ShortlistModelService:
         train_date_window: list,
         test_dates: list,
         min_train_dates: int,
+        max_train_dates: int | None = None,
         regime_by_date: dict[pd.Timestamp, str],
         mode: str,
         stats: dict[str, int] | None = None,
         live: bool = False,
-    ) -> tuple[list, bool]:
+    ) -> tuple[list, bool, str | None, list]:
         if mode == "off":
-            return list(train_date_window), False
+            capped = list(train_date_window)
+            if max_train_dates is not None:
+                capped = capped[-max(int(max_train_dates), 1):]
+            return capped, False, None, []
         if stats is not None:
             stats["attempted_folds"] = int(stats.get("attempted_folds", 0)) + (0 if live else 1)
         test_regime = self._majority_regime_for_dates(test_dates, regime_by_date)
@@ -864,7 +985,10 @@ class ShortlistModelService:
             if stats is not None:
                 key = "live_fallback" if live else "unknown_folds"
                 stats[key] = int(stats.get(key, 0)) + 1
-            return list(train_date_window), False
+            fallback = list(train_date_window)
+            if max_train_dates is not None:
+                fallback = fallback[-max(int(max_train_dates), 1):]
+            return fallback, False, None, []
         matched_dates = [
             date_value
             for date_value in train_date_window
@@ -874,11 +998,17 @@ class ShortlistModelService:
             if stats is not None:
                 key = "live_matched" if live else "matched_folds"
                 stats[key] = int(stats.get(key, 0)) + 1
-            return matched_dates, True
+            selected_dates = list(matched_dates)
+            if max_train_dates is not None:
+                selected_dates = selected_dates[-max(int(max_train_dates), 1):]
+            return selected_dates, True, str(test_regime), list(matched_dates)
         if stats is not None:
             key = "live_fallback" if live else "fallback_folds"
             stats[key] = int(stats.get(key, 0)) + 1
-        return list(train_date_window), False
+        fallback = list(train_date_window)
+        if max_train_dates is not None:
+            fallback = fallback[-max(int(max_train_dates), 1):]
+        return fallback, False, str(test_regime), list(matched_dates)
 
     def _majority_regime_for_dates(
         self,
@@ -970,7 +1100,7 @@ class ShortlistModelService:
     ) -> pd.DataFrame | None:
         if train_frame.empty or test_frame.empty:
             return None
-        if model_scope == "sector_specific" and model_name not in {"signal_proxy"}:
+        if model_scope == "sector_specific" and model_name not in {"signal_proxy", "reversal_rules"}:
             return self._score_model_by_sector(
                 model_name=model_name,
                 train_frame=train_frame,
@@ -979,7 +1109,7 @@ class ShortlistModelService:
                 xgboost_params=xgboost_params,
                 feature_columns_override=feature_columns_override,
             )
-        if model_scope == "regime_specific" and model_name not in {"signal_proxy"}:
+        if model_scope == "regime_specific" and model_name not in {"signal_proxy", "reversal_rules"}:
             return self._score_model_by_regime(
                 model_name=model_name,
                 train_frame=train_frame,
@@ -990,6 +1120,8 @@ class ShortlistModelService:
             )
         if model_name == "signal_proxy":
             return self._score_signal_proxy(test_frame)
+        if model_name == "reversal_rules":
+            return self._score_reversal_rules(test_frame)
         if model_name == "ridge_model":
             return self._score_ridge_closed_form(
                 train_frame,
@@ -1132,6 +1264,64 @@ class ShortlistModelService:
                 {
                     component: row.get(f"{component}_rank")
                     for component in components
+                }
+            ),
+            axis=1,
+        )
+        working["model_reason_summary"] = working["model_top_reasons"].apply(self._format_reason_summary)
+        return working
+
+    def _score_reversal_rules(self, frame: pd.DataFrame) -> pd.DataFrame:
+        working = frame.copy()
+        if "regime_matching_test_regime" not in working.columns:
+            working["regime_matching_test_regime"] = "unknown"
+        momentum_components = [
+            "relative_strength_index_vs_spy",
+            "roc_63",
+            "sma_200_dist",
+            "vol_alpha",
+        ]
+        reversal_components = [
+            "roc_63",
+            "rsi_14",
+            "close_vs_20d_low",
+            "sma_50_dist",
+        ]
+        for component in set(momentum_components + reversal_components):
+            if component not in working.columns:
+                working[component] = np.nan
+
+        def rank_component(component: str, *, ascending: bool) -> pd.Series:
+            values = pd.to_numeric(working[component], errors="coerce")
+            if working["snapshot_date"].nunique() > 1:
+                return values.groupby(working["snapshot_date"]).rank(method="average", pct=True, ascending=ascending)
+            return values.rank(method="average", pct=True, ascending=ascending)
+
+        for component in momentum_components:
+            working[f"momentum_{component}_rank"] = rank_component(component, ascending=True)
+        for component in reversal_components:
+            working[f"reversal_{component}_rank"] = rank_component(component, ascending=False)
+
+        momentum_score = working[[f"momentum_{component}_rank" for component in momentum_components]].mean(axis=1, skipna=True)
+        reversal_score = working[[f"reversal_{component}_rank" for component in reversal_components]].mean(axis=1, skipna=True)
+        reversal_mask = working["regime_matching_test_regime"].astype(str).eq("reversal")
+        working["predicted_alpha"] = momentum_score
+        working.loc[reversal_mask, "predicted_alpha"] = reversal_score.loc[reversal_mask]
+        working["model_top_reasons"] = working.apply(
+            lambda row: self._top_reason_names(
+                {
+                    **{
+                        component: row.get(f"momentum_{component}_rank")
+                        for component in momentum_components
+                    },
+                    **(
+                        {
+                            f"reversal_{component}": row.get(f"reversal_{component}_rank")
+                            for component in reversal_components
+                        }
+                        if str(row.get("regime_matching_test_regime")) == "reversal"
+                        else {}
+                    ),
                 }
             ),
             axis=1,
@@ -1562,7 +1752,21 @@ class ShortlistModelService:
             if isinstance(config, dict)
             else {}
         )
+        if "regime_matching" not in payload:
+            self.logger.warning(
+                "scan_policy.shortlist_model.regime_matching missing; using train_and_flip."
+            )
         return self._normalize_regime_matching_mode(payload.get("regime_matching", "train_and_flip"))
+
+    def _load_min_regime_train_dates(self) -> int:
+        config = load_feature_config()
+        payload = (
+            config.get("scan_policy", {})
+            .get("shortlist_model", {})
+            if isinstance(config, dict)
+            else {}
+        )
+        return max(2, int(payload.get("min_regime_train_dates", 120)))
 
     def _normalize_regime_matching_mode(self, mode: object) -> str:
         normalized = str(mode or "off").strip().lower()
@@ -1679,6 +1883,56 @@ class ShortlistModelService:
             else:
                 payload.append((int(index), float(value)))
         return tuple(payload)
+
+    def _record_regime_feature_survivors(
+        self,
+        stats: dict[str, dict[str, object]] | None,
+        *,
+        regime: str | None,
+        survivors: list[str],
+    ) -> None:
+        if stats is None:
+            return
+        key = str(regime or "unknown")
+        bucket = stats.setdefault(key, {"folds": 0, "features": {}})
+        bucket["folds"] = int(bucket.get("folds", 0)) + 1
+        feature_counts = bucket.setdefault("features", {})
+        if not isinstance(feature_counts, dict):
+            feature_counts = {}
+            bucket["features"] = feature_counts
+        for feature in survivors:
+            feature_name = str(feature)
+            feature_counts[feature_name] = int(feature_counts.get(feature_name, 0)) + 1
+
+    def _render_regime_feature_survivors(self, stats: dict[str, dict[str, object]] | None) -> list[str]:
+        lines = ["## Surviving Features By Fold Regime", ""]
+        if not stats:
+            lines.extend(["No fold-local regime feature survivor data available.", ""])
+            return lines
+        for regime in ("reversal", "trending", "neutral", "unknown"):
+            bucket = stats.get(regime)
+            if not bucket:
+                continue
+            feature_counts = bucket.get("features", {})
+            if not isinstance(feature_counts, dict):
+                feature_counts = {}
+            ordered = sorted(feature_counts.items(), key=lambda item: (-int(item[1]), str(item[0])))
+            feature_list = ", ".join(f"{feature} ({count})" for feature, count in ordered[:20]) or "none"
+            core_hits = sorted(
+                {
+                    self._base_feature_name(feature)
+                    for feature, _count in ordered
+                    if self._base_feature_name(feature) in REVERSAL_CORE_FEATURES
+                }
+            )
+            lines.append(f"### {regime}")
+            lines.append(f"- folds_screened: {int(bucket.get('folds', 0))}")
+            lines.append(f"- unique_surviving_features: {len(feature_counts)}")
+            lines.append(f"- top_surviving_features: {feature_list}")
+            if regime == "reversal":
+                lines.append(f"- reversal_core_survivors: {', '.join(core_hits) if core_hits else 'none'}")
+            lines.append("")
+        return lines
 
     def _decommission_active_champions(
         self,
@@ -2519,6 +2773,7 @@ class ShortlistModelService:
         min_feature_ic_observation_fraction: float,
         regime_matching_mode: str,
         regime_matching_stats: dict[str, int],
+        regime_feature_stats: dict[str, dict[str, object]] | None = None,
         surviving_features: list[str],
         eligible_rows: int,
         eligible_dates: int,
@@ -2590,6 +2845,7 @@ class ShortlistModelService:
                 stats=regime_matching_stats,
             )
         )
+        lines.extend(self._render_regime_feature_survivors(regime_feature_stats))
         if failure_reason:
             lines.extend(
                 [

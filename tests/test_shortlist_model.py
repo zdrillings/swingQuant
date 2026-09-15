@@ -218,6 +218,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
                 evaluation_stride_dates=3,
                 label_horizon_dates=1,
                 regime_matching_mode="train_only",
+                min_regime_train_dates=3,
                 regime_matching_stats=stats,
             )
 
@@ -225,6 +226,227 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertEqual(stats["matched_folds"], 1)
         self.assertTrue(bool(predictions["regime_matched_training_applied"].any()))
         self.assertEqual(observed_train_dates[:4], list(dates[1:5]))
+
+    def test_regime_matching_uses_lower_floor_before_max_train_cap(self) -> None:
+        dates = list(pd.bdate_range("2026-01-02", periods=12))
+        service = ShortlistModelService(db_manager=object())
+        regime_by_date = {
+            pd.Timestamp(date_value).normalize(): "reversal" if index in {1, 3, 5, 7, 9} else "trending"
+            for index, date_value in enumerate(dates)
+        }
+        stats = {
+            "attempted_folds": 0,
+            "matched_folds": 0,
+            "fallback_folds": 0,
+            "unknown_folds": 0,
+            "live_matched": 0,
+            "live_fallback": 0,
+        }
+
+        selected, matched, test_regime, feature_screen_dates = service._regime_matched_train_dates(
+            train_date_window=dates[:10],
+            test_dates=[dates[9]],
+            min_train_dates=3,
+            max_train_dates=3,
+            regime_by_date=regime_by_date,
+            mode="train_and_flip",
+            stats=stats,
+        )
+
+        self.assertTrue(matched)
+        self.assertEqual(test_regime, "reversal")
+        self.assertEqual(stats["matched_folds"], 1)
+        self.assertEqual(selected, [dates[5], dates[7], dates[9]])
+        self.assertEqual(feature_screen_dates, [dates[1], dates[3], dates[5], dates[7], dates[9]])
+
+    def test_reversal_rules_rank_pullbacks_on_reversal_dates(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        date = pd.Timestamp("2026-02-03")
+        frame = pd.DataFrame(
+            [
+                {
+                    "snapshot_date": date,
+                    "ticker": "LOW",
+                    "sector": "Energy",
+                    "regime_matching_test_regime": "reversal",
+                    "roc_63": -0.20,
+                    "rsi_14": 35.0,
+                    "close_vs_20d_low": 0.01,
+                    "sma_50_dist": -0.15,
+                    "relative_strength_index_vs_spy": 30.0,
+                    "sma_200_dist": -0.05,
+                    "vol_alpha": 0.8,
+                },
+                {
+                    "snapshot_date": date,
+                    "ticker": "HIGH",
+                    "sector": "Energy",
+                    "regime_matching_test_regime": "reversal",
+                    "roc_63": 0.30,
+                    "rsi_14": 72.0,
+                    "close_vs_20d_low": 0.25,
+                    "sma_50_dist": 0.12,
+                    "relative_strength_index_vs_spy": 90.0,
+                    "sma_200_dist": 0.20,
+                    "vol_alpha": 1.5,
+                },
+            ]
+        )
+
+        scored = service._score_reversal_rules(frame)
+
+        low_score = float(scored.loc[scored["ticker"] == "LOW", "predicted_alpha"].iloc[0])
+        high_score = float(scored.loc[scored["ticker"] == "HIGH", "predicted_alpha"].iloc[0])
+        self.assertGreater(low_score, high_score)
+
+    def test_reversal_fold_feature_screen_uses_matched_pool(self) -> None:
+        dates = pd.bdate_range("2026-01-02", periods=12)
+
+        class FakeDB:
+            def load_regime_meter(self):
+                return pd.DataFrame(
+                    [
+                        {
+                            "snapshot_date": snapshot_date,
+                            "classification": "reversal" if index % 2 else "trending",
+                        }
+                        for index, snapshot_date in enumerate(dates)
+                    ]
+                )
+
+            def list_universe_daily_snapshot_dates(self):
+                return [snapshot_date.strftime("%Y-%m-%d") for snapshot_date in dates]
+
+        service = ShortlistModelService(db_manager=FakeDB())
+        rows = []
+        for date_index, snapshot_date in enumerate(dates):
+            for ticker_index, ticker in enumerate(("AAA", "BBB")):
+                rows.append(
+                    {
+                        "snapshot_date": snapshot_date,
+                        "ticker": ticker,
+                        "sector": "Energy",
+                        "md_volume_30d": 50_000_000.0,
+                        "relative_strength_index_vs_spy": 50.0 + ticker_index,
+                        "roc_63": 0.01 * ticker_index,
+                        "sma_200_dist": 0.01,
+                        "vol_alpha": 1.0,
+                        "rsi_2": float(ticker_index),
+                        "alpha_vs_sector_20d": 0.01 * ticker_index,
+                    }
+                )
+        screened_dates: list[pd.Timestamp] = []
+
+        def fake_screen(frame, **_kwargs):
+            screened_dates.extend(pd.to_datetime(frame["snapshot_date"]).drop_duplicates().tolist())
+            return ["rsi_2"]
+
+        def fake_score_model(**kwargs):
+            scored = kwargs["test_frame"].copy()
+            scored["predicted_alpha"] = 0.0
+            scored["model_top_reasons"] = [[] for _ in range(len(scored.index))]
+            scored["model_reason_summary"] = None
+            return scored
+
+        with patch.object(service, "_feature_ic_survivors_from_frame", side_effect=fake_screen), \
+             patch.object(service, "_score_model", side_effect=fake_score_model):
+            predictions = service._walk_forward_predictions(
+                pd.DataFrame(rows),
+                target_column="alpha_vs_sector_20d",
+                model_name="ridge_model",
+                min_train_dates=4,
+                max_train_dates=4,
+                test_window_dates=2,
+                model_scope="global",
+                evaluation_stride_dates=4,
+                label_horizon_dates=1,
+                min_feature_ic=0.01,
+                min_regime_train_dates=2,
+                regime_matching_mode="train_only",
+            )
+
+        self.assertIsNotNone(predictions)
+        self.assertTrue(screened_dates)
+        expected_screen_dates = set(pd.to_datetime(list(dates[2:7:2])).normalize())
+        observed_screen_dates = set(pd.to_datetime(screened_dates).normalize())
+        self.assertTrue(observed_screen_dates.issubset(expected_screen_dates))
+
+    def test_reversal_universe_extension_uses_lagged_regime_without_lookahead(self) -> None:
+        dates = pd.bdate_range("2026-01-02", periods=25)
+
+        class FakeDB:
+            def load_regime_meter(self):
+                return pd.DataFrame(
+                    [
+                        {"snapshot_date": dates[0], "classification": "reversal"},
+                        {"snapshot_date": dates[4], "classification": "trending"},
+                    ]
+                )
+
+            def list_universe_daily_snapshot_dates(self):
+                return [snapshot_date.strftime("%Y-%m-%d") for snapshot_date in dates]
+
+        service = ShortlistModelService(db_manager=FakeDB())
+        frame = pd.DataFrame(
+            [
+                {
+                    "snapshot_date": dates[21],
+                    "ticker": "PULL",
+                    "sector": "Energy",
+                    "passed_any_strategy": False,
+                    "passed_slots_json": "[]",
+                    "md_volume_30d": 50_000_000.0,
+                    "adj_close": 30.0,
+                    "sma_200_dist": -0.05,
+                    "roc_63": -0.02,
+                    "rsi_14": 45.0,
+                    "relative_strength_index_vs_spy": 30.0,
+                    "regime_green": False,
+                    "alpha_vs_sector_20d": 0.01,
+                },
+                {
+                    "snapshot_date": dates[24],
+                    "ticker": "LOOKAHEAD",
+                    "sector": "Energy",
+                    "passed_any_strategy": False,
+                    "passed_slots_json": "[]",
+                    "md_volume_30d": 50_000_000.0,
+                    "adj_close": 30.0,
+                    "sma_200_dist": -0.05,
+                    "roc_63": -0.02,
+                    "rsi_14": 45.0,
+                    "relative_strength_index_vs_spy": 30.0,
+                    "regime_green": False,
+                    "alpha_vs_sector_20d": 0.01,
+                },
+            ]
+        )
+
+        eligible = service._build_matured_eligible_universe(
+            frame,
+            target_column="alpha_vs_sector_20d",
+            eligible_universe_mode="passed_or_trend",
+        )
+
+        self.assertIn("PULL", set(eligible["ticker"]))
+        self.assertNotIn("LOOKAHEAD", set(eligible["ticker"]))
+
+    def test_report_renders_regime_feature_survivor_summary(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+
+        lines = service._render_regime_feature_survivors(
+            {
+                "reversal": {
+                    "folds": 2,
+                    "features": {"rsi_2": 2, "ret_1d": 1, "roc_63": 1},
+                }
+            }
+        )
+        text = "\n".join(lines)
+
+        self.assertIn("## Surviving Features By Fold Regime", text)
+        self.assertIn("### reversal", text)
+        self.assertIn("- reversal_core_survivors: ret_1d, rsi_2", text)
 
     def test_filter_eligible_universe_passed_or_trend_broadens_research_set(self) -> None:
         frame = pd.DataFrame(
@@ -430,6 +652,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
             self.assertIn("- live_output_top_n: 2", report_text)
             self.assertIn("- promotion_top_n: 2", report_text)
             self.assertIn("- candidate_models:", report_text)
+            self.assertIn("reversal_rules", report_text)
             self.assertIn("- selected_model:", report_text)
             self.assertIn("## Regime Matching", report_text)
             self.assertIn("- regime_matching_folds: attempted=", report_text)
@@ -437,6 +660,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
             self.assertIn("- matched_folds:", report_text)
             self.assertIn("- fallback_folds:", report_text)
             self.assertIn("- unknown_folds:", report_text)
+            self.assertIn("## Surviving Features By Fold Regime", report_text)
             self.assertIn("## Promotion Gate", report_text)
             self.assertIn("## Full Walk-Forward Evaluation", report_text)
             self.assertIn("## Live Top Candidates", report_text)
@@ -1281,6 +1505,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
             self.assertIn("- matched_folds:", report_text)
             self.assertIn("- fallback_folds:", report_text)
             self.assertIn("- unknown_folds:", report_text)
+            self.assertIn("## Surviving Features By Fold Regime", report_text)
             self.assertIn("- days_since_last_champion: n/a", report_text)
             self.assertTrue((paths.reports_dir / "shortlist_model_oos_predictions.csv").exists())
             self.assertTrue((paths.reports_dir / "feature_ic_report.md").exists())

@@ -354,6 +354,8 @@ scan_policy:
     top_n: 10
     min_feature_ic: 0.03
     min_feature_ic_observation_fraction: 0.20
+    regime_matching: train_and_flip
+    min_regime_train_dates: 120
     min_opportunity_score: 0.30
     min_train_dates: 252
     max_train_dates: 252
