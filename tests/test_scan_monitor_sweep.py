@@ -3859,9 +3859,12 @@ class MonitorServiceTests(unittest.TestCase):
         self.assertEqual(report.triggered_count, 1)
         self.assertEqual(len(email_calls), 1)
         self.assertEqual(len(service.db_manager.closed), 0)
+        self.assertIn("SwingQuant Monitor: 1 sell signal - model gate closed", email_calls[0].subject)
         self.assertIn("All Holdings", email_calls[0].html_body)
         self.assertIn("Sell Now", email_calls[0].html_body)
         self.assertIn("Review Before Selling", email_calls[0].html_body)
+        self.assertIn("Model Gate Closed", email_calls[0].html_body)
+        self.assertIn("Monitor is exit-only", email_calls[0].html_body)
         self.assertIn("Trade Action", email_calls[0].html_body)
         self.assertIn("Action Basis", email_calls[0].html_body)
         self.assertIn("Alpha Since Entry", email_calls[0].html_body)
@@ -4417,6 +4420,9 @@ class MonitorServiceTests(unittest.TestCase):
 
         self.assertTrue(report.emailed)
         html = email_calls[0].html_body
+        self.assertIn("SwingQuant Monitor: 1 review signal - model xgboost_model", email_calls[0].subject)
+        self.assertIn("Model Active", html)
+        self.assertIn("Champion xgboost_model; live snapshot 2026-05-19", html)
         self.assertIn("model shortlist #1; predicted alpha 12.00% (xgboost_model)", html)
         self.assertIn("won over: next-ranked BBB on strong 63d momentum", html)
         self.assertIn(">buyable<", html)

@@ -81,6 +81,7 @@ class MonitorService:
         sector_map = {row["ticker"]: row["sector"] for row in universe_rows}
         latest_rows_by_ticker = latest_snapshot.set_index("ticker").to_dict(orient="index")
         shortlist_model_context = self._load_shortlist_model_context()
+        model_context_summary = self._model_context_summary(shortlist_model_context)
         shortlist_predictions = (
             shortlist_model_context.live_predictions.set_index("ticker").to_dict(orient="index")
             if shortlist_model_context is not None and not shortlist_model_context.live_predictions.empty
@@ -358,8 +359,17 @@ class MonitorService:
             )
         )
         triggered_rows = [row for row in holding_rows if row["recommended_action"] == "sell"]
-        html = self._build_digest_html(holding_rows=holding_rows, triggered_rows=triggered_rows)
-        self.email_sender(subject="Hourly Monitor Digest", html_body=html, settings=settings)
+        html = self._build_digest_html(
+            holding_rows=holding_rows,
+            triggered_rows=triggered_rows,
+            model_context_summary=model_context_summary,
+        )
+        subject = self._build_digest_subject(
+            holding_rows=holding_rows,
+            triggered_rows=triggered_rows,
+            model_context_summary=model_context_summary,
+        )
+        self.email_sender(subject=subject, html_body=html, settings=settings)
         return MonitorReport(
             watchlist_size=len(open_trades),
             triggered_count=len(triggered_rows),
@@ -593,7 +603,55 @@ class MonitorService:
             return None
         return float(rows.iloc[1]["high"])
 
-    def _build_digest_html(self, *, holding_rows: list[dict], triggered_rows: list[dict]) -> str:
+    def _model_context_summary(self, shortlist_model_context) -> dict[str, str]:
+        if shortlist_model_context is None:
+            return {
+                "status": "gate_closed",
+                "label": "Model Gate Closed",
+                "detail": (
+                    "No current shortlist champion passed promotion/freshness gates. "
+                    "Monitor is exit-only; Fresh Setup is diagnostic and should not be read as a new-buy signal."
+                ),
+                "subject_suffix": "model gate closed",
+            }
+        champion_model = str(getattr(shortlist_model_context, "champion_model", "") or "unknown model")
+        live_snapshot_date = str(getattr(shortlist_model_context, "live_snapshot_date", "") or "unknown snapshot")
+        generated_at = str(getattr(shortlist_model_context, "generated_at", "") or "unknown generated_at")
+        top_n = str(getattr(shortlist_model_context, "top_n", "") or "unknown")
+        return {
+            "status": "active",
+            "label": "Model Active",
+            "detail": (
+                f"Champion {champion_model}; live snapshot {live_snapshot_date}; "
+                f"top_n {top_n}; generated_at {generated_at}."
+            ),
+            "subject_suffix": f"model {champion_model}",
+        }
+
+    def _build_digest_subject(
+        self,
+        *,
+        holding_rows: list[dict],
+        triggered_rows: list[dict],
+        model_context_summary: dict[str, str],
+    ) -> str:
+        sell_count = len(triggered_rows)
+        review_count = sum(1 for row in holding_rows if row["recommended_action"] == "review")
+        if sell_count:
+            action = f"{sell_count} sell signal" if sell_count == 1 else f"{sell_count} sell signals"
+        elif review_count:
+            action = f"{review_count} review signal" if review_count == 1 else f"{review_count} review signals"
+        else:
+            action = "no sell signals"
+        return f"SwingQuant Monitor: {action} - {model_context_summary['subject_suffix']}"
+
+    def _build_digest_html(
+        self,
+        *,
+        holding_rows: list[dict],
+        triggered_rows: list[dict],
+        model_context_summary: dict[str, str],
+    ) -> str:
         sell_count = len(triggered_rows)
         review_rows = [row for row in holding_rows if row["recommended_action"] == "review"]
         review_count = len(review_rows)
@@ -606,6 +664,7 @@ class MonitorService:
             "<html><body>"
             "<h1>Hourly Monitor Digest</h1>"
             f"<p>Holdings: {len(holding_rows)} | Must-sell/sell: {sell_count} | Review: {review_count} | Holds: {hold_count} | Still-valid setups: {valid_count}</p>"
+            f"<p><strong>{model_context_summary['label']}:</strong> {model_context_summary['detail']}</p>"
             "<p><strong>How to read this:</strong> "
             "<em>Trade Action</em> and <em>Exit Reasons</em> apply to your existing position. "
             "<em>Fresh Setup</em> answers whether we would newly buy the stock today. "
