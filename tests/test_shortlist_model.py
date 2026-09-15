@@ -151,7 +151,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertAlmostEqual(float(matched.loc[1, "predicted_alpha"]), 0.20)
 
     def test_walk_forward_predictions_use_regime_matched_training_rows(self) -> None:
-        dates = pd.bdate_range("2026-01-02", periods=10)
+        dates = pd.bdate_range("2026-01-02", periods=80)
 
         class FakeDB:
             def load_regime_meter(self):
@@ -159,7 +159,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
                     [
                         {
                             "snapshot_date": snapshot_date,
-                            "classification": "reversal" if index <= 5 else "trending",
+                            "classification": "reversal" if index < 70 else "trending",
                         }
                         for index, snapshot_date in enumerate(dates)
                     ]
@@ -211,27 +211,27 @@ class ShortlistModelServiceTests(unittest.TestCase):
                 frame,
                 target_column="alpha_vs_sector_20d",
                 model_name="ridge_model",
-                min_train_dates=3,
-                max_train_dates=6,
+                min_train_dates=65,
+                max_train_dates=70,
                 test_window_dates=2,
                 model_scope="global",
                 evaluation_stride_dates=3,
-                label_horizon_dates=1,
+                label_horizon_dates=0,
                 regime_matching_mode="train_only",
-                min_regime_train_dates=3,
+                min_regime_train_dates=120,
                 regime_matching_stats=stats,
             )
 
         self.assertIsNotNone(predictions)
-        self.assertEqual(stats["matched_folds"], 1)
+        self.assertEqual(stats["matched_folds"], 2)
         self.assertTrue(bool(predictions["regime_matched_training_applied"].any()))
-        self.assertEqual(observed_train_dates[:4], list(dates[1:5]))
+        self.assertEqual(observed_train_dates[:65], list(dates[:65]))
 
-    def test_regime_matching_uses_lower_floor_before_max_train_cap(self) -> None:
-        dates = list(pd.bdate_range("2026-01-02", periods=12))
+    def test_regime_matching_uses_density_floor_before_max_train_cap(self) -> None:
+        dates = list(pd.bdate_range("2026-01-02", periods=130))
         service = ShortlistModelService(db_manager=object())
         regime_by_date = {
-            pd.Timestamp(date_value).normalize(): "reversal" if index in {1, 3, 5, 7, 9} else "trending"
+            pd.Timestamp(date_value).normalize(): "reversal" if index < 65 else "trending"
             for index, date_value in enumerate(dates)
         }
         stats = {
@@ -244,10 +244,10 @@ class ShortlistModelServiceTests(unittest.TestCase):
         }
 
         selected, matched, test_regime, feature_screen_dates = service._regime_matched_train_dates(
-            train_date_window=dates[:10],
-            test_dates=[dates[9]],
-            min_train_dates=3,
-            max_train_dates=3,
+            train_date_window=dates[:65],
+            test_dates=[dates[64]],
+            min_train_dates=120,
+            max_train_dates=20,
             regime_by_date=regime_by_date,
             mode="train_and_flip",
             stats=stats,
@@ -256,8 +256,40 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertTrue(matched)
         self.assertEqual(test_regime, "reversal")
         self.assertEqual(stats["matched_folds"], 1)
-        self.assertEqual(selected, [dates[5], dates[7], dates[9]])
-        self.assertEqual(feature_screen_dates, [dates[1], dates[3], dates[5], dates[7], dates[9]])
+        self.assertEqual(selected, dates[45:65])
+        self.assertEqual(feature_screen_dates, dates[:65])
+
+    def test_regime_matching_density_floor_falls_back_below_sixty_same_regime_dates(self) -> None:
+        dates = list(pd.bdate_range("2026-01-02", periods=80))
+        service = ShortlistModelService(db_manager=object())
+        regime_by_date = {
+            pd.Timestamp(date_value).normalize(): "reversal" if index < 59 else "trending"
+            for index, date_value in enumerate(dates)
+        }
+        stats = {
+            "attempted_folds": 0,
+            "matched_folds": 0,
+            "fallback_folds": 0,
+            "unknown_folds": 0,
+            "live_matched": 0,
+            "live_fallback": 0,
+        }
+
+        selected, matched, test_regime, feature_screen_dates = service._regime_matched_train_dates(
+            train_date_window=dates[:59],
+            test_dates=[dates[58]],
+            min_train_dates=120,
+            max_train_dates=20,
+            regime_by_date=regime_by_date,
+            mode="train_and_flip",
+            stats=stats,
+        )
+
+        self.assertFalse(matched)
+        self.assertEqual(test_regime, "reversal")
+        self.assertEqual(stats["fallback_folds"], 1)
+        self.assertEqual(selected, dates[39:59])
+        self.assertEqual(feature_screen_dates, dates[:59])
 
     def test_reversal_rules_rank_pullbacks_on_reversal_dates(self) -> None:
         service = ShortlistModelService(db_manager=object())

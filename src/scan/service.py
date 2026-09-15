@@ -1482,8 +1482,11 @@ class ScanService:
             frame["calibrated_p_beat_sector"] if "calibrated_p_beat_sector" in frame.columns else pd.Series(pd.NA, index=frame.index),
             errors="coerce",
         )
-        if self._calibrated_probability_degenerate(calibrated, total_rows=len(frame.index)):
-            ranked_alpha = predicted_alpha.rank(method="first", pct=True, ascending=True)
+        calibration_degenerate = self._calibrated_probability_degenerate(calibrated, total_rows=len(frame.index))
+        ranked_alpha = predicted_alpha.rank(method="first", pct=True, ascending=True)
+        if calibration_degenerate and ranked_alpha.notna().any():
+            return ranked_alpha.where(ranked_alpha.notna(), predicted_alpha)
+        if ranked_alpha.notna().any():
             return ranked_alpha.where(ranked_alpha.notna(), predicted_alpha)
         score = calibrated.where(calibrated.notna(), predicted_alpha)
         return pd.to_numeric(score, errors="coerce")

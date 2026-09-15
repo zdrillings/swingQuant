@@ -994,7 +994,8 @@ class ShortlistModelService:
             for date_value in train_date_window
             if regime_by_date.get(pd.Timestamp(date_value).normalize()) == test_regime
         ]
-        if len(matched_dates) >= int(min_train_dates):
+        required_matched_dates = max(60, int(math.ceil(len(matched_dates) * 0.80)))
+        if len(matched_dates) >= required_matched_dates:
             if stats is not None:
                 key = "live_matched" if live else "matched_folds"
                 stats[key] = int(stats.get(key, 0)) + 1

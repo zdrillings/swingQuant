@@ -49,7 +49,7 @@ class ScanServiceTests(unittest.TestCase):
         self.assertNotIn("P(&gt;2% Alpha)", html)
         self.assertNotIn("Pred Alpha", html)
 
-    def test_shortlist_model_selection_prefers_calibrated_probability_score(self) -> None:
+    def test_shortlist_model_selection_prefers_predicted_alpha_rank(self) -> None:
         service = ScanService(db_manager=None)
         context = type(
             "ModelContext",
@@ -76,9 +76,51 @@ class ScanServiceTests(unittest.TestCase):
         scored = service._apply_shortlist_model_selection(candidates, context)
 
         scores = dict(zip(scored["ticker"], scored["selection_score"], strict=True))
-        self.assertAlmostEqual(scores["AAA"], 0.51)
-        self.assertAlmostEqual(scores["BBB"], 0.62)
+        self.assertGreater(scores["AAA"], scores["BBB"])
+        self.assertAlmostEqual(scores["AAA"], 1.0)
+        self.assertAlmostEqual(scores["BBB"], 0.5)
         self.assertTrue((scored["model_score_label"] == "Model Score").all())
+
+    def test_shortlist_model_selection_does_not_rank_on_opportunity_score(self) -> None:
+        service = ScanService(db_manager=None)
+        context = type(
+            "ModelContext",
+            (),
+            {
+                "generated_at": "2026-09-03T18:00:00+00:00",
+                "champion_model": "ridge_model",
+                "target_column": "alpha_vs_sector_20d",
+                "live_predictions": pd.DataFrame(
+                    [
+                        {"ticker": "AAA", "predicted_alpha": 0.05, "calibrated_p_beat_sector": 0.70, "model_rank": 1},
+                        {"ticker": "BBB", "predicted_alpha": 0.20, "calibrated_p_beat_sector": 0.55, "model_rank": 2},
+                    ]
+                ),
+            },
+        )()
+        candidates = pd.DataFrame(
+            [
+                {
+                    "ticker": "AAA",
+                    "strategy_slot": "energy",
+                    "strategy_sector": "Energy",
+                    "signal_score": 10.0,
+                    "opportunity_score": 0.90,
+                },
+                {
+                    "ticker": "BBB",
+                    "strategy_slot": "energy",
+                    "strategy_sector": "Energy",
+                    "signal_score": 10.0,
+                    "opportunity_score": 0.40,
+                },
+            ]
+        )
+
+        scored = service._apply_shortlist_model_selection(candidates, context)
+
+        scores = dict(zip(scored["ticker"], scored["selection_score"], strict=True))
+        self.assertGreater(scores["BBB"], scores["AAA"])
 
     def test_shortlist_model_selection_uses_alpha_rank_when_calibration_degenerates(self) -> None:
         service = ScanService(db_manager=None)
@@ -178,7 +220,7 @@ class ScanServiceTests(unittest.TestCase):
         )
         self.assertEqual(custom_scored["opportunity_score"], 0.40)
 
-    def test_shortlist_model_candidates_use_calibrated_probability_for_selection_score(self) -> None:
+    def test_shortlist_model_candidates_preserve_calibration_but_rank_on_predicted_alpha(self) -> None:
         service = ScanService(db_manager=None)
         strategy = ProductionStrategy(
             strategy_id=1,
@@ -259,7 +301,7 @@ class ScanServiceTests(unittest.TestCase):
             settings=settings,
         )
 
-        self.assertAlmostEqual(float(candidates.loc[0, "selection_score"]), 0.88, places=6)
+        self.assertAlmostEqual(float(candidates.loc[0, "selection_score"]), 1.0, places=6)
         self.assertAlmostEqual(float(candidates.loc[0, "calibrated_p_beat_sector"]), 0.88, places=6)
         self.assertEqual(candidates.loc[0, "model_score_label"], "Model Score")
 
