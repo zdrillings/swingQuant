@@ -99,6 +99,7 @@ class DatabaseManagerInitializationTests(unittest.TestCase):
             self.assertTrue(any("analyst_target_upside DOUBLE" in statement for statement in fake_duckdb.statements))
             self.assertTrue(any("rsi_2 DOUBLE" in statement for statement in fake_duckdb.statements))
             self.assertTrue(any("spy_roc_20 DOUBLE" in statement for statement in fake_duckdb.statements))
+            self.assertTrue(any("alpha_vs_sector_60d DOUBLE" in statement for statement in fake_duckdb.statements))
             self.assertTrue(any("alpha_vs_sector_20d_pos INTEGER" in statement for statement in fake_duckdb.statements))
             self.assertTrue({"is_active", "decommissioned_at", "decommission_reason"}.issubset(shortlist_run_columns))
 

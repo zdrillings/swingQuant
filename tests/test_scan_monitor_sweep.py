@@ -3107,7 +3107,51 @@ class ScanServiceTests(unittest.TestCase):
         )
 
         self.assertIsNone(payload["alpha_vs_sector_20d"])
+        self.assertIsNone(payload["alpha_vs_sector_60d"])
         self.assertIsNone(payload["alpha_vs_sector_20d_pos"])
+
+    def test_universe_backfill_builds_sixty_day_fixed_horizon_outcomes(self) -> None:
+        service = UniverseSnapshotBackfillService(db_manager=None)
+
+        dates = pd.bdate_range("2026-05-01", periods=61)
+        ticker_frame = pd.DataFrame(
+            [
+                {
+                    "date": date_value,
+                    "adj_close": 100.0 + index,
+                    "high": 100.0 + index,
+                    "low": 100.0 + index,
+                }
+                for index, date_value in enumerate(dates)
+            ]
+        )
+        spy_frame = pd.DataFrame(
+            [
+                {
+                    "date": date_value,
+                    "adj_close": 200.0,
+                    "high": 200.0,
+                    "low": 200.0,
+                }
+                for date_value in dates
+            ]
+        )
+        index_by_date = {date_value.strftime("%Y-%m-%d"): index for index, date_value in enumerate(dates)}
+
+        payload = service._outcome_payload(
+            snapshot_date="2026-05-01",
+            ticker="AAA",
+            sector="Industrials",
+            history_context={
+                "AAA": {"frame": ticker_frame, "index_by_date": index_by_date},
+                "SPY": {"frame": spy_frame, "index_by_date": index_by_date},
+                "XLI": {"frame": spy_frame, "index_by_date": index_by_date},
+            },
+        )
+
+        self.assertAlmostEqual(payload["fwd_return_60d"], 0.60)
+        self.assertAlmostEqual(payload["alpha_vs_spy_60d"], 0.60)
+        self.assertAlmostEqual(payload["alpha_vs_sector_60d"], 0.60)
 
     def test_universe_backfill_builds_path_aware_exit_label(self) -> None:
         service = UniverseSnapshotBackfillService(db_manager=None)

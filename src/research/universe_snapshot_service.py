@@ -21,7 +21,7 @@ from src.utils.strategy import (
 )
 
 
-OUTCOME_HORIZONS = (1, 3, 5, 10, 20)
+OUTCOME_HORIZONS = (1, 3, 5, 10, 20, 60)
 SNAPSHOT_REFRESH_COLUMNS = (
     "sub_industry",
     "subindustry_benchmark",
