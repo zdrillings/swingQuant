@@ -119,21 +119,21 @@ Each mode sweeps entry thresholds, exit parameters, and `hard_stop_pct` (5%–10
 4. Train the shortlist model:
 
 ```bash
-# Regression (predicts continuous alpha_vs_sector_20d)
-./sq shortlist-model --eligible-universe-mode passed_or_trend --model-scope sector_specific
+# Current production-style regression (60-session sector alpha, top-2 basket)
+./sq shortlist-model --horizon 60 --top 2 --eligible-universe-mode passed_or_trend --model-scope global --xgboost-config balanced_depth4
 
-# Classification (predicts binary alpha_vs_sector_20d_pos: alpha > 2%)
-./sq shortlist-model --target-type classification --model-scope regime_specific
+# Classification example (binary alpha_vs_sector_<horizon>d_pos: alpha > 2%)
+./sq shortlist-model --horizon 60 --target-type classification --model-scope regime_specific
 
 # Quick bakeoff to compare policies
-./sq shortlist-bakeoff --eligible-universe-mode passed_or_trend
+./sq shortlist-bakeoff --horizon 60 --top 2 --eligible-universe-mode passed_or_trend
 ```
 
-The shortlist model uses an L1-regularized linear model (Lasso for regression, LogisticRegression for classification) trained in walk-forward across ~372 OOS dates with 43 features plus cross-sectional ranks. Features include 4 macro context features (`spy_roc_20`, `spy_roc_5`, `spy_realized_vol_20`, `qqq_roc_20`) computed from SPY/QQQ price history. Zero-coefficient features are purged and the model is re-fit per fold.
+The shortlist model evaluates signal-proxy, ridge, lasso/logistic, and optional XGBoost candidates in chronological walk-forward folds. Current production config targets `alpha_vs_sector_60d`, evaluates the top-2 basket, caps training history at 252 trading dates, retrains every 20 dates, and uses dense out-of-sample predictions inside each test window. Features include core price/volume/technical context, analyst/revision context when available, cross-sectional ranks, sector dummies, and macro context features (`spy_roc_20`, `spy_roc_5`, `spy_realized_vol_20`, `qqq_roc_20`) computed from SPY/QQQ price history.
 
 Model scopes:
 - `global` — single model across all sectors
-- `sector_specific` — per-sector models with global fallback (production default)
+- `sector_specific` — per-sector models with global fallback
 - `regime_specific` — per-regime models (trending/choppy/correcting) via `spy_roc_20`
 
 5. Rank candidates:
@@ -193,7 +193,7 @@ It writes [sleeve_research.md](/home/zdrillings/code/SwingQuant/reports/sleeve_r
 
 The scan uses the shortlist model's **top-2 predictions** as its product. A rank-calibration analysis (Aug 2026) showed the model's ranks 1-2 carried all the recent alpha (+6.7% mean, 70% beat rate) while ranks 3-10 had inverted to negative — so the model path selects at most 2 candidates.
 
-Quality gate (2 tiers, evaluated on the top-2 basket's recent 20d walk-forward performance):
+Quality gate (2 tiers, evaluated on the top-2 basket's horizon-aware walk-forward performance):
 - **Full (2 picks)**: beat_rate >= 35% AND mean_target >= -3%
 - **Minimal (1 pick)**: beat_rate < 35% or mean_target < -3%
 - **Heuristic fallback (75% of cap, floor 3)**: diagnostic only; production model scans fail closed unless `allow_heuristic_fallback: true` is explicitly configured
@@ -269,17 +269,17 @@ Use `--ticker` to always include specific names outside the default source:
   - The current provider is yfinance.
   - The command stores target mean, median, low, high, analyst count, recommendation summary, estimate/revision tables, capture timestamp, and details JSON.
 - `sq shortlist-model` trains the prediction engine:
-  - L1-regularized linear model (Lasso for regression, LogisticRegression for classification).
-  - Walk-forward validation with expanding windows (252 min train, 20-day test).
+  - Candidate models include signal-proxy, ridge, lasso/logistic, and optional XGBoost.
+  - Walk-forward validation uses chronological folds only, 252 min train dates, optional 252-date max train cap, and dense predictions across each test window.
   - 47 raw features (incl. `rsi_2`, `ret_1d`, `ret_5d`, `close_vs_20d_low` mean-reversion features) plus cross-sectional ranks (`__rank_all`, `__rank_sector`) and sector dummies.
   - 4 macro context features computed from SPY/QQQ: `spy_roc_20`, `spy_roc_5`, `spy_realized_vol_20`, `qqq_roc_20`.
-  - Binary target (`alpha_vs_sector_20d_pos`) = 1 if `alpha_vs_sector_20d > 2%`, else 0.
+  - Current production target is continuous `alpha_vs_sector_60d`; binary targets use `alpha_vs_sector_<horizon>d_pos` = 1 if alpha > 2%, else 0.
   - Zero-coefficient features are purged and the model is re-fit per fold.
   - `regime_specific` scope splits by SPY 20d return regime (trending when >1% else choppy).
 - `sq scan` candidate selection:
   - **Primary**: model-driven — inner-joins snapshot with live model predictions; no signal gate needed.
-  - **Fallback**: heuristic — per-slot signal gate when model returns empty predictions.
-  - **Confidence basket**: quality gate metrics (`recent_20d_beat_rate`, `recent_20d_mean_target`) are computed on the model's **top-2 predictions** — rank calibration showed ranks 3+ inverted recently (see rank analysis in AGENTS.md).
+  - **Fallback**: heuristic — per-slot signal gate only when explicitly enabled for diagnostics.
+  - **Confidence basket**: quality gate metrics are computed on the model's **top-2 predictions**. For 60d production models, scan uses the 60d confidence fields when present; rank calibration showed ranks 3+ inverted recently (see rank analysis in AGENTS.md).
   - **Quality gate** (model path, 2 tiers): 2 picks when beat_rate >= 35% and mean_target >= -3%; else 1 pick.
   - **Rotation exclusion**: picks from the last 3 scan dates are removed from the pool when the cap is below the configured total, so the pair rotates through the model's top candidates.
   - Heuristic fallback: 75% of cap, floor 3.
@@ -449,8 +449,8 @@ TZ=America/New_York
 # Broker-truth ledger sync: 5 minutes after open.
 35 9 * * 1-5 cd /home/zdrillings/code/SwingQuant && ./sq schwab sync-ledger --close-missing >> logs/schwab-ledger-sync.log 2>&1
 
-# Existing hourly monitor runs after the morning ledger sync.
-30 10-15 * * 1-5 cd /home/zdrillings/code/SwingQuant && ./sq monitor >> logs/monitor.log 2>&1
+# Optional monitor run. By default this logs alerts only; pass --email for a digest.
+30 15 * * 1-5 cd /home/zdrillings/code/SwingQuant && ./sq monitor >> logs/monitor.log 2>&1
 
 # Postmarket snapshot before the evening brief, then the close-based scan with postmarket context.
 25 19 * * 1-5 cd /home/zdrillings/code/SwingQuant && ./sq extended-hours-snapshot --source all >> logs/extended_hours_snapshot_cron.log 2>&1
@@ -468,9 +468,9 @@ The shortlist layer evaluates multiple walk-forward candidate models and persist
 
 Key characteristics:
 
-- **Target**: `alpha_vs_sector_20d` or `alpha_vs_sector_20d_pos`; missing forward alpha remains missing and is not converted into a negative label
+- **Target**: current production config uses `alpha_vs_sector_60d`; 20d and classification/path targets remain supported for research. Missing forward alpha remains missing and is not converted into a negative label
 - **Selection**: the champion is selected from model summaries, not hardcoded
-- **Honest OOS cadence**: 20d shortlist evaluation scores one OOS snapshot every 20 trading days to reduce overlapping-label inflation
+- **Honest OOS cadence**: folds retrain every configured test window, then predict all dates in the OOS window; horizon-aware gates use 60d windows for 60d targets and 20d/60d windows for shorter-horizon targets
 - **Historical eligibility**: model research prefers `passed_slots_json` when available, so the universe reflects what passed on each snapshot date
 - **Calibration**: OOS predictions are converted to `calibrated_p_beat_sector`; live scan ranking uses calibrated probability when available, then raw predicted alpha
 - **Runtime override**: `scan_policy.shortlist_model.production_model_name`, when set, explicitly selects a preferred model; when omitted, runtime uses the persisted champion
@@ -497,14 +497,14 @@ Key characteristics:
 
 ```bash
 ./sq universe-backfill --date-from $(date +%F)
-./sq shortlist-model --eligible-universe-mode passed_or_trend --model-scope sector_specific
+./sq shortlist-model --horizon 60 --top 2 --eligible-universe-mode passed_or_trend --model-scope global --xgboost-config balanced_depth4
 ./sq scan
 ```
 
 2. Test with classification target and regime splitting (slower but potentially more adaptive):
 
 ```bash
-./sq shortlist-model --target-type classification --model-scope regime_specific
+./sq shortlist-model --horizon 60 --target-type classification --model-scope regime_specific
 ```
 
 3. Sweep new strategy parameters:
