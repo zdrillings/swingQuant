@@ -2600,7 +2600,7 @@ class ShortlistModelService:
     def _promotion_recent_windows(self, *, horizon_days: int) -> tuple[int, ...]:
         horizon = max(int(horizon_days), 1)
         if horizon >= 60:
-            return (60,)
+            return (20, 60)
         return (20, 60)
 
     def _promotion_fold_windows(self, *, horizon_days: int) -> tuple[int, ...]:

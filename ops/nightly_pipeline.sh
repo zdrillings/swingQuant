@@ -123,8 +123,6 @@ path_shortlist_log="$(mktemp)"
 trap - ERR
 set +e
 ./sq shortlist-model \
-  --top 10 \
-  --horizon 20 \
   --target-type path \
   --min-train-dates 252 \
   --max-train-dates 252 \
@@ -132,7 +130,6 @@ set +e
   --oos-stride-dates 20 \
   --recent-dates 60 \
   --eligible-universe-mode passed_or_trend \
-  --model-scope sector_specific \
   --xgboost-config balanced_depth4 \
   --dry-run 2>&1 | tee "${path_shortlist_log}"
 path_shortlist_status="${PIPESTATUS[0]}"
@@ -149,15 +146,12 @@ shortlist_promotion_failed=0
 trap - ERR
 set +e
 ./sq shortlist-model \
-  --top 10 \
-  --horizon 20 \
   --min-train-dates 252 \
   --max-train-dates 252 \
   --test-window-dates 20 \
   --oos-stride-dates 20 \
   --recent-dates 60 \
   --eligible-universe-mode passed_or_trend \
-  --model-scope sector_specific \
   --xgboost-config balanced_depth4 2>&1 | tee "${shortlist_log}"
 shortlist_status="${PIPESTATUS[0]}"
 set -e
