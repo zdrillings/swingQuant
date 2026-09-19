@@ -104,6 +104,49 @@ class ShortlistModelServiceTests(unittest.TestCase):
 
         self.assertAlmostEqual(summary["gross_mean_target"], 0.0)
 
+    def test_service_acceptance_windows_use_fold_labels_and_full_oos(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        rows = []
+        for date_index, snapshot_date in enumerate(pd.bdate_range("2026-01-02", periods=65)):
+            rows.append(
+                {
+                    "snapshot_date": snapshot_date,
+                    "ticker": "AAA",
+                    "sector": "Energy",
+                    "predicted_alpha": 0.30,
+                    "alpha_vs_sector_20d": 0.02 + date_index * 0.0001,
+                }
+            )
+        summaries = service._rolling_window_summaries(
+            predictions=pd.DataFrame(rows),
+            target_column="alpha_vs_sector_20d",
+            model_name="ridge_model",
+            top_n=1,
+            windows=service._promotion_recent_windows(horizon_days=60),
+            fold_windows=service._promotion_fold_windows(horizon_days=60),
+            fold_size=20,
+            include_full_oos=True,
+        )
+        windows = {str(row["model"]): row for row in summaries.to_dict(orient="records")}
+
+        self.assertEqual(service._promotion_recent_windows(horizon_days=60), ())
+        self.assertEqual(service._promotion_fold_windows(horizon_days=60), (1, 3))
+        self.assertIn("ridge_model_last_fold", windows)
+        self.assertIn("ridge_model_trailing_3folds", windows)
+        self.assertIn("ridge_model_full_oos", windows)
+        self.assertEqual(windows["ridge_model_last_fold"]["dates"], 20)
+        self.assertEqual(windows["ridge_model_trailing_3folds"]["dates"], 60)
+        self.assertEqual(windows["ridge_model_full_oos"]["dates"], 65)
+
+    def test_regime_matching_enabled_false_disables_matching(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+
+        with patch(
+            "src.research.shortlist_model_service.load_feature_config",
+            return_value={"scan_policy": {"shortlist_model": {"regime_matching_enabled": False}}},
+        ):
+            self.assertEqual(service._load_regime_matching_mode(), "off")
+
     def test_regime_conditional_score_flip_uses_lagged_reversal_classification(self) -> None:
         dates = pd.bdate_range("2026-01-02", periods=8)
 
@@ -1741,14 +1784,12 @@ class ShortlistModelServiceTests(unittest.TestCase):
         )
         acceptance_summaries = pd.DataFrame(
             [
-                {"model": "xgboost_model_20d", "hit_rate": 0.45, "beat_universe_rate": 0.40, "mean_target": -0.01, "spearman": 0.20},
-                {"model": "xgboost_model_60d", "hit_rate": 0.55, "beat_universe_rate": 0.55, "mean_target": 0.04, "spearman": 0.20},
-                {"model": "xgboost_model_last_1fold", "hit_rate": 0.85, "beat_universe_rate": 0.85, "mean_target": 0.04, "spearman": 0.20},
-                {"model": "xgboost_model_last_3fold", "hit_rate": 0.85, "beat_universe_rate": 0.85, "mean_target": 0.04, "spearman": 0.20},
-                {"model": "lasso_model_20d", "hit_rate": 0.40, "beat_universe_rate": 0.35, "mean_target": -0.02, "spearman": 0.20},
-                {"model": "lasso_model_60d", "hit_rate": 0.52, "beat_universe_rate": 0.52, "mean_target": 0.01, "spearman": 0.20},
-                {"model": "lasso_model_last_1fold", "hit_rate": 0.85, "beat_universe_rate": 0.85, "mean_target": 0.04, "spearman": 0.20},
-                {"model": "lasso_model_last_3fold", "hit_rate": 0.85, "beat_universe_rate": 0.85, "mean_target": 0.04, "spearman": 0.20},
+                {"model": "xgboost_model_last_fold", "hit_rate": 0.45, "beat_universe_rate": 0.40, "mean_target": -0.01, "spearman": 0.20},
+                {"model": "xgboost_model_trailing_3folds", "hit_rate": 0.85, "beat_universe_rate": 0.85, "mean_target": 0.04, "spearman": 0.20},
+                {"model": "xgboost_model_full_oos", "hit_rate": 0.55, "beat_universe_rate": 0.55, "mean_target": 0.04, "spearman": 0.20},
+                {"model": "lasso_model_last_fold", "hit_rate": 0.40, "beat_universe_rate": 0.35, "mean_target": -0.02, "spearman": 0.20},
+                {"model": "lasso_model_trailing_3folds", "hit_rate": 0.85, "beat_universe_rate": 0.85, "mean_target": 0.04, "spearman": 0.20},
+                {"model": "lasso_model_full_oos", "hit_rate": 0.52, "beat_universe_rate": 0.52, "mean_target": 0.01, "spearman": 0.20},
             ]
         )
         promotion_gate = {
@@ -1787,10 +1828,9 @@ class ShortlistModelServiceTests(unittest.TestCase):
         )
         acceptance_summaries = pd.DataFrame(
             [
-                {"model": "lasso_model_20d", "hit_rate": 0.85, "beat_universe_rate": 0.85, "mean_target": 0.04, "spearman": 0.04},
-                {"model": "lasso_model_60d", "hit_rate": 0.85, "beat_universe_rate": 0.85, "mean_target": 0.04, "spearman": 0.04},
-                {"model": "lasso_model_last_1fold", "hit_rate": 0.0, "beat_universe_rate": 0.0, "mean_target": -0.03, "spearman": -0.10},
-                {"model": "lasso_model_last_3fold", "hit_rate": 0.67, "beat_universe_rate": 0.67, "mean_target": 0.01, "spearman": 0.02},
+                {"model": "lasso_model_last_fold", "hit_rate": 0.0, "beat_universe_rate": 0.0, "mean_target": -0.03, "spearman": -0.10},
+                {"model": "lasso_model_trailing_3folds", "hit_rate": 0.67, "beat_universe_rate": 0.67, "mean_target": 0.01, "spearman": 0.02},
+                {"model": "lasso_model_full_oos", "hit_rate": 0.85, "beat_universe_rate": 0.85, "mean_target": 0.04, "spearman": 0.04},
             ]
         )
         promotion_gate = {
@@ -1820,7 +1860,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
                 promotion_gate=promotion_gate,
             )
 
-    def test_sixty_day_promotion_gate_requires_twenty_day_recency(self) -> None:
+    def test_sixty_day_promotion_gate_requires_last_fold_recency(self) -> None:
         service = ShortlistModelService(db_manager=object())
         full_summaries = pd.DataFrame(
             [
@@ -1829,10 +1869,9 @@ class ShortlistModelServiceTests(unittest.TestCase):
         )
         acceptance_summaries = pd.DataFrame(
             [
-                {"model": "xgboost_model_20d", "hit_rate": 0.10, "beat_universe_rate": 0.10, "mean_target": -0.10, "spearman": -0.20},
-                {"model": "xgboost_model_60d", "hit_rate": 0.60, "beat_universe_rate": 0.60, "mean_target": 0.08, "spearman": 0.02},
-                {"model": "xgboost_model_last_1fold", "hit_rate": 0.10, "beat_universe_rate": 0.10, "mean_target": -0.10, "spearman": -0.20},
-                {"model": "xgboost_model_last_3fold", "hit_rate": 0.60, "beat_universe_rate": 0.60, "mean_target": 0.08, "spearman": 0.02},
+                {"model": "xgboost_model_last_fold", "hit_rate": 0.10, "beat_universe_rate": 0.10, "mean_target": -0.10, "spearman": -0.20},
+                {"model": "xgboost_model_trailing_3folds", "hit_rate": 0.60, "beat_universe_rate": 0.60, "mean_target": 0.08, "spearman": 0.02},
+                {"model": "xgboost_model_full_oos", "hit_rate": 0.60, "beat_universe_rate": 0.60, "mean_target": 0.08, "spearman": 0.02},
             ]
         )
         promotion_gate = service._load_promotion_gate()
@@ -1846,10 +1885,10 @@ class ShortlistModelServiceTests(unittest.TestCase):
                 required_fold_windows=service._promotion_fold_windows(horizon_days=60),
             )
 
-        self.assertEqual(service._promotion_recent_windows(horizon_days=60), (20, 60))
-        self.assertEqual(service._promotion_fold_windows(horizon_days=60), (3,))
+        self.assertEqual(service._promotion_recent_windows(horizon_days=60), ())
+        self.assertEqual(service._promotion_fold_windows(horizon_days=60), (1, 3))
 
-    def test_sixty_day_promotion_gate_accepts_positive_twenty_day_recency(self) -> None:
+    def test_sixty_day_promotion_gate_accepts_positive_fold_recency(self) -> None:
         service = ShortlistModelService(db_manager=object())
         full_summaries = pd.DataFrame(
             [
@@ -1858,9 +1897,9 @@ class ShortlistModelServiceTests(unittest.TestCase):
         )
         acceptance_summaries = pd.DataFrame(
             [
-                {"model": "xgboost_model_20d", "hit_rate": 0.60, "beat_universe_rate": 0.60, "mean_target": 0.01, "spearman": 0.01},
-                {"model": "xgboost_model_60d", "hit_rate": 0.60, "beat_universe_rate": 0.60, "mean_target": 0.08, "spearman": 0.02},
-                {"model": "xgboost_model_last_3fold", "hit_rate": 0.60, "beat_universe_rate": 0.60, "mean_target": 0.08, "spearman": 0.02},
+                {"model": "xgboost_model_last_fold", "hit_rate": 0.60, "beat_universe_rate": 0.60, "mean_target": 0.01, "spearman": 0.01},
+                {"model": "xgboost_model_trailing_3folds", "hit_rate": 0.60, "beat_universe_rate": 0.60, "mean_target": 0.08, "spearman": 0.02},
+                {"model": "xgboost_model_full_oos", "hit_rate": 0.60, "beat_universe_rate": 0.60, "mean_target": 0.08, "spearman": 0.02},
             ]
         )
         promotion_gate = service._load_promotion_gate()
@@ -1886,15 +1925,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
         acceptance_summaries = pd.DataFrame(
             [
                 {
-                    "model": "ridge_model_20d",
-                    "hit_rate": 0.85,
-                    "beat_universe_rate": 0.85,
-                    "mean_target": 0.04,
-                    "spearman": 0.04,
-                    "top_ticker_date_rate": 0.45,
-                },
-                {
-                    "model": "ridge_model_60d",
+                    "model": "ridge_model_full_oos",
                     "hit_rate": 0.85,
                     "beat_universe_rate": 0.85,
                     "mean_target": 0.04,
@@ -1902,7 +1933,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
                     "top_ticker_date_rate": 0.20,
                 },
                 {
-                    "model": "ridge_model_last_1fold",
+                    "model": "ridge_model_last_fold",
                     "hit_rate": 0.85,
                     "beat_universe_rate": 0.85,
                     "mean_target": 0.04,
@@ -1910,7 +1941,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
                     "top_ticker_date_rate": 0.45,
                 },
                 {
-                    "model": "ridge_model_last_3fold",
+                    "model": "ridge_model_trailing_3folds",
                     "hit_rate": 0.85,
                     "beat_universe_rate": 0.85,
                     "mean_target": 0.04,

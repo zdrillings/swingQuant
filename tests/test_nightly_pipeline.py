@@ -15,9 +15,14 @@ class NightlyPipelineScriptTests(unittest.TestCase):
         self.assertIn("scan will be skipped", script)
         self.assertIn("shortlist_promotion_failed=1", script)
         self.assertIn("promotion_failures_file=\"data/promotion_failures.txt\"", script)
+        self.assertIn("shortlist_report_file=\"reports/shortlist_model.md\"", script)
         self.assertIn("pipeline_lock_file=\"data/nightly_pipeline.lock\"", script)
         self.assertIn("flock -n 9", script)
+        self.assertIn("latest_active_champion_date", script)
+        self.assertIn("file:data/ledger.sqlite?mode=ro", script)
+        self.assertIn("sync_promotion_failure_state", script)
         self.assertIn("record_promotion_failure", script)
+        self.assertIn("read_days_since_last_champion", script)
         self.assertIn("consecutive_promotion_failures", script)
         self.assertIn("days_since_last_champion", script)
         self.assertIn("scan-skip email sent", script)
@@ -40,6 +45,7 @@ class NightlyPipelineScriptTests(unittest.TestCase):
         self.assertIn("phase2-research", script)
         self.assertIn("--trial-count 200", script)
         self.assertIn("exit \"${shortlist_status}\"", script)
+        self.assertNotIn("days_since_last_champion:' \"${shortlist_log}\"", script)
         self.assertLess(
             script.index("echo \"[$(date --iso-8601=seconds)] analyst-snapshot\""),
             script.index("echo \"[$(date --iso-8601=seconds)] universe-backfill"),

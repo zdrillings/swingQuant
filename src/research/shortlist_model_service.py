@@ -299,6 +299,7 @@ class ShortlistModelService:
                     windows=required_recent_windows,
                     fold_windows=required_fold_windows,
                     fold_size=int(test_window_dates),
+                    include_full_oos=True,
                 ).to_dict(orient="records")
             ]
         )
@@ -466,9 +467,10 @@ class ShortlistModelService:
                     target_column=evaluation_target_column,
                     model_name=champion_model,
                     top_n=promotion_top_n,
-                    windows=tuple(sorted(set(required_recent_windows + (40, 60)))),
+                    windows=required_recent_windows,
                     fold_windows=required_fold_windows,
                     fold_size=int(test_window_dates),
+                    include_full_oos=True,
                 ),
                 heading="## Champion Rolling Acceptance Windows",
             )
@@ -1761,6 +1763,9 @@ class ShortlistModelService:
             if isinstance(config, dict)
             else {}
         )
+        enabled = payload.get("regime_matching_enabled")
+        if enabled is not None and not bool(enabled):
+            return "off"
         if "regime_matching" not in payload:
             self.logger.warning(
                 "scan_policy.shortlist_model.regime_matching missing; using train_and_flip."
@@ -2344,6 +2349,7 @@ class ShortlistModelService:
         windows: tuple[int, ...],
         fold_windows: tuple[int, ...] = (),
         fold_size: int | None = None,
+        include_full_oos: bool = False,
     ) -> pd.DataFrame:
         rows: list[dict[str, object]] = []
         unique_dates = sorted(predictions["snapshot_date"].drop_duplicates().tolist())
@@ -2365,10 +2371,31 @@ class ShortlistModelService:
                 predictions=scoped,
                 top_n=top_n,
                 target_column=target_column,
-                model_name=f"{model_name}_last_{int(fold_count)}fold",
+                model_name=self._fold_window_model_name(
+                    model_name=model_name,
+                    fold_count=int(fold_count),
+                ),
             )
             rows.append(summary)
+        if include_full_oos:
+            rows.append(
+                self._evaluate_predictions(
+                    predictions=predictions,
+                    top_n=top_n,
+                    target_column=target_column,
+                    model_name=f"{model_name}_full_oos",
+                )
+            )
         return pd.DataFrame(rows)
+
+    def _fold_window_label(self, fold_count: int) -> str:
+        folds = max(int(fold_count), 1)
+        if folds == 1:
+            return "last_fold"
+        return f"trailing_{folds}folds"
+
+    def _fold_window_model_name(self, *, model_name: str, fold_count: int) -> str:
+        return f"{model_name}_{self._fold_window_label(fold_count)}"
 
     def _render_sector_contribution(
         self,
@@ -2598,15 +2625,10 @@ class ShortlistModelService:
         }
 
     def _promotion_recent_windows(self, *, horizon_days: int) -> tuple[int, ...]:
-        horizon = max(int(horizon_days), 1)
-        if horizon >= 60:
-            return (20, 60)
-        return (20, 60)
+        return ()
 
     def _promotion_fold_windows(self, *, horizon_days: int) -> tuple[int, ...]:
         horizon = max(int(horizon_days), 1)
-        if horizon >= 60:
-            return (3,)
         return (1, 3)
 
     def _choose_champion_model(
@@ -2615,7 +2637,7 @@ class ShortlistModelService:
         full_summaries: pd.DataFrame,
         acceptance_summaries: pd.DataFrame,
         promotion_gate: dict[str, float | int],
-        required_recent_windows: tuple[int, ...] = (20, 60),
+        required_recent_windows: tuple[int, ...] = (),
         required_fold_windows: tuple[int, ...] = (1, 3),
     ) -> tuple[str, bool]:
         ranked = self._rank_model_summaries(full_summaries)
@@ -2657,7 +2679,7 @@ class ShortlistModelService:
         model_name: str,
         acceptance_summaries: pd.DataFrame,
         promotion_gate: dict[str, float | int],
-        required_recent_windows: tuple[int, ...] = (20, 60),
+        required_recent_windows: tuple[int, ...] = (),
         required_fold_windows: tuple[int, ...] = (1, 3),
     ) -> bool:
         if acceptance_summaries.empty:
@@ -2684,7 +2706,10 @@ class ShortlistModelService:
                 return False
         for folds in required_fold_windows:
             row = acceptance_summaries[
-                acceptance_summaries["model"].astype(str) == f"{model_name}_last_{folds}fold"
+                acceptance_summaries["model"].astype(str) == self._fold_window_model_name(
+                    model_name=model_name,
+                    fold_count=int(folds),
+                )
             ]
             if row.empty:
                 return False
@@ -2702,6 +2727,11 @@ class ShortlistModelService:
                 return False
             if self._finite_above(summary.get("top_ticker_date_rate"), promotion_gate.get(f"max_recent_{folds}fold_top_ticker_date_rate", 0.40)):
                 return False
+        full_row = acceptance_summaries[
+            acceptance_summaries["model"].astype(str) == f"{model_name}_full_oos"
+        ]
+        if full_row.empty:
+            return False
         return True
 
     def _finite_at_least(self, value, threshold) -> bool:
@@ -2725,7 +2755,7 @@ class ShortlistModelService:
         *,
         promotion_gate: dict[str, float | int],
         summaries: pd.DataFrame,
-        required_recent_windows: tuple[int, ...] = (20, 60),
+        required_recent_windows: tuple[int, ...] = (),
         required_fold_windows: tuple[int, ...] = (1, 3),
     ) -> list[str]:
         lines = ["## Promotion Gate", ""]
@@ -2734,31 +2764,22 @@ class ShortlistModelService:
             lines.append("- note: model selection uses full walk-forward ranking only.")
             lines.append("")
             return lines
-        recent_label = ", ".join(f"{int(window)}d" for window in required_recent_windows)
-        fold_label = ", ".join(f"last_{int(folds)}fold" for folds in required_fold_windows)
+        recent_label = ", ".join(f"{int(window)}d" for window in required_recent_windows) or "none"
+        fold_label = ", ".join(self._fold_window_label(int(folds)) for folds in required_fold_windows)
         lines.extend(
             [
                 "- enabled: true",
                 f"- active_recent_windows: {recent_label}",
                 f"- active_fold_windows: {fold_label}",
-                f"- min_recent_20d_hit_rate: {float(promotion_gate['min_recent_20d_hit_rate']):.2f}",
-                f"- min_recent_20d_beat_universe_rate: {float(promotion_gate['min_recent_20d_beat_universe_rate']):.2f}",
-                f"- min_recent_20d_mean_target: {float(promotion_gate['min_recent_20d_mean_target']):.4f}",
-                f"- min_recent_60d_hit_rate: {float(promotion_gate['min_recent_60d_hit_rate']):.2f}",
-                f"- min_recent_60d_beat_universe_rate: {float(promotion_gate['min_recent_60d_beat_universe_rate']):.2f}",
-                f"- min_recent_60d_mean_target: {float(promotion_gate['min_recent_60d_mean_target']):.4f}",
+                "- active_full_window: full_oos",
                 f"- min_recent_1fold_hit_rate: {float(promotion_gate['min_recent_1fold_hit_rate']):.2f}",
                 f"- min_recent_1fold_beat_universe_rate: {float(promotion_gate['min_recent_1fold_beat_universe_rate']):.2f}",
                 f"- min_recent_1fold_mean_target: {float(promotion_gate['min_recent_1fold_mean_target']):.4f}",
                 f"- min_recent_3fold_hit_rate: {float(promotion_gate['min_recent_3fold_hit_rate']):.2f}",
                 f"- min_recent_3fold_beat_universe_rate: {float(promotion_gate['min_recent_3fold_beat_universe_rate']):.2f}",
                 f"- min_recent_3fold_mean_target: {float(promotion_gate['min_recent_3fold_mean_target']):.4f}",
-                f"- min_recent_20d_spearman: {float(promotion_gate['min_recent_20d_spearman']):.4f}",
-                f"- min_recent_60d_spearman: {float(promotion_gate['min_recent_60d_spearman']):.4f}",
                 f"- min_recent_1fold_spearman: {float(promotion_gate['min_recent_1fold_spearman']):.4f}",
                 f"- min_recent_3fold_spearman: {float(promotion_gate['min_recent_3fold_spearman']):.4f}",
-                f"- max_recent_20d_top_ticker_date_rate: {float(promotion_gate.get('max_recent_20d_top_ticker_date_rate', 0.40)):.2f}",
-                f"- max_recent_60d_top_ticker_date_rate: {float(promotion_gate.get('max_recent_60d_top_ticker_date_rate', 0.40)):.2f}",
                 f"- max_recent_1fold_top_ticker_date_rate: {float(promotion_gate.get('max_recent_1fold_top_ticker_date_rate', 0.40)):.2f}",
                 f"- max_recent_3fold_top_ticker_date_rate: {float(promotion_gate.get('max_recent_3fold_top_ticker_date_rate', 0.40)):.2f}",
                 "- gate_metric: per-date cross-sectional Spearman over the full OOS slice",
@@ -2823,7 +2844,7 @@ class ShortlistModelService:
         recent_summaries: pd.DataFrame,
         recent_dates: int,
         promotion_gate: dict[str, float | int],
-        required_recent_windows: tuple[int, ...] = (20, 60),
+        required_recent_windows: tuple[int, ...] = (),
         required_fold_windows: tuple[int, ...] = (1, 3),
         acceptance_summaries: pd.DataFrame,
         failure_reason: str | None = None,

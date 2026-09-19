@@ -55,9 +55,61 @@ fi
 
 promotion_failures_file="data/promotion_failures.txt"
 last_champion_days_file="data/days_since_last_champion.txt"
+shortlist_report_file="reports/shortlist_model.md"
+
+latest_active_champion_date() {
+  PYTHONPATH=.vendor python3 - <<'PY'
+from __future__ import annotations
+
+from datetime import datetime, timezone
+import sqlite3
+
+try:
+    conn = sqlite3.connect("file:data/ledger.sqlite?mode=ro", uri=True)
+    row = conn.execute(
+        """
+        SELECT generated_at
+        FROM Shortlist_Model_Runs
+        WHERE is_active = 1
+        ORDER BY generated_at DESC
+        LIMIT 1
+        """
+    ).fetchone()
+    conn.close()
+except Exception:
+    row = None
+
+if row and row[0]:
+    text = str(row[0]).replace("Z", "+00:00")
+    try:
+        print(datetime.fromisoformat(text).astimezone(timezone.utc).date().isoformat())
+    except ValueError:
+        pass
+PY
+}
+
+sync_promotion_failure_state() {
+  local champion_date
+  local latest_failure_date
+  if [[ ! -f "${promotion_failures_file}" ]]; then
+    return
+  fi
+  champion_date="$(latest_active_champion_date || true)"
+  latest_failure_date="$(tail -n 1 "${promotion_failures_file}" || true)"
+  if [[ "${champion_date}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && [[ "${latest_failure_date}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && [[ "${champion_date}" > "${latest_failure_date}" || "${champion_date}" == "${latest_failure_date}" ]]; then
+    clear_promotion_failures
+  fi
+}
+
+read_days_since_last_champion() {
+  if [[ -f "${shortlist_report_file}" ]]; then
+    grep -E '^- days_since_last_champion:' "${shortlist_report_file}" | tail -n 1 | awk '{print $3}' || true
+  fi
+}
 
 record_promotion_failure() {
   mkdir -p data
+  sync_promotion_failure_state
   if [[ ! -f "${promotion_failures_file}" ]] || ! grep -Fxq "${run_date}" "${promotion_failures_file}"; then
     printf '%s\n' "${run_date}" >> "${promotion_failures_file}"
   fi
@@ -78,6 +130,7 @@ record_promotion_failure() {
 
 clear_promotion_failures() {
   rm -f "${promotion_failures_file}"
+  rm -f "${last_champion_days_file}"
 }
 
 notify_failure() {
@@ -160,7 +213,7 @@ if [[ "${shortlist_status}" -ne 0 ]]; then
   if grep -Fq "No shortlist model candidate passed the promotion gate" "${shortlist_log}"; then
     shortlist_promotion_failed=1
     consecutive_promotion_failures="$(record_promotion_failure)"
-    days_since_last_champion="$(grep -E '^- days_since_last_champion:' "${shortlist_log}" | tail -n 1 | awk '{print $3}' || true)"
+    days_since_last_champion="$(read_days_since_last_champion)"
     if [[ "${days_since_last_champion}" =~ ^[0-9]+$ ]]; then
       printf '%s\n' "${days_since_last_champion}" > "${last_champion_days_file}"
       if [[ "${days_since_last_champion}" -gt "${consecutive_promotion_failures}" ]]; then
@@ -184,7 +237,6 @@ if [[ "${shortlist_status}" -ne 0 ]]; then
   fi
 else
   clear_promotion_failures
-  rm -f "${last_champion_days_file}"
 fi
 rm -f "${shortlist_log}"
 
