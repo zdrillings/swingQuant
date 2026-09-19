@@ -285,6 +285,8 @@ class ShortlistModelService:
             )
         recent_summaries = pd.DataFrame(recent_summary_rows)
         promotion_gate = self._load_promotion_gate()
+        required_recent_windows = self._promotion_recent_windows(horizon_days=int(horizon_days))
+        required_fold_windows = self._promotion_fold_windows(horizon_days=int(horizon_days))
         acceptance_summaries = pd.DataFrame(
             [
                 row
@@ -294,8 +296,8 @@ class ShortlistModelService:
                     target_column=evaluation_target_column,
                     model_name=model_name,
                     top_n=promotion_top_n,
-                    windows=(20, 60),
-                    fold_windows=(1, 3),
+                    windows=required_recent_windows,
+                    fold_windows=required_fold_windows,
                     fold_size=int(test_window_dates),
                 ).to_dict(orient="records")
             ]
@@ -305,6 +307,8 @@ class ShortlistModelService:
                 full_summaries=full_summaries,
                 acceptance_summaries=acceptance_summaries,
                 promotion_gate=promotion_gate,
+                required_recent_windows=required_recent_windows,
+                required_fold_windows=required_fold_windows,
             )
         except ValueError as exc:
             if persist:
@@ -352,6 +356,8 @@ class ShortlistModelService:
                 recent_summaries=recent_summaries,
                 recent_dates=min(int(recent_dates), int(combined_predictions["snapshot_date"].nunique())),
                 promotion_gate=promotion_gate,
+                required_recent_windows=required_recent_windows,
+                required_fold_windows=required_fold_windows,
                 acceptance_summaries=acceptance_summaries,
                 failure_reason=str(exc),
                 days_since_last_champion=self._days_since_last_champion(
@@ -449,6 +455,8 @@ class ShortlistModelService:
             recent_summaries=recent_summaries,
             recent_dates=min(int(recent_dates), int(combined_predictions["snapshot_date"].nunique())),
             promotion_gate=promotion_gate,
+            required_recent_windows=required_recent_windows,
+            required_fold_windows=required_fold_windows,
             acceptance_summaries=acceptance_summaries,
         )
         lines.extend(
@@ -458,8 +466,8 @@ class ShortlistModelService:
                     target_column=evaluation_target_column,
                     model_name=champion_model,
                     top_n=promotion_top_n,
-                    windows=(20, 40, 60),
-                    fold_windows=(1, 3),
+                    windows=tuple(sorted(set(required_recent_windows + (40, 60)))),
+                    fold_windows=required_fold_windows,
                     fold_size=int(test_window_dates),
                 ),
                 heading="## Champion Rolling Acceptance Windows",
@@ -2589,12 +2597,26 @@ class ShortlistModelService:
             "max_recent_3fold_top_ticker_date_rate": float(payload.get("max_recent_3fold_top_ticker_date_rate", 0.40)),
         }
 
+    def _promotion_recent_windows(self, *, horizon_days: int) -> tuple[int, ...]:
+        horizon = max(int(horizon_days), 1)
+        if horizon >= 60:
+            return (60,)
+        return (20, 60)
+
+    def _promotion_fold_windows(self, *, horizon_days: int) -> tuple[int, ...]:
+        horizon = max(int(horizon_days), 1)
+        if horizon >= 60:
+            return (3,)
+        return (1, 3)
+
     def _choose_champion_model(
         self,
         *,
         full_summaries: pd.DataFrame,
         acceptance_summaries: pd.DataFrame,
         promotion_gate: dict[str, float | int],
+        required_recent_windows: tuple[int, ...] = (20, 60),
+        required_fold_windows: tuple[int, ...] = (1, 3),
     ) -> tuple[str, bool]:
         ranked = self._rank_model_summaries(full_summaries)
         if ranked.empty:
@@ -2609,6 +2631,8 @@ class ShortlistModelService:
                 model_name=str(model),
                 acceptance_summaries=acceptance_summaries,
                 promotion_gate=promotion_gate,
+                required_recent_windows=required_recent_windows,
+                required_fold_windows=required_fold_windows,
             )
         }
         if passing_models:
@@ -2633,10 +2657,12 @@ class ShortlistModelService:
         model_name: str,
         acceptance_summaries: pd.DataFrame,
         promotion_gate: dict[str, float | int],
+        required_recent_windows: tuple[int, ...] = (20, 60),
+        required_fold_windows: tuple[int, ...] = (1, 3),
     ) -> bool:
         if acceptance_summaries.empty:
             return False
-        for window in (20, 60):
+        for window in required_recent_windows:
             row = acceptance_summaries[
                 acceptance_summaries["model"].astype(str) == f"{model_name}_{window}d"
             ]
@@ -2656,7 +2682,7 @@ class ShortlistModelService:
                 return False
             if self._finite_above(summary.get("top_ticker_date_rate"), promotion_gate.get(f"max_recent_{window}d_top_ticker_date_rate", 0.40)):
                 return False
-        for folds in (1, 3):
+        for folds in required_fold_windows:
             row = acceptance_summaries[
                 acceptance_summaries["model"].astype(str) == f"{model_name}_last_{folds}fold"
             ]
@@ -2694,16 +2720,27 @@ class ShortlistModelService:
             return False
         return math.isfinite(numeric) and numeric > maximum
 
-    def _render_promotion_gate(self, *, promotion_gate: dict[str, float | int], summaries: pd.DataFrame) -> list[str]:
+    def _render_promotion_gate(
+        self,
+        *,
+        promotion_gate: dict[str, float | int],
+        summaries: pd.DataFrame,
+        required_recent_windows: tuple[int, ...] = (20, 60),
+        required_fold_windows: tuple[int, ...] = (1, 3),
+    ) -> list[str]:
         lines = ["## Promotion Gate", ""]
         if not bool(promotion_gate.get("enabled", True)):
             lines.append("- enabled: false")
             lines.append("- note: model selection uses full walk-forward ranking only.")
             lines.append("")
             return lines
+        recent_label = ", ".join(f"{int(window)}d" for window in required_recent_windows)
+        fold_label = ", ".join(f"last_{int(folds)}fold" for folds in required_fold_windows)
         lines.extend(
             [
                 "- enabled: true",
+                f"- active_recent_windows: {recent_label}",
+                f"- active_fold_windows: {fold_label}",
                 f"- min_recent_20d_hit_rate: {float(promotion_gate['min_recent_20d_hit_rate']):.2f}",
                 f"- min_recent_20d_beat_universe_rate: {float(promotion_gate['min_recent_20d_beat_universe_rate']):.2f}",
                 f"- min_recent_20d_mean_target: {float(promotion_gate['min_recent_20d_mean_target']):.4f}",
@@ -2786,6 +2823,8 @@ class ShortlistModelService:
         recent_summaries: pd.DataFrame,
         recent_dates: int,
         promotion_gate: dict[str, float | int],
+        required_recent_windows: tuple[int, ...] = (20, 60),
+        required_fold_windows: tuple[int, ...] = (1, 3),
         acceptance_summaries: pd.DataFrame,
         failure_reason: str | None = None,
         days_since_last_champion: int | None = None,
@@ -2860,7 +2899,14 @@ class ShortlistModelService:
             )
         lines.extend(self._render_summary_table(full_summaries, heading="## Full Walk-Forward Evaluation"))
         lines.extend(self._render_summary_table(recent_summaries, heading=f"## Recent {int(recent_dates)} Walk-Forward Dates"))
-        lines.extend(self._render_promotion_gate(promotion_gate=promotion_gate, summaries=acceptance_summaries))
+        lines.extend(
+            self._render_promotion_gate(
+                promotion_gate=promotion_gate,
+                summaries=acceptance_summaries,
+                required_recent_windows=required_recent_windows,
+                required_fold_windows=required_fold_windows,
+            )
+        )
         return lines
 
     def _render_regime_matching(self, *, mode: str, stats: dict[str, int]) -> list[str]:

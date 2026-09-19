@@ -1723,6 +1723,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
         context = load_live_shortlist_model_context(
             FakeDB(),
             top_n=2,
+            test_window_dates=1,
             refresh_if_stale=False,
             eligible_universe_mode="passed_only",
             model_scope="sector_specific",
@@ -1818,6 +1819,36 @@ class ShortlistModelServiceTests(unittest.TestCase):
                 acceptance_summaries=acceptance_summaries,
                 promotion_gate=promotion_gate,
             )
+
+    def test_sixty_day_promotion_gate_uses_horizon_windows(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        full_summaries = pd.DataFrame(
+            [
+                {"model": "xgboost_model", "mean_target": 0.08, "beat_universe_rate": 0.80, "positive_date_rate": 0.80},
+            ]
+        )
+        acceptance_summaries = pd.DataFrame(
+            [
+                {"model": "xgboost_model_20d", "hit_rate": 0.10, "beat_universe_rate": 0.10, "mean_target": -0.10, "spearman": -0.20},
+                {"model": "xgboost_model_60d", "hit_rate": 0.60, "beat_universe_rate": 0.60, "mean_target": 0.08, "spearman": 0.02},
+                {"model": "xgboost_model_last_1fold", "hit_rate": 0.10, "beat_universe_rate": 0.10, "mean_target": -0.10, "spearman": -0.20},
+                {"model": "xgboost_model_last_3fold", "hit_rate": 0.60, "beat_universe_rate": 0.60, "mean_target": 0.08, "spearman": 0.02},
+            ]
+        )
+        promotion_gate = service._load_promotion_gate()
+
+        champion, passed = service._choose_champion_model(
+            full_summaries=full_summaries,
+            acceptance_summaries=acceptance_summaries,
+            promotion_gate=promotion_gate,
+            required_recent_windows=service._promotion_recent_windows(horizon_days=60),
+            required_fold_windows=service._promotion_fold_windows(horizon_days=60),
+        )
+
+        self.assertEqual(champion, "xgboost_model")
+        self.assertTrue(passed)
+        self.assertEqual(service._promotion_recent_windows(horizon_days=60), (60,))
+        self.assertEqual(service._promotion_fold_windows(horizon_days=60), (3,))
 
     def test_champion_selection_refuses_ticker_concentrated_acceptance_window(self) -> None:
         service = ShortlistModelService(db_manager=object())

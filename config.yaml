@@ -350,8 +350,8 @@ scan_policy:
         signal_score: -1.0
   shortlist_model:
     enabled: true
-    horizon_days: 20
-    top_n: 10
+    horizon_days: 60
+    top_n: 2
     min_feature_ic: 0.03
     min_feature_ic_observation_fraction: 0.20
     regime_matching: train_and_flip
@@ -366,7 +366,7 @@ scan_policy:
     allow_heuristic_fallback: false
     eligible_universe_mode: passed_only
     production_eligible_universe_mode: passed_or_trend
-    production_model_scope: sector_specific
+    production_model_scope: global
     production_xgboost_config: balanced_depth4
     production_feature_profile: full
     promotion_gate:

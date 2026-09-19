@@ -164,14 +164,20 @@ def load_live_shortlist_model_context(
                     errors="coerce",
                 )
             oos_dates = sorted(oos_predictions["snapshot_date"].drop_duplicates().tolist())
-            for window in (20, 60, 1, 3):
+            for window in _runtime_recent_windows(horizon_days=int(horizon_days)):
                 recent_oos_dates = oos_dates[-window:] if len(oos_dates) >= window else oos_dates
                 recent = oos_predictions[oos_predictions["snapshot_date"].isin(recent_oos_dates)].copy()
                 recent_metrics[window] = _score_recent_oos_basket(recent)
+            for folds in _runtime_fold_windows(horizon_days=int(horizon_days)):
+                date_count = max(int(folds), 1) * max(int(test_window_dates), 1)
+                recent_oos_dates = oos_dates[-date_count:] if len(oos_dates) >= date_count else oos_dates
+                recent = oos_predictions[oos_predictions["snapshot_date"].isin(recent_oos_dates)].copy()
+                recent_metrics[folds] = _score_recent_oos_basket(recent)
     except Exception:
         pass
     if not _passes_runtime_promotion_gate(
         recent_metrics=recent_metrics,
+        horizon_days=int(horizon_days),
     ):
         return None
 
@@ -272,14 +278,29 @@ def _runtime_promotion_gate() -> dict[str, float | bool]:
     }
 
 
+def _runtime_recent_windows(*, horizon_days: int) -> tuple[int, ...]:
+    horizon = max(int(horizon_days), 1)
+    if horizon >= 60:
+        return (60,)
+    return (20, 60)
+
+
+def _runtime_fold_windows(*, horizon_days: int) -> tuple[int, ...]:
+    horizon = max(int(horizon_days), 1)
+    if horizon >= 60:
+        return (3,)
+    return (1, 3)
+
+
 def _passes_runtime_promotion_gate(
     *,
     recent_metrics: dict[int, dict[str, float | None]],
+    horizon_days: int = 20,
 ) -> bool:
     gate = _runtime_promotion_gate()
     if not bool(gate.get("enabled", True)):
         return True
-    for window in (20, 60):
+    for window in _runtime_recent_windows(horizon_days=int(horizon_days)):
         metrics = recent_metrics.get(window, {})
         if not _finite_at_least(metrics.get("hit_rate"), gate[f"min_recent_{window}d_hit_rate"]):
             return False
@@ -289,7 +310,7 @@ def _passes_runtime_promotion_gate(
             return False
         if not _finite_at_least(metrics.get("spearman"), gate[f"min_recent_{window}d_spearman"]):
             return False
-    for folds in (1, 3):
+    for folds in _runtime_fold_windows(horizon_days=int(horizon_days)):
         metrics = recent_metrics.get(folds, {})
         if not _finite_at_least(metrics.get("hit_rate"), gate[f"min_recent_{folds}fold_hit_rate"]):
             return False

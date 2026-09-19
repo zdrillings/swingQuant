@@ -1035,13 +1035,23 @@ class ScanService:
             return 0
         if shortlist_model_context is None:
             return max(3, base_max * 3 // 4)
-        beat_rate = getattr(shortlist_model_context, "recent_20d_beat_rate", None)
-        mean_target = getattr(shortlist_model_context, "recent_20d_mean_target", None)
+        beat_rate, mean_target, _label = self._active_shortlist_confidence_metrics(shortlist_model_context)
         if beat_rate is None or mean_target is None:
             return base_max
         if beat_rate < 0.35 or (mean_target is not None and mean_target < -0.03):
             return 1
         return 2
+
+    def _active_shortlist_confidence_metrics(self, shortlist_model_context) -> tuple[float | None, float | None, str]:
+        beat_rate = getattr(shortlist_model_context, "recent_20d_beat_rate", None)
+        mean_target = getattr(shortlist_model_context, "recent_20d_mean_target", None)
+        if beat_rate is not None and mean_target is not None:
+            return beat_rate, mean_target, "20d"
+        return (
+            getattr(shortlist_model_context, "recent_60d_beat_rate", None),
+            getattr(shortlist_model_context, "recent_60d_mean_target", None),
+            "60d",
+        )
 
     def _annotate_candidate_quality_throttle(
         self,
@@ -1809,17 +1819,16 @@ class ScanService:
         pick_count = len(candidates.index)
         model_active = shortlist_model_context is not None
         if model_active:
-            beat_rate = getattr(shortlist_model_context, "recent_20d_beat_rate", None)
-            mean_target = getattr(shortlist_model_context, "recent_20d_mean_target", None)
+            beat_rate, mean_target, confidence_label = self._active_shortlist_confidence_metrics(shortlist_model_context)
             if beat_rate is not None and mean_target is not None:
                 if beat_rate < 0.35 or mean_target < -0.03:
                     gate_level = "MINIMAL (1)"
                     gate_color = "#dc3545"
-                    gate_note = "top-2 basket performance is poor — single pick with rotation"
+                    gate_note = f"top-2 {confidence_label} basket performance is poor - single pick with rotation"
                 else:
                     gate_level = "FULL (2)"
                     gate_color = "#28a745"
-                    gate_note = f"top-2 basket working (beat {beat_rate:.0%}, mean {mean_target:+.1%})"
+                    gate_note = f"top-2 {confidence_label} basket working (beat {beat_rate:.0%}, mean {mean_target:+.1%})"
             else:
                 gate_level = "FULL (2)"
                 gate_color = "#6c757d"
