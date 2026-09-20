@@ -52,6 +52,11 @@ SNAPSHOT_OUTCOME_COLUMNS = tuple(
     "path_return_20d",
     "path_alpha_vs_sector_20d",
     "path_exit_reason_20d",
+    "path_holding_days_20d",
+    "path_return_60d",
+    "path_alpha_vs_sector_60d",
+    "path_exit_reason_60d",
+    "path_holding_days_60d",
 )
 SNAPSHOT_FEATURE_COLUMNS = [
     "md_volume_30d",
@@ -587,6 +592,16 @@ class UniverseSnapshotBackfillService:
                     "path_return_20d",
                     "path_alpha_vs_sector_20d",
                     "path_exit_reason_20d",
+                    "path_holding_days_20d",
+                ]
+            )
+        if available_forward_sessions >= 60:
+            required.extend(
+                [
+                    "path_return_60d",
+                    "path_alpha_vs_sector_60d",
+                    "path_exit_reason_60d",
+                    "path_holding_days_60d",
                 ]
             )
         return tuple(required)
@@ -646,25 +661,27 @@ class UniverseSnapshotBackfillService:
             column="low",
             use_max=False,
         )
-        path_outcome = self._path_outcome(
-            ticker_frame=ticker_frame,
-            index=int(index),
-            horizon=20,
-            exit_rules=exit_rules,
-        )
-        payload["path_return_20d"] = path_outcome["return"]
-        payload["path_exit_reason_20d"] = path_outcome["exit_reason"]
         benchmark_ticker = benchmark_etf_for_sector(sector)
-        benchmark_return = self._path_benchmark_return(
-            history_context=history_context,
-            snapshot_date=snapshot_date,
-            horizon=int(path_outcome["holding_days"]) if path_outcome["holding_days"] is not None else 20,
-            benchmark_ticker=benchmark_ticker,
-        )
-        if path_outcome["return"] is None or benchmark_return is None:
-            payload["path_alpha_vs_sector_20d"] = None
-        else:
-            payload["path_alpha_vs_sector_20d"] = float(path_outcome["return"]) - float(benchmark_return)
+        for horizon in (20, 60):
+            path_outcome = self._path_outcome(
+                ticker_frame=ticker_frame,
+                index=int(index),
+                horizon=horizon,
+                exit_rules=exit_rules,
+            )
+            payload[f"path_return_{horizon}d"] = path_outcome["return"]
+            payload[f"path_exit_reason_{horizon}d"] = path_outcome["exit_reason"]
+            payload[f"path_holding_days_{horizon}d"] = path_outcome["holding_days"]
+            benchmark_return = self._path_benchmark_return(
+                history_context=history_context,
+                snapshot_date=snapshot_date,
+                horizon=int(path_outcome["holding_days"]) if path_outcome["holding_days"] is not None else horizon,
+                benchmark_ticker=benchmark_ticker,
+            )
+            if path_outcome["return"] is None or benchmark_return is None:
+                payload[f"path_alpha_vs_sector_{horizon}d"] = None
+            else:
+                payload[f"path_alpha_vs_sector_{horizon}d"] = float(path_outcome["return"]) - float(benchmark_return)
         return payload
 
     def _forward_return(self, *, ticker_frame: pd.DataFrame, index: int, horizon: int) -> float | None:

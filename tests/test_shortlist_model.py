@@ -334,6 +334,140 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertEqual(selected, dates[39:59])
         self.assertEqual(feature_screen_dates, dates[:59])
 
+    def test_regime_transition_purge_modes_remove_expected_training_dates(self) -> None:
+        dates = list(pd.bdate_range("2026-01-02", periods=8))
+        service = ShortlistModelService(db_manager=object())
+        regime_by_date = {
+            pd.Timestamp(date_value).normalize(): regime
+            for date_value, regime in zip(
+                dates,
+                ["neutral", "neutral", "reversal", "reversal", "reversal", "neutral", "neutral", "neutral"],
+            )
+        }
+
+        strict = service._purge_regime_transition_dates(
+            dates[:4],
+            all_dates=dates,
+            horizon_sessions=3,
+            regime_by_date=regime_by_date,
+            mode="strict",
+        )
+        majority = service._purge_regime_transition_dates(
+            dates[:4],
+            all_dates=dates,
+            horizon_sessions=3,
+            regime_by_date=regime_by_date,
+            mode="majority",
+        )
+        off = service._purge_regime_transition_dates(
+            dates[:4],
+            all_dates=dates,
+            horizon_sessions=3,
+            regime_by_date=regime_by_date,
+            mode="off",
+        )
+
+        self.assertEqual(strict, [])
+        self.assertEqual(majority, [dates[2]])
+        self.assertEqual(off, dates[:4])
+
+    def test_contamination_decomposition_does_not_change_gate_outcome(self) -> None:
+        dates = list(pd.bdate_range("2026-05-01", periods=6))
+
+        class FakeDB:
+            def load_regime_meter(self):
+                return pd.DataFrame(
+                    {
+                        "snapshot_date": dates,
+                        "classification": ["neutral", "neutral", "neutral", "reversal", "reversal", "reversal"],
+                    }
+                )
+
+            def list_universe_daily_snapshot_dates(self):
+                return dates
+
+        service = ShortlistModelService(db_manager=FakeDB())
+        summaries = pd.DataFrame(
+            [
+                {
+                    "model": "xgboost_model_last_fold",
+                    "dates": 2,
+                    "avg_pick_count": 2.0,
+                    "gross_mean_target": 0.10,
+                    "mean_target": 0.09,
+                    "hit_rate": 0.75,
+                    "beat_universe_rate": 0.75,
+                    "spearman": 0.10,
+                    "positive_date_rate": 0.75,
+                    "ge_2pct_rate": 0.75,
+                    "ge_5pct_rate": 0.50,
+                    "top_ticker_date_rate": 0.25,
+                },
+                {
+                    "model": "xgboost_model_full_oos",
+                    "dates": 6,
+                    "avg_pick_count": 2.0,
+                    "gross_mean_target": 0.10,
+                    "mean_target": 0.09,
+                    "hit_rate": 0.75,
+                    "beat_universe_rate": 0.75,
+                    "spearman": 0.10,
+                    "positive_date_rate": 0.75,
+                    "ge_2pct_rate": 0.75,
+                    "ge_5pct_rate": 0.50,
+                    "top_ticker_date_rate": 0.25,
+                },
+            ]
+        )
+        gate = {
+            "enabled": True,
+            "min_recent_1fold_hit_rate": 0.50,
+            "min_recent_1fold_beat_universe_rate": 0.50,
+            "min_recent_1fold_mean_target": 0.0,
+            "min_recent_1fold_spearman": 0.0,
+            "max_recent_1fold_top_ticker_date_rate": 0.40,
+        }
+        predictions = pd.DataFrame(
+            [
+                {
+                    "snapshot_date": date_value,
+                    "ticker": f"AAA{index}",
+                    "model_name": "xgboost_model",
+                    "predicted_alpha": 0.1,
+                    "alpha_vs_sector_20d": 0.1,
+                }
+                for index, date_value in enumerate(dates)
+            ]
+        )
+
+        before = service._model_passes_promotion_gate(
+            model_name="xgboost_model",
+            acceptance_summaries=summaries,
+            promotion_gate=gate,
+            required_recent_windows=(),
+            required_fold_windows=(1,),
+        )
+        lines = service._render_regime_contamination_decomposition(
+            predictions=predictions,
+            summaries=summaries,
+            horizon_sessions=20,
+            fold_size=2,
+            required_recent_windows=(),
+            required_fold_windows=(1,),
+        )
+        after = service._model_passes_promotion_gate(
+            model_name="xgboost_model",
+            acceptance_summaries=summaries,
+            promotion_gate=gate,
+            required_recent_windows=(),
+            required_fold_windows=(1,),
+        )
+
+        self.assertTrue(before)
+        self.assertEqual(before, after)
+        self.assertIn("diagnostic only", "\n".join(lines))
+        self.assertIn("xgboost_model_last_fold", "\n".join(lines))
+
     def test_reversal_rules_rank_pullbacks_on_reversal_dates(self) -> None:
         service = ShortlistModelService(db_manager=object())
         date = pd.Timestamp("2026-02-03")

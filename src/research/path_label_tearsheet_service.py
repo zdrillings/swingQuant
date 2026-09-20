@@ -21,19 +21,24 @@ class PathLabelTearsheetService:
 
     def run(self, *, horizon_days: int = 20) -> PathLabelTearsheetReport:
         self.db_manager.initialize()
-        fixed_column = f"alpha_vs_sector_{int(horizon_days)}d"
-        path_column = f"path_alpha_vs_sector_{int(horizon_days)}d"
-        exit_reason_column = f"path_exit_reason_{int(horizon_days)}d"
+        requested_horizon = int(horizon_days)
+        horizons = tuple(dict.fromkeys((20, requested_horizon, 60)))
         frame = self.db_manager.load_universe_daily_snapshots()
         report_path = self.db_manager.paths.reports_dir / "path_label_tearsheet.md"
         report_path.parent.mkdir(parents=True, exist_ok=True)
-        if frame.empty or fixed_column not in frame.columns or path_column not in frame.columns:
+        available_horizons = [
+            horizon
+            for horizon in horizons
+            if f"alpha_vs_sector_{horizon}d" in frame.columns
+            and f"path_alpha_vs_sector_{horizon}d" in frame.columns
+        ]
+        if frame.empty or not available_horizons:
             report_path.write_text(
                 "\n".join(
                     [
                         "# Path Label Tearsheet",
                         "",
-                        f"- horizon_days: {int(horizon_days)}",
+                        f"- horizon_days: {requested_horizon}",
                         "- rows: 0",
                         "- paired_rows: 0",
                         "",
@@ -47,48 +52,71 @@ class PathLabelTearsheetService:
 
         working = frame.copy()
         working["snapshot_date"] = pd.to_datetime(working["snapshot_date"]).dt.normalize()
-        working[fixed_column] = pd.to_numeric(working[fixed_column], errors="coerce")
-        working[path_column] = pd.to_numeric(working[path_column], errors="coerce")
-        paired = working.dropna(subset=[fixed_column, path_column]).copy()
+        primary_horizon = requested_horizon if requested_horizon in available_horizons else available_horizons[0]
+        primary_fixed_column = f"alpha_vs_sector_{primary_horizon}d"
+        primary_path_column = f"path_alpha_vs_sector_{primary_horizon}d"
+        paired = working.dropna(subset=[primary_fixed_column, primary_path_column]).copy()
         lines = [
             "# Path Label Tearsheet",
             "",
-            f"- horizon_days: {int(horizon_days)}",
+            f"- horizon_days: {requested_horizon}",
             f"- rows: {len(working.index)}",
-            f"- fixed_coverage_rows: {int(working[fixed_column].notna().sum())}",
-            f"- path_coverage_rows: {int(working[path_column].notna().sum())}",
+            f"- available_horizons: {', '.join(str(horizon) + 'd' for horizon in available_horizons)}",
             f"- paired_rows: {len(paired.index)}",
             "",
             "## Label Comparison",
             "",
-            "| label | mean | median | hit_rate | p10 | p90 |",
-            "|---|---:|---:|---:|---:|---:|",
+            "| horizon | label | rows | mean | median | hit_rate | p10 | p90 |",
+            "|---|---|---:|---:|---:|---:|---:|---:|",
         ]
-        lines.append(self._distribution_row("fixed_horizon", working[fixed_column]))
-        lines.append(self._distribution_row("path_aware", working[path_column]))
+        for horizon in available_horizons:
+            fixed_column = f"alpha_vs_sector_{horizon}d"
+            path_column = f"path_alpha_vs_sector_{horizon}d"
+            working[fixed_column] = pd.to_numeric(working[fixed_column], errors="coerce")
+            working[path_column] = pd.to_numeric(working[path_column], errors="coerce")
+            lines.append(self._distribution_row(f"{horizon}d", "fixed_horizon", working[fixed_column]))
+            lines.append(self._distribution_row(f"{horizon}d", "path_aware", working[path_column]))
         lines.extend(["", "## Paired Difference", ""])
-        if paired.empty:
-            lines.append("No rows have both labels populated.")
-        else:
-            diff = paired[path_column] - paired[fixed_column]
-            corr = paired[fixed_column].corr(paired[path_column], method="spearman")
+        for horizon in available_horizons:
+            fixed_column = f"alpha_vs_sector_{horizon}d"
+            path_column = f"path_alpha_vs_sector_{horizon}d"
+            horizon_paired = working.dropna(subset=[fixed_column, path_column]).copy()
+            lines.append(f"### {horizon}d")
+            if horizon_paired.empty:
+                lines.append("No rows have both labels populated.")
+                lines.append("")
+                continue
+            diff = horizon_paired[path_column] - horizon_paired[fixed_column]
+            corr = horizon_paired[fixed_column].corr(horizon_paired[path_column], method="spearman")
             lines.extend(
                 [
+                    f"- fixed_{horizon}d_mean: {self._fmt(horizon_paired[fixed_column].mean())}",
+                    f"- path_{horizon}d_mean: {self._fmt(horizon_paired[path_column].mean())}",
                     f"- mean_path_minus_fixed: {self._fmt(diff.mean())}",
                     f"- median_path_minus_fixed: {self._fmt(diff.median())}",
                     f"- spearman_fixed_vs_path: {self._fmt(corr)}",
                     f"- path_better_rate: {self._fmt((diff > 0).mean())}",
                 ]
             )
+            holding_column = f"path_holding_days_{horizon}d"
+            if holding_column in horizon_paired.columns:
+                holding_days = pd.to_numeric(horizon_paired[holding_column], errors="coerce")
+                lines.append(f"- mean_holding_days: {self._fmt(holding_days.mean())}")
+            lines.append("")
         lines.extend(["", "## Exit Reasons", ""])
-        if exit_reason_column not in working.columns or working[exit_reason_column].dropna().empty:
-            lines.append("No path exit reasons are populated.")
-        else:
+        for horizon in available_horizons:
+            exit_reason_column = f"path_exit_reason_{horizon}d"
+            lines.append(f"### {horizon}d")
+            if exit_reason_column not in working.columns or working[exit_reason_column].dropna().empty:
+                lines.append("No path exit reasons are populated.")
+                lines.append("")
+                continue
             counts = working[exit_reason_column].fillna("missing").astype(str).value_counts(dropna=False)
             total = int(counts.sum())
             lines.extend(["| exit_reason | rows | share |", "|---|---:|---:|"])
             for reason, count in counts.items():
                 lines.append(f"| {reason} | {int(count)} | {self._fmt(float(count) / total if total else float('nan'))} |")
+            lines.append("")
         lines.append("")
         report_path.write_text("\n".join(lines), encoding="utf-8")
         return PathLabelTearsheetReport(
@@ -97,12 +125,12 @@ class PathLabelTearsheetService:
             paired_rows=len(paired.index),
         )
 
-    def _distribution_row(self, label: str, values: pd.Series) -> str:
+    def _distribution_row(self, horizon_label: str, label: str, values: pd.Series) -> str:
         numeric = pd.to_numeric(values, errors="coerce").dropna()
         if numeric.empty:
-            return f"| {label} | n/a | n/a | n/a | n/a | n/a |"
+            return f"| {horizon_label} | {label} | 0 | n/a | n/a | n/a | n/a | n/a |"
         return (
-            f"| {label} | {self._fmt(numeric.mean())} | {self._fmt(numeric.median())} | "
+            f"| {horizon_label} | {label} | {len(numeric.index)} | {self._fmt(numeric.mean())} | {self._fmt(numeric.median())} | "
             f"{self._fmt((numeric > 0).mean())} | {self._fmt(numeric.quantile(0.10))} | "
             f"{self._fmt(numeric.quantile(0.90))} |"
         )

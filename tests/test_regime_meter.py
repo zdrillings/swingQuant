@@ -69,6 +69,22 @@ class RegimeMeterServiceTests(unittest.TestCase):
         self.assertEqual(classify(0.050, reversal_ic_threshold=-0.05, trending_ic_threshold=0.05), "neutral")
         self.assertEqual(classify(0.051, reversal_ic_threshold=-0.05, trending_ic_threshold=0.05), "trending")
 
+    def test_transition_matrix_counts_session_horizon_pairs(self) -> None:
+        service = RegimeMeterService(db_manager=object())
+        frame = pd.DataFrame(
+            {
+                "snapshot_date": pd.bdate_range("2026-01-02", periods=6),
+                "classification": ["neutral", "neutral", "trending", "reversal", "reversal", "neutral"],
+            }
+        )
+
+        matrix = service._transition_matrix(frame, horizon_sessions=2)
+
+        self.assertEqual(matrix["neutral"]["trending"], 1)
+        self.assertEqual(matrix["neutral"]["reversal"], 1)
+        self.assertEqual(matrix["trending"]["reversal"], 1)
+        self.assertEqual(matrix["reversal"]["neutral"], 1)
+
     def test_backfill_is_idempotent(self) -> None:
         with TemporaryDirectory() as tmp:
             paths = _paths(Path(tmp))

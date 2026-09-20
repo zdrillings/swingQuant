@@ -3193,6 +3193,9 @@ class ScanServiceTests(unittest.TestCase):
         self.assertAlmostEqual(payload["path_return_20d"], -0.05)
         self.assertEqual(payload["path_exit_reason_20d"], "hard_stop")
         self.assertAlmostEqual(payload["path_alpha_vs_sector_20d"], -0.07)
+        self.assertAlmostEqual(payload["path_return_60d"], -0.05)
+        self.assertEqual(payload["path_exit_reason_60d"], "hard_stop")
+        self.assertEqual(payload["path_holding_days_60d"], 1)
 
     def test_universe_backfill_path_label_fills_gap_through_hard_stop_at_open(self) -> None:
         service = UniverseSnapshotBackfillService(db_manager=None)
@@ -3231,6 +3234,41 @@ class ScanServiceTests(unittest.TestCase):
 
         self.assertAlmostEqual(payload["path_return_20d"], -0.10)
         self.assertEqual(payload["path_exit_reason_20d"], "hard_stop_gap")
+        self.assertAlmostEqual(payload["path_return_60d"], -0.10)
+        self.assertEqual(payload["path_exit_reason_60d"], "hard_stop_gap")
+
+    def test_universe_backfill_60d_path_label_respects_time_limit(self) -> None:
+        service = UniverseSnapshotBackfillService(db_manager=None)
+        frame = pd.DataFrame(
+            [
+                {
+                    "date": pd.Timestamp("2026-05-01") + pd.offsets.BDay(index),
+                    "adj_close": 100.0 + index,
+                    "close": 100.0 + index,
+                    "open": 100.0 + index,
+                    "high": 101.0 + index,
+                    "low": 99.0 + index,
+                    "atr_14": 4.0,
+                }
+                for index in range(20)
+            ]
+        )
+
+        outcome = service._path_outcome(
+            ticker_frame=frame,
+            index=0,
+            horizon=60,
+            exit_rules=ExitRules(
+                trailing_stop_pct=None,
+                profit_target_pct=None,
+                time_limit_days=10,
+                hard_stop_pct=0.50,
+            ),
+        )
+
+        self.assertEqual(outcome["exit_reason"], "time_limit")
+        self.assertEqual(outcome["holding_days"], 10)
+        self.assertAlmostEqual(outcome["return"], 0.10)
 
 
 class MonitorServiceTests(unittest.TestCase):

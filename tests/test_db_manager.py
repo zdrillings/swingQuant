@@ -392,6 +392,11 @@ class DatabaseManagerInitializationTests(unittest.TestCase):
                 "path_return_20d": 0.04,
                 "path_alpha_vs_sector_20d": 0.03,
                 "path_exit_reason_20d": "time_limit",
+                "path_holding_days_20d": 10,
+                "path_return_60d": 0.04,
+                "path_alpha_vs_sector_60d": 0.03,
+                "path_exit_reason_60d": "time_limit",
+                "path_holding_days_60d": 10,
                 "details": {"example": True},
             }
 
@@ -423,6 +428,11 @@ class DatabaseManagerInitializationTests(unittest.TestCase):
                 "path_return_20d",
                 "path_alpha_vs_sector_20d",
                 "path_exit_reason_20d",
+                "path_holding_days_20d",
+                "path_return_60d",
+                "path_alpha_vs_sector_60d",
+                "path_exit_reason_60d",
+                "path_holding_days_60d",
             ):
                 self.assertEqual(inserted[column], row[column])
 

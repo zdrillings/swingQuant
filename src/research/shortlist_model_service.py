@@ -29,6 +29,7 @@ from src.utils.performance_metrics import annualized_sharpe, newey_west_t_stat, 
 
 PROMOTION_BASKET_SIZE = 2
 REGIME_MATCHING_MODES = {"off", "train_only", "train_and_flip"}
+REGIME_TRANSITION_PURGE_MODES = {"off", "majority", "strict"}
 SHORTLIST_MODEL_EXCLUDED_BASE_FEATURES = {
     "analyst_snapshot_age_days",
     "analyst_revision_snapshot_age_days",
@@ -170,6 +171,7 @@ class ShortlistModelService:
         min_feature_ic_observation_fraction = self._load_min_feature_ic_observation_fraction()
         regime_matching_mode = self._load_regime_matching_mode()
         min_regime_train_dates = self._load_min_regime_train_dates()
+        regime_transition_purge_mode = self._load_regime_transition_purge_mode()
         regime_matching_stats = {
             "attempted_folds": 0,
             "matched_folds": 0,
@@ -178,6 +180,10 @@ class ShortlistModelService:
             "live_matched": 0,
             "live_fallback": 0,
         }
+        regime_transition_purge_counts = self._regime_transition_purge_dry_run_counts(
+            matured,
+            horizon_sessions=max(int(horizon_days), 1),
+        )
         regime_feature_stats: dict[str, dict[str, object]] = {}
         feature_ic_report = self._feature_ic_report(
             matured,
@@ -217,6 +223,7 @@ class ShortlistModelService:
                 min_feature_ic_observation_fraction=min_feature_ic_observation_fraction,
                 regime_matching_mode=regime_matching_mode,
                 min_regime_train_dates=min_regime_train_dates,
+                regime_transition_purge_mode=regime_transition_purge_mode if target_type != "path" else "off",
                 regime_matching_stats=regime_matching_stats,
                 regime_feature_stats=regime_feature_stats,
             )
@@ -345,6 +352,8 @@ class ShortlistModelService:
                 surviving_features=feature_columns_override,
                 min_feature_ic_observation_fraction=min_feature_ic_observation_fraction,
                 regime_matching_mode=regime_matching_mode,
+                regime_transition_purge_mode=regime_transition_purge_mode,
+                regime_transition_purge_counts=regime_transition_purge_counts,
                 regime_matching_stats=regime_matching_stats,
                 regime_feature_stats=regime_feature_stats,
                 eligible_rows=len(matured.index),
@@ -360,6 +369,7 @@ class ShortlistModelService:
                 required_recent_windows=required_recent_windows,
                 required_fold_windows=required_fold_windows,
                 acceptance_summaries=acceptance_summaries,
+                oos_predictions=combined_predictions,
                 failure_reason=str(exc),
                 days_since_last_champion=self._days_since_last_champion(
                     generated_at=generated_at,
@@ -444,6 +454,8 @@ class ShortlistModelService:
             surviving_features=feature_columns_override,
             min_feature_ic_observation_fraction=min_feature_ic_observation_fraction,
             regime_matching_mode=regime_matching_mode,
+            regime_transition_purge_mode=regime_transition_purge_mode,
+            regime_transition_purge_counts=regime_transition_purge_counts,
             regime_matching_stats=regime_matching_stats,
             regime_feature_stats=regime_feature_stats,
             eligible_rows=len(matured.index),
@@ -459,6 +471,7 @@ class ShortlistModelService:
             required_recent_windows=required_recent_windows,
             required_fold_windows=required_fold_windows,
             acceptance_summaries=acceptance_summaries,
+            oos_predictions=combined_predictions,
         )
         lines.extend(
             self._render_summary_table(
@@ -691,6 +704,7 @@ class ShortlistModelService:
         max_train_dates: int | None = None,
         regime_matching_mode: str = "off",
         min_regime_train_dates: int = 120,
+        regime_transition_purge_mode: str = "off",
         regime_matching_stats: dict[str, int] | None = None,
         regime_feature_stats: dict[str, dict[str, object]] | None = None,
     ) -> pd.DataFrame | None:
@@ -701,9 +715,10 @@ class ShortlistModelService:
         stride = max(int(evaluation_stride_dates or test_window_dates), 1)
         label_embargo = max(int(label_horizon_dates or 0), 0)
         normalized_regime_mode = self._normalize_regime_matching_mode(regime_matching_mode)
+        normalized_transition_purge_mode = self._normalize_regime_transition_purge_mode(regime_transition_purge_mode)
         regime_by_date = (
             self._regime_classifications_by_prediction_date(dates, horizon_sessions=label_embargo)
-            if normalized_regime_mode != "off"
+            if normalized_regime_mode != "off" or normalized_transition_purge_mode != "off"
             else {}
         )
         while start_index < len(dates):
@@ -726,6 +741,23 @@ class ShortlistModelService:
             )
             if normalized_regime_mode == "off" and max_train_dates is not None:
                 train_date_window = train_date_window[-max(int(max_train_dates), 1):]
+            if normalized_transition_purge_mode != "off":
+                train_date_window = self._purge_regime_transition_dates(
+                    train_date_window,
+                    all_dates=dates,
+                    horizon_sessions=label_embargo,
+                    regime_by_date=regime_by_date,
+                    mode=normalized_transition_purge_mode,
+                )
+                if len(train_date_window) < int(min_train_dates):
+                    self.logger.info(
+                        "Walk-forward fold %s skipped %s after regime transition purge left %d train dates.",
+                        pd.Timestamp(test_dates[0]).date(),
+                        model_name,
+                        len(train_date_window),
+                    )
+                    start_index += stride
+                    continue
             train_dates = set(train_date_window)
             train_frame = frame[frame["snapshot_date"].isin(train_dates)].copy()
             raw_train_rows = len(train_frame.index)
@@ -1035,6 +1067,135 @@ class ShortlistModelService:
         if not counts:
             return None
         return sorted(counts.items(), key=lambda item: (-item[1], item[0]))[0][0]
+
+    def _regime_transition_purge_dry_run_counts(
+        self,
+        frame: pd.DataFrame,
+        *,
+        horizon_sessions: int,
+    ) -> dict[str, int]:
+        if frame.empty or "snapshot_date" not in frame.columns:
+            return {"rows": 0, "majority": 0, "strict": 0}
+        dates = sorted(pd.to_datetime(frame["snapshot_date"], errors="coerce").dropna().dt.normalize().drop_duplicates().tolist())
+        regime_by_date = self._regime_classifications_by_prediction_date(
+            dates,
+            horizon_sessions=max(int(horizon_sessions), 1),
+        )
+        if not dates or not regime_by_date:
+            return {"rows": int(len(frame.index)), "majority": 0, "strict": 0}
+        transition_by_date = {
+            pd.Timestamp(date_value).normalize(): {
+                "majority": self._date_crosses_regime_boundary(
+                    date_value,
+                    all_dates=dates,
+                    horizon_sessions=horizon_sessions,
+                    regime_by_date=regime_by_date,
+                    mode="majority",
+                ),
+                "strict": self._date_crosses_regime_boundary(
+                    date_value,
+                    all_dates=dates,
+                    horizon_sessions=horizon_sessions,
+                    regime_by_date=regime_by_date,
+                    mode="strict",
+                ),
+            }
+            for date_value in dates
+        }
+        normalized_dates = pd.to_datetime(frame["snapshot_date"], errors="coerce").dt.normalize()
+        majority = normalized_dates.map(lambda value: bool(transition_by_date.get(pd.Timestamp(value).normalize(), {}).get("majority")) if pd.notna(value) else False)
+        strict = normalized_dates.map(lambda value: bool(transition_by_date.get(pd.Timestamp(value).normalize(), {}).get("strict")) if pd.notna(value) else False)
+        return {
+            "rows": int(len(frame.index)),
+            "majority": int(majority.sum()),
+            "strict": int(strict.sum()),
+        }
+
+    def _purge_regime_transition_dates(
+        self,
+        train_dates: list,
+        *,
+        all_dates: list,
+        horizon_sessions: int,
+        regime_by_date: dict[pd.Timestamp, str],
+        mode: str,
+    ) -> list:
+        normalized_mode = self._normalize_regime_transition_purge_mode(mode)
+        if normalized_mode == "off" or not train_dates or not regime_by_date:
+            return list(train_dates)
+        return [
+            date_value
+            for date_value in train_dates
+            if not self._date_crosses_regime_boundary(
+                date_value,
+                all_dates=all_dates,
+                horizon_sessions=horizon_sessions,
+                regime_by_date=regime_by_date,
+                mode=normalized_mode,
+            )
+        ]
+
+    def _date_crosses_regime_boundary(
+        self,
+        date_value,
+        *,
+        all_dates: list,
+        horizon_sessions: int,
+        regime_by_date: dict[pd.Timestamp, str],
+        mode: str,
+    ) -> bool:
+        entry_date = pd.Timestamp(date_value).normalize()
+        entry_regime = regime_by_date.get(entry_date)
+        if entry_regime in (None, "", "unknown"):
+            return False
+        normalized_dates = [pd.Timestamp(raw).normalize() for raw in all_dates]
+        try:
+            entry_index = normalized_dates.index(entry_date)
+        except ValueError:
+            return False
+        horizon = max(int(horizon_sessions), 1)
+        forward_dates = normalized_dates[entry_index + 1 : entry_index + 1 + horizon]
+        forward_regimes = [
+            str(regime_by_date[forward_date])
+            for forward_date in forward_dates
+            if regime_by_date.get(forward_date) not in (None, "", "unknown")
+        ]
+        if not forward_regimes:
+            return False
+        mismatches = sum(1 for regime in forward_regimes if regime != str(entry_regime))
+        if mode == "strict":
+            return mismatches > 0
+        if mode == "majority":
+            return mismatches > (len(forward_regimes) / 2.0)
+        return False
+
+    def _forward_regime_share_for_dates(
+        self,
+        entry_dates: list,
+        *,
+        all_dates: list,
+        horizon_sessions: int,
+        regime_by_date: dict[pd.Timestamp, str],
+    ) -> dict[str, float]:
+        counts = {"neutral": 0, "trending": 0, "reversal": 0}
+        total = 0
+        normalized_dates = [pd.Timestamp(raw).normalize() for raw in all_dates]
+        date_index = {date_value: index for index, date_value in enumerate(normalized_dates)}
+        horizon = max(int(horizon_sessions), 1)
+        for raw_date in entry_dates:
+            entry_date = pd.Timestamp(raw_date).normalize()
+            index = date_index.get(entry_date)
+            if index is None:
+                continue
+            for forward_date in normalized_dates[index + 1 : index + 1 + horizon]:
+                regime = regime_by_date.get(forward_date)
+                if regime not in counts:
+                    continue
+                counts[str(regime)] += 1
+                total += 1
+        if total <= 0:
+            return {key: float("nan") for key in counts}
+        return {key: value / total for key, value in counts.items()}
 
     def _regime_classifications_by_prediction_date(
         self,
@@ -1782,6 +1943,16 @@ class ShortlistModelService:
         )
         return max(2, int(payload.get("min_regime_train_dates", 120)))
 
+    def _load_regime_transition_purge_mode(self) -> str:
+        config = load_feature_config()
+        payload = (
+            config.get("scan_policy", {})
+            .get("shortlist_model", {})
+            if isinstance(config, dict)
+            else {}
+        )
+        return self._normalize_regime_transition_purge_mode(payload.get("regime_transition_purge", "off"))
+
     def _normalize_regime_matching_mode(self, mode: object) -> str:
         normalized = str(mode or "off").strip().lower()
         if normalized not in REGIME_MATCHING_MODES:
@@ -1790,6 +1961,16 @@ class ShortlistModelService:
                 mode,
             )
             return "train_and_flip"
+        return normalized
+
+    def _normalize_regime_transition_purge_mode(self, mode: object) -> str:
+        normalized = str(mode or "off").strip().lower()
+        if normalized not in REGIME_TRANSITION_PURGE_MODES:
+            self.logger.warning(
+                "Unknown shortlist_model.regime_transition_purge=%r; using off.",
+                mode,
+            )
+            return "off"
         return normalized
 
     def _resolve_max_train_dates(self, *, max_train_dates: int | None, min_train_dates: int) -> int | None:
@@ -2790,6 +2971,152 @@ class ShortlistModelService:
         lines.extend(self._render_summary_table(summaries, heading="### Recent Acceptance Windows"))
         return lines
 
+    def _render_regime_contamination_decomposition(
+        self,
+        *,
+        predictions: pd.DataFrame,
+        summaries: pd.DataFrame,
+        horizon_sessions: int,
+        fold_size: int,
+        required_recent_windows: tuple[int, ...],
+        required_fold_windows: tuple[int, ...],
+    ) -> list[str]:
+        lines = [
+            "## Regime Contamination Decomposition",
+            "",
+            "- note: contamination decomposition is diagnostic only and is not consumed by the promotion gate.",
+            "",
+        ]
+        if predictions.empty or summaries.empty or "snapshot_date" not in predictions.columns:
+            lines.append("No prediction windows available.")
+            lines.append("")
+            return lines
+        working = predictions.copy()
+        working["snapshot_date"] = pd.to_datetime(working["snapshot_date"], errors="coerce").dt.normalize()
+        working = working.dropna(subset=["snapshot_date"])
+        all_dates = sorted(working["snapshot_date"].drop_duplicates().tolist())
+        if not all_dates:
+            lines.append("No dated prediction windows available.")
+            lines.append("")
+            return lines
+        report_calendar_dates = self._regime_report_calendar_dates(fallback_dates=all_dates)
+        regime_by_date = self._regime_meter_classifications_by_date(report_calendar_dates)
+        lines.extend(
+            [
+                "| window | entry_regime | fwd_neutral | fwd_trending | fwd_reversal | net_mean_target | hit_rate | beat_universe_rate |",
+                "|---|---|---:|---:|---:|---:|---:|---:|",
+            ]
+        )
+        for row in summaries.sort_values("model").itertuples(index=False):
+            window_name = str(row.model)
+            window_dates = self._dates_for_acceptance_window_name(
+                window_name=window_name,
+                predictions=working,
+                recent_windows=required_recent_windows,
+                fold_windows=required_fold_windows,
+                fold_size=fold_size,
+            )
+            entry_regime = self._majority_regime_for_dates(window_dates, regime_by_date) or "unknown"
+            shares = self._forward_regime_share_for_dates(
+                window_dates,
+                all_dates=report_calendar_dates,
+                horizon_sessions=max(int(horizon_sessions), 1),
+                regime_by_date=regime_by_date,
+            )
+            lines.append(
+                f"| {window_name} | {entry_regime} | "
+                f"{self._fmt(shares.get('neutral', float('nan')))} | "
+                f"{self._fmt(shares.get('trending', float('nan')))} | "
+                f"{self._fmt(shares.get('reversal', float('nan')))} | "
+                f"{self._fmt(getattr(row, 'mean_target', float('nan')))} | "
+                f"{self._fmt(getattr(row, 'hit_rate', float('nan')))} | "
+                f"{self._fmt(getattr(row, 'beat_universe_rate', float('nan')))} |"
+            )
+        lines.append("")
+        return lines
+
+    def _dates_for_acceptance_window_name(
+        self,
+        *,
+        window_name: str,
+        predictions: pd.DataFrame,
+        recent_windows: tuple[int, ...],
+        fold_windows: tuple[int, ...],
+        fold_size: int,
+    ) -> list[pd.Timestamp]:
+        if predictions.empty:
+            return []
+        model_name = self._base_model_name_from_window(window_name)
+        scoped = predictions[predictions["model_name"].astype(str).eq(model_name)].copy() if "model_name" in predictions.columns else predictions.copy()
+        if scoped.empty:
+            scoped = predictions.copy()
+        dates = sorted(scoped["snapshot_date"].dropna().drop_duplicates().tolist())
+        if window_name.endswith("_full_oos"):
+            return dates
+        for window in recent_windows:
+            suffix = f"_recent_{int(window)}d"
+            if window_name.endswith(suffix):
+                return dates[-max(int(window), 1):]
+        for folds in fold_windows:
+            expected = self._fold_window_model_name(model_name=model_name, fold_count=int(folds))
+            if window_name == expected:
+                return dates[-max(int(folds) * max(int(fold_size), 1), 1):]
+        return dates
+
+    def _base_model_name_from_window(self, window_name: str) -> str:
+        for suffix in ("_full_oos",):
+            if window_name.endswith(suffix):
+                return window_name[: -len(suffix)]
+        for marker in ("_recent_", "_trailing_"):
+            if marker in window_name:
+                return window_name.split(marker, 1)[0]
+        if window_name.endswith("_last_fold"):
+            return window_name[: -len("_last_fold")]
+        return window_name
+
+    def _regime_meter_classifications_by_date(self, dates: list) -> dict[pd.Timestamp, str]:
+        regime_loader = getattr(self.db_manager, "load_regime_meter", None)
+        if not callable(regime_loader):
+            return {}
+        try:
+            regime = regime_loader()
+        except Exception as exc:
+            self.logger.warning("Unable to load regime meter for contamination report: %s", exc)
+            return {}
+        if regime is None or regime.empty or not {"snapshot_date", "classification"}.issubset(regime.columns):
+            return {}
+        regime = regime.copy()
+        regime["snapshot_date"] = pd.to_datetime(regime["snapshot_date"], errors="coerce").dt.normalize()
+        regime = regime.dropna(subset=["snapshot_date"]).sort_values("snapshot_date").reset_index(drop=True)
+        if regime.empty:
+            return {}
+        regime_dates = regime["snapshot_date"].tolist()
+        regime_classes = regime["classification"].astype(str).tolist()
+        output: dict[pd.Timestamp, str] = {}
+        for raw_date in dates:
+            date_value = pd.to_datetime(raw_date, errors="coerce")
+            if pd.isna(date_value):
+                continue
+            date_value = date_value.normalize()
+            regime_index = bisect_right(regime_dates, date_value) - 1
+            if regime_index < 0:
+                continue
+            output[date_value] = regime_classes[regime_index]
+        return output
+
+    def _regime_report_calendar_dates(self, *, fallback_dates: list) -> list[pd.Timestamp]:
+        loader = getattr(self.db_manager, "list_universe_daily_snapshot_dates", None)
+        if callable(loader):
+            try:
+                dates = loader()
+            except Exception as exc:
+                self.logger.warning("Unable to load universe dates for contamination report: %s", exc)
+                dates = []
+            parsed = pd.to_datetime(pd.Series(list(dates)), errors="coerce").dropna()
+            if not parsed.empty:
+                return sorted(parsed.dt.normalize().drop_duplicates().tolist())
+        return sorted(pd.to_datetime(pd.Series(list(fallback_dates)), errors="coerce").dropna().dt.normalize().drop_duplicates().tolist())
+
     def _empty_summary(self, model_name: str) -> dict[str, object]:
         return {
             "model": model_name,
@@ -2831,6 +3158,8 @@ class ShortlistModelService:
         min_feature_ic: float,
         min_feature_ic_observation_fraction: float,
         regime_matching_mode: str,
+        regime_transition_purge_mode: str,
+        regime_transition_purge_counts: dict[str, int],
         regime_matching_stats: dict[str, int],
         regime_feature_stats: dict[str, dict[str, object]] | None = None,
         surviving_features: list[str],
@@ -2847,6 +3176,7 @@ class ShortlistModelService:
         required_recent_windows: tuple[int, ...] = (),
         required_fold_windows: tuple[int, ...] = (1, 3),
         acceptance_summaries: pd.DataFrame,
+        oos_predictions: pd.DataFrame,
         failure_reason: str | None = None,
         days_since_last_champion: int | None = None,
         promotion_top_n: int = PROMOTION_BASKET_SIZE,
@@ -2873,6 +3203,12 @@ class ShortlistModelService:
             "- training_label_policy: horizon-strided non-overlapping dates after label embargo",
             "- feature_selection_policy: fold-local train-only rank IC screen; feature_ic_report is diagnostic",
             f"- regime_matching_mode: {regime_matching_mode}",
+            (
+                f"- regime_transition_purge: {regime_transition_purge_mode} "
+                f"(would purge {int(regime_transition_purge_counts.get('majority', 0))} rows of "
+                f"{int(regime_transition_purge_counts.get('rows', 0))} under majority, "
+                f"{int(regime_transition_purge_counts.get('strict', 0))} under strict)"
+            ),
             (
                 "- regime_matching_folds: "
                 f"attempted={int(regime_matching_stats.get('attempted_folds', 0))}, "
@@ -2924,6 +3260,16 @@ class ShortlistModelService:
             self._render_promotion_gate(
                 promotion_gate=promotion_gate,
                 summaries=acceptance_summaries,
+                required_recent_windows=required_recent_windows,
+                required_fold_windows=required_fold_windows,
+            )
+        )
+        lines.extend(
+            self._render_regime_contamination_decomposition(
+                predictions=oos_predictions,
+                summaries=acceptance_summaries,
+                horizon_sessions=int(label_horizon_dates),
+                fold_size=int(test_window_dates),
                 required_recent_windows=required_recent_windows,
                 required_fold_windows=required_fold_windows,
             )

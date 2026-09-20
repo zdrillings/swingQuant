@@ -168,6 +168,7 @@ class RegimeMeterService:
                 f"| {row.snapshot_date.date().isoformat()} | {self._fmt(row.mom_ic_daily)} | "
                 f"{self._fmt(row.mom_ic_20d_avg)} | {row.classification} |"
             )
+        lines.extend(self._render_transition_matrices(frame, current_classification=str(latest["classification"])))
         monthly = (
             frame.assign(month=frame["snapshot_date"].dt.strftime("%Y-%m"))
             .groupby("month", as_index=False)["mom_ic_daily"]
@@ -188,6 +189,77 @@ class RegimeMeterService:
         lines.append("")
         report_path.write_text("\n".join(lines), encoding="utf-8")
         return report_path
+
+    def _render_transition_matrices(self, frame: pd.DataFrame, *, current_classification: str) -> list[str]:
+        lines = [
+            "",
+            "## Regime Transition Matrix",
+            "",
+            "- note: transition matrices are diagnostic inputs for sizing and exposure decisions; they are not consumed by the shortlist promotion gate.",
+        ]
+        expected: list[str] = []
+        for horizon in (20, 60):
+            matrix = self._transition_matrix(frame, horizon_sessions=horizon)
+            lines.extend(
+                [
+                    "",
+                    f"### +{horizon} Sessions",
+                    "",
+                    "| entry_regime | neutral | trending | reversal |",
+                    "|---|---:|---:|---:|",
+                ]
+            )
+            for entry in ("neutral", "trending", "reversal"):
+                row = matrix.get(entry, {})
+                total = sum(int(row.get(exit_regime, 0)) for exit_regime in ("neutral", "trending", "reversal"))
+                cells = []
+                for exit_regime in ("neutral", "trending", "reversal"):
+                    count = int(row.get(exit_regime, 0))
+                    probability = count / total if total else float("nan")
+                    cells.append(f"{self._fmt(probability)} ({count})")
+                lines.append(f"| {entry} | {' | '.join(cells)} |")
+            current_row = matrix.get(str(current_classification), {})
+            current_total = sum(int(current_row.get(exit_regime, 0)) for exit_regime in ("neutral", "trending", "reversal"))
+            if current_total:
+                distribution = ", ".join(
+                    f"{exit_regime}={self._fmt(int(current_row.get(exit_regime, 0)) / current_total)}"
+                    for exit_regime in ("neutral", "trending", "reversal")
+                )
+            else:
+                distribution = "n/a"
+            expected.append(f"+{horizon}: {distribution}")
+        lines.extend(
+            [
+                "",
+                f"- current_classification_expected_distribution: {current_classification} -> {'; '.join(expected)}",
+                "",
+            ]
+        )
+        return lines
+
+    def _transition_matrix(self, frame: pd.DataFrame, *, horizon_sessions: int) -> dict[str, dict[str, int]]:
+        if frame.empty or "classification" not in frame.columns:
+            return {}
+        working = frame.copy()
+        working["snapshot_date"] = pd.to_datetime(working["snapshot_date"], errors="coerce")
+        working = working.dropna(subset=["snapshot_date"]).sort_values("snapshot_date").reset_index(drop=True)
+        output: dict[str, dict[str, int]] = {
+            entry: {exit_regime: 0 for exit_regime in ("neutral", "trending", "reversal")}
+            for entry in ("neutral", "trending", "reversal")
+        }
+        horizon = max(int(horizon_sessions), 1)
+        classifications = working["classification"].astype(str).tolist()
+        for index, entry in enumerate(classifications):
+            exit_index = index + horizon
+            if exit_index >= len(classifications):
+                continue
+            if entry not in output:
+                continue
+            exit_regime = classifications[exit_index]
+            if exit_regime not in output[entry]:
+                continue
+            output[entry][exit_regime] += 1
+        return output
 
     def _latest_known_row(self) -> dict | None:
         frame = self.db_manager.load_regime_meter()
