@@ -798,7 +798,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertGreater(clean_score, noisy_score)
         self.assertNotEqual(reasons, "None")
 
-    def test_structure_factor_event_signal_only_scores_event_proximate_rows(self) -> None:
+    def test_structure_factor_fresh_signal_prioritizes_fresh_analyst_rows_without_filtering(self) -> None:
         service = ShortlistModelService(db_manager=object())
         date = pd.Timestamp("2026-02-03")
         base = {
@@ -819,15 +819,18 @@ class ShortlistModelServiceTests(unittest.TestCase):
         frame = pd.DataFrame(
             [
                 {**base, "ticker": "FRESH_ANALYST", "analyst_snapshot_age_days": 3.0},
-                {**base, "ticker": "NEAR_EARNINGS", "days_to_next_earnings": 7.0},
+                {**base, "ticker": "FRESH_REVISION", "analyst_revision_snapshot_age_days": 4.0},
                 {**base, "ticker": "STALE"},
             ]
         )
 
-        scored = service._score_structure_factor_event_signal(frame)
+        scored = service._score_structure_factor_fresh_signal(frame)
 
-        self.assertEqual(set(scored["ticker"].astype(str)), {"FRESH_ANALYST", "NEAR_EARNINGS"})
-        self.assertIn("event_condition_reason", scored.columns)
+        self.assertEqual(set(scored["ticker"].astype(str)), {"FRESH_ANALYST", "FRESH_REVISION", "STALE"})
+        self.assertIn("freshness_condition_reason", scored.columns)
+        fresh_score = float(scored.loc[scored["ticker"] == "FRESH_ANALYST", "predicted_alpha"].iloc[0])
+        stale_score = float(scored.loc[scored["ticker"] == "STALE", "predicted_alpha"].iloc[0])
+        self.assertGreater(fresh_score, stale_score)
 
     def test_structure_event_variant_requires_base_non_regression(self) -> None:
         service = ShortlistModelService(db_manager=object())
@@ -856,13 +859,13 @@ class ShortlistModelServiceTests(unittest.TestCase):
 
         self.assertFalse(
             service._model_passes_variant_guard(
-                model_name="structure_factor_event_signal",
+                model_name="structure_factor_fresh_signal",
                 acceptance_summaries=summaries,
                 required_fold_windows=(1, 3),
             )
         )
 
-    def test_event_filtered_candidate_does_not_shrink_ensemble_universe(self) -> None:
+    def test_freshness_overlay_candidate_does_not_shrink_ensemble_universe(self) -> None:
         service = ShortlistModelService(db_manager=object())
         base_rows = pd.DataFrame(
             [
@@ -872,13 +875,11 @@ class ShortlistModelServiceTests(unittest.TestCase):
                 {"snapshot_date": pd.Timestamp("2026-01-03"), "ticker": "BBB", "predicted_alpha": 0.1, "model_top_reasons": []},
             ]
         )
-        sparse_event_rows = base_rows.iloc[:1].copy()
-
         ensemble = service._build_ensemble_predictions(
             {
                 "structure_factor_signal": base_rows,
                 "ridge_model": base_rows,
-                "structure_factor_event_signal": sparse_event_rows,
+                "structure_factor_fresh_signal": base_rows,
             }
         )
 

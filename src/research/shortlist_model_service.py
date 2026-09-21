@@ -35,7 +35,7 @@ SHORTLIST_HEURISTIC_MODELS = {
     "reversal_rules",
     "event_signal",
     "structure_factor_signal",
-    "structure_factor_event_signal",
+    "structure_factor_fresh_signal",
 }
 SHORTLIST_MODEL_EXCLUDED_BASE_FEATURES = {
     "analyst_snapshot_age_days",
@@ -94,9 +94,9 @@ STRUCTURE_FACTOR_COMPONENTS = (
     ("days_since_last_earnings", -1.0),
     ("days_to_next_earnings", 1.0),
 )
-STRUCTURE_FACTOR_EVENT_MODEL = "structure_factor_event_signal"
+STRUCTURE_FACTOR_FRESH_MODEL = "structure_factor_fresh_signal"
 STRUCTURE_FACTOR_BASE_MODEL = "structure_factor_signal"
-SHORTLIST_ENSEMBLE_EXCLUDED_MODELS = {STRUCTURE_FACTOR_EVENT_MODEL}
+SHORTLIST_ENSEMBLE_EXCLUDED_MODELS: set[str] = set()
 
 
 @dataclass(frozen=True)
@@ -213,7 +213,7 @@ class ShortlistModelService:
             "event_signal",
             "event_ic_model",
             "structure_factor_signal",
-            "structure_factor_event_signal",
+            "structure_factor_fresh_signal",
             "ridge_model",
             "lasso_model",
             "elastic_net_model",
@@ -1358,8 +1358,8 @@ class ShortlistModelService:
             )
         if model_name == "structure_factor_signal":
             return self._score_structure_factor_signal(test_frame)
-        if model_name == "structure_factor_event_signal":
-            return self._score_structure_factor_event_signal(test_frame)
+        if model_name == "structure_factor_fresh_signal":
+            return self._score_structure_factor_fresh_signal(test_frame)
         if model_name == "ridge_model":
             return self._score_ridge_closed_form(
                 train_frame,
@@ -1599,45 +1599,37 @@ class ShortlistModelService:
         working["model_reason_summary"] = working["model_top_reasons"].apply(self._format_reason_summary)
         return working
 
-    def _score_structure_factor_event_signal(self, frame: pd.DataFrame) -> pd.DataFrame:
+    def _score_structure_factor_fresh_signal(self, frame: pd.DataFrame) -> pd.DataFrame:
         scored = self._score_structure_factor_signal(frame)
-        event_mask = self._event_proximity_mask(scored)
-        filtered = scored[event_mask].copy()
-        if filtered.empty:
-            return filtered
-        filtered["event_condition_reason"] = self._event_condition_reason(filtered)
-        return filtered
+        fresh_mask = self._fresh_analyst_mask(scored)
+        base_score = pd.to_numeric(scored["predicted_alpha"], errors="coerce").fillna(0.5)
+        scored["structure_base_predicted_alpha"] = base_score
+        scored["fresh_analyst_signal"] = fresh_mask.astype(float)
+        scored["predicted_alpha"] = base_score + scored["fresh_analyst_signal"]
+        scored["freshness_condition_reason"] = self._freshness_condition_reason(scored)
+        scored.loc[~fresh_mask, "freshness_condition_reason"] = "stale analyst context"
+        return scored
 
-    def _event_proximity_mask(self, frame: pd.DataFrame) -> pd.Series:
+    def _fresh_analyst_mask(self, frame: pd.DataFrame) -> pd.Series:
         analyst_age = self._numeric_frame_column(frame, "analyst_snapshot_age_days")
         revision_age = self._numeric_frame_column(frame, "analyst_revision_snapshot_age_days")
-        days_since_earnings = self._numeric_frame_column(frame, "days_since_last_earnings")
-        days_to_earnings = self._numeric_frame_column(frame, "days_to_next_earnings")
         mask = (
             ((analyst_age >= 0.0) & (analyst_age <= 5.0))
             | ((revision_age >= 0.0) & (revision_age <= 5.0))
-            | ((days_since_earnings >= 0.0) & (days_since_earnings <= 10.0))
-            | ((days_to_earnings >= 0.0) & (days_to_earnings <= 10.0))
         )
         return mask.fillna(False)
 
-    def _event_condition_reason(self, frame: pd.DataFrame) -> pd.Series:
+    def _freshness_condition_reason(self, frame: pd.DataFrame) -> pd.Series:
         reasons: list[str] = []
         analyst_age = self._numeric_frame_column(frame, "analyst_snapshot_age_days")
         revision_age = self._numeric_frame_column(frame, "analyst_revision_snapshot_age_days")
-        days_since_earnings = self._numeric_frame_column(frame, "days_since_last_earnings")
-        days_to_earnings = self._numeric_frame_column(frame, "days_to_next_earnings")
         for index in frame.index:
             row_reasons: list[str] = []
             if pd.notna(analyst_age.loc[index]) and 0.0 <= float(analyst_age.loc[index]) <= 5.0:
                 row_reasons.append("fresh analyst snapshot")
             if pd.notna(revision_age.loc[index]) and 0.0 <= float(revision_age.loc[index]) <= 5.0:
                 row_reasons.append("fresh analyst revision")
-            if pd.notna(days_since_earnings.loc[index]) and 0.0 <= float(days_since_earnings.loc[index]) <= 10.0:
-                row_reasons.append("recent earnings")
-            if pd.notna(days_to_earnings.loc[index]) and 0.0 <= float(days_to_earnings.loc[index]) <= 10.0:
-                row_reasons.append("near earnings")
-            reasons.append(", ".join(row_reasons) if row_reasons else "event proximity")
+            reasons.append(", ".join(row_reasons) if row_reasons else "stale analyst context")
         return pd.Series(reasons, index=frame.index)
 
     def _numeric_frame_column(self, frame: pd.DataFrame, column: str) -> pd.Series:
@@ -3161,7 +3153,7 @@ class ShortlistModelService:
         acceptance_summaries: pd.DataFrame,
         required_fold_windows: tuple[int, ...],
     ) -> bool:
-        if model_name != STRUCTURE_FACTOR_EVENT_MODEL:
+        if model_name != STRUCTURE_FACTOR_FRESH_MODEL:
             return True
         if acceptance_summaries.empty:
             return False
