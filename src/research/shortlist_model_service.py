@@ -30,6 +30,7 @@ from src.utils.performance_metrics import annualized_sharpe, newey_west_t_stat, 
 PROMOTION_BASKET_SIZE = 2
 REGIME_MATCHING_MODES = {"off", "train_only", "train_and_flip"}
 REGIME_TRANSITION_PURGE_MODES = {"off", "majority", "strict"}
+SHORTLIST_HEURISTIC_MODELS = {"signal_proxy", "reversal_rules", "event_signal"}
 SHORTLIST_MODEL_EXCLUDED_BASE_FEATURES = {
     "analyst_snapshot_age_days",
     "analyst_revision_snapshot_age_days",
@@ -48,6 +49,34 @@ REVERSAL_RULE_FEATURES = (
     "roc_126",
 )
 REVERSAL_CORE_FEATURES = {"rsi_2", "ret_1d", "close_vs_20d_low"}
+EVENT_DRIVEN_FEATURES = (
+    "analyst_target_upside",
+    "analyst_target_range_pct",
+    "analyst_count",
+    "analyst_recommendation_score",
+    "analyst_eps_revision_breadth",
+    "analyst_upgrade_downgrade_score",
+    "days_since_last_earnings",
+    "days_to_next_earnings",
+    "last_earnings_gap_pct",
+    "last_earnings_volume_ratio_20",
+    "last_earnings_open_vs_20d_high",
+    "close_vs_last_earnings_close",
+)
+EVENT_REACTION_FEATURES = (
+    "last_earnings_gap_pct",
+    "last_earnings_volume_ratio_20",
+    "last_earnings_open_vs_20d_high",
+    "close_vs_last_earnings_close",
+)
+EVENT_ANALYST_FEATURES = (
+    "analyst_target_upside",
+    "analyst_target_range_pct",
+    "analyst_count",
+    "analyst_recommendation_score",
+    "analyst_eps_revision_breadth",
+    "analyst_upgrade_downgrade_score",
+)
 
 
 @dataclass(frozen=True)
@@ -161,6 +190,8 @@ class ShortlistModelService:
         candidate_models = (
             "signal_proxy",
             "reversal_rules",
+            "event_signal",
+            "event_ic_model",
             "ridge_model",
             "lasso_model",
             "elastic_net_model",
@@ -777,7 +808,7 @@ class ShortlistModelService:
             test_frame["regime_matched_training_applied"] = bool(matched_training)
             test_frame["regime_matching_test_regime"] = test_regime or "unknown"
             fold_feature_columns = feature_columns_override
-            if min_feature_ic is not None and model_name not in {"signal_proxy", "reversal_rules"}:
+            if min_feature_ic is not None and model_name not in SHORTLIST_HEURISTIC_MODELS:
                 feature_screen_frame = train_frame
                 if feature_screen_dates and str(test_regime or "unknown") != "neutral":
                     feature_screen_dates_set = set(feature_screen_dates)
@@ -937,7 +968,7 @@ class ShortlistModelService:
                 label_horizon_dates=self._target_horizon_dates(target_column),
             )
         live_feature_columns = feature_columns_override
-        if min_feature_ic is not None and model_name not in {"signal_proxy", "reversal_rules"}:
+        if min_feature_ic is not None and model_name not in SHORTLIST_HEURISTIC_MODELS:
             feature_screen_frame = safe_train
             if feature_screen_dates and str(test_regime or "unknown") != "neutral":
                 scoped = matured[matured["snapshot_date"].isin(set(feature_screen_dates))].copy()
@@ -1272,7 +1303,7 @@ class ShortlistModelService:
     ) -> pd.DataFrame | None:
         if train_frame.empty or test_frame.empty:
             return None
-        if model_scope == "sector_specific" and model_name not in {"signal_proxy", "reversal_rules"}:
+        if model_scope == "sector_specific" and model_name not in SHORTLIST_HEURISTIC_MODELS:
             return self._score_model_by_sector(
                 model_name=model_name,
                 train_frame=train_frame,
@@ -1281,7 +1312,7 @@ class ShortlistModelService:
                 xgboost_params=xgboost_params,
                 feature_columns_override=feature_columns_override,
             )
-        if model_scope == "regime_specific" and model_name not in {"signal_proxy", "reversal_rules"}:
+        if model_scope == "regime_specific" and model_name not in SHORTLIST_HEURISTIC_MODELS:
             return self._score_model_by_regime(
                 model_name=model_name,
                 train_frame=train_frame,
@@ -1294,6 +1325,15 @@ class ShortlistModelService:
             return self._score_signal_proxy(test_frame)
         if model_name == "reversal_rules":
             return self._score_reversal_rules(test_frame)
+        if model_name == "event_signal":
+            return self._score_event_signal(test_frame)
+        if model_name == "event_ic_model":
+            return self._score_ic_sign_model(
+                train_frame,
+                test_frame,
+                target_column=target_column,
+                feature_columns_override=self._event_feature_columns_for_frame(train_frame),
+            )
         if model_name == "ridge_model":
             return self._score_ridge_closed_form(
                 train_frame,
@@ -1436,6 +1476,67 @@ class ShortlistModelService:
                 {
                     component: row.get(f"{component}_rank")
                     for component in components
+                }
+            ),
+            axis=1,
+        )
+        working["model_reason_summary"] = working["model_top_reasons"].apply(self._format_reason_summary)
+        return working
+
+    def _score_event_signal(self, frame: pd.DataFrame) -> pd.DataFrame:
+        working = frame.copy()
+        for column in EVENT_DRIVEN_FEATURES:
+            if column not in working.columns:
+                working[column] = np.nan
+
+        def rank_component(component: str, *, ascending: bool = True) -> pd.Series:
+            values = pd.to_numeric(working[component], errors="coerce")
+            if working["snapshot_date"].nunique() > 1:
+                return values.groupby(working["snapshot_date"]).rank(method="average", pct=True, ascending=ascending)
+            return values.rank(method="average", pct=True, ascending=ascending)
+
+        for component in EVENT_ANALYST_FEATURES + EVENT_REACTION_FEATURES:
+            working[f"{component}_event_rank"] = rank_component(component)
+
+        days_since = pd.to_numeric(working["days_since_last_earnings"], errors="coerce")
+        post_earnings_mask = (days_since >= 0.0) & (days_since <= 45.0)
+        earnings_score = working[
+            [f"{component}_event_rank" for component in EVENT_REACTION_FEATURES]
+        ].mean(axis=1, skipna=True)
+        earnings_score = earnings_score.where(post_earnings_mask, 0.5).fillna(0.5)
+
+        analyst_score = working[
+            [f"{component}_event_rank" for component in EVENT_ANALYST_FEATURES]
+        ].mean(axis=1, skipna=True).fillna(0.5)
+
+        days_to_next = pd.to_numeric(working["days_to_next_earnings"], errors="coerce")
+        earnings_safety = pd.Series(
+            np.where((days_to_next >= 0.0) & (days_to_next <= 10.0), 0.0, 1.0),
+            index=working.index,
+        )
+        if working["snapshot_date"].nunique() > 1:
+            earnings_safety = earnings_safety.groupby(working["snapshot_date"]).rank(method="average", pct=True)
+        else:
+            earnings_safety = earnings_safety.rank(method="average", pct=True)
+
+        working["event_analyst_score"] = analyst_score
+        working["event_earnings_score"] = earnings_score
+        working["event_earnings_safety"] = earnings_safety.fillna(0.5)
+        working["predicted_alpha"] = (
+            (0.50 * working["event_analyst_score"])
+            + (0.40 * working["event_earnings_score"])
+            + (0.10 * working["event_earnings_safety"])
+        )
+        working["model_top_reasons"] = working.apply(
+            lambda row: self._top_reason_names(
+                {
+                    "analyst_target_upside": row.get("analyst_target_upside_event_rank"),
+                    "analyst_eps_revision_breadth": row.get("analyst_eps_revision_breadth_event_rank"),
+                    "analyst_upgrade_downgrade_score": row.get("analyst_upgrade_downgrade_score_event_rank"),
+                    "last_earnings_gap_pct": row.get("last_earnings_gap_pct_event_rank"),
+                    "last_earnings_volume_ratio_20": row.get("last_earnings_volume_ratio_20_event_rank"),
+                    "close_vs_last_earnings_close": row.get("close_vs_last_earnings_close_event_rank"),
+                    "days_to_next_earnings": row.get("event_earnings_safety"),
                 }
             ),
             axis=1,
@@ -1895,6 +1996,14 @@ class ShortlistModelService:
         train_matrix = standardized_train.to_numpy(dtype=float)
         test_matrix = standardized_test.to_numpy(dtype=float)
         return train_matrix, test_matrix, list(train_features.columns), standardized_test
+
+    def _event_feature_columns_for_frame(self, frame: pd.DataFrame) -> list[str]:
+        available = [
+            column
+            for column in EVENT_DRIVEN_FEATURES
+            if column in frame.columns and column not in SHORTLIST_MODEL_EXCLUDED_BASE_FEATURES
+        ]
+        return expand_model_feature_columns(available)
 
     def _load_min_feature_ic(self) -> float:
         config = load_feature_config()
@@ -2719,6 +2828,12 @@ class ShortlistModelService:
             "sector_pct_above_50": "healthy 50d sector breadth",
             "sector_pct_above_200": "healthy 200d sector breadth",
             "sector_median_roc_63": "strong sector momentum backdrop",
+            "analyst_target_upside": "strong analyst target upside",
+            "analyst_target_range_pct": "wide analyst upside range",
+            "analyst_count": "broad analyst coverage",
+            "analyst_recommendation_score": "constructive analyst recommendation",
+            "analyst_eps_revision_breadth": "positive analyst EPS revisions",
+            "analyst_upgrade_downgrade_score": "positive analyst revision flow",
         }
         return labels.get(base, self._humanize_model_feature_name(base))
 
@@ -2776,6 +2891,12 @@ class ShortlistModelService:
             "sector_pct_above_50": "sector breadth 50d",
             "sector_pct_above_200": "sector breadth 200d",
             "sector_median_roc_63": "sector median momentum",
+            "analyst_target_upside": "analyst target upside",
+            "analyst_target_range_pct": "analyst target range",
+            "analyst_count": "analyst coverage",
+            "analyst_recommendation_score": "analyst recommendation",
+            "analyst_eps_revision_breadth": "analyst EPS revisions",
+            "analyst_upgrade_downgrade_score": "analyst revision flow",
         }
         return f"{labels.get(base, base.replace('_', ' '))}{suffix}"
 

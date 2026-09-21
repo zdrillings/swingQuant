@@ -683,6 +683,77 @@ class ShortlistModelServiceTests(unittest.TestCase):
         high_score = float(scored.loc[scored["ticker"] == "HIGH", "predicted_alpha"].iloc[0])
         self.assertGreater(low_score, high_score)
 
+    def test_event_signal_ranks_analyst_and_post_earnings_confirmation(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        date = pd.Timestamp("2026-02-03")
+        frame = pd.DataFrame(
+            [
+                {
+                    "snapshot_date": date,
+                    "ticker": "EVENT",
+                    "sector": "Technology",
+                    "analyst_target_upside": 0.35,
+                    "analyst_target_range_pct": 0.20,
+                    "analyst_count": 25.0,
+                    "analyst_recommendation_score": 4.6,
+                    "analyst_eps_revision_breadth": 0.45,
+                    "analyst_upgrade_downgrade_score": 0.30,
+                    "days_since_last_earnings": 12.0,
+                    "days_to_next_earnings": 40.0,
+                    "last_earnings_gap_pct": 0.11,
+                    "last_earnings_volume_ratio_20": 2.4,
+                    "last_earnings_open_vs_20d_high": 0.06,
+                    "close_vs_last_earnings_close": 0.08,
+                },
+                {
+                    "snapshot_date": date,
+                    "ticker": "STALE",
+                    "sector": "Technology",
+                    "analyst_target_upside": 0.02,
+                    "analyst_target_range_pct": 0.03,
+                    "analyst_count": 4.0,
+                    "analyst_recommendation_score": 2.7,
+                    "analyst_eps_revision_breadth": -0.20,
+                    "analyst_upgrade_downgrade_score": -0.15,
+                    "days_since_last_earnings": 80.0,
+                    "days_to_next_earnings": 3.0,
+                    "last_earnings_gap_pct": 0.01,
+                    "last_earnings_volume_ratio_20": 0.8,
+                    "last_earnings_open_vs_20d_high": -0.02,
+                    "close_vs_last_earnings_close": -0.04,
+                },
+            ]
+        )
+
+        scored = service._score_event_signal(frame)
+
+        event_score = float(scored.loc[scored["ticker"] == "EVENT", "predicted_alpha"].iloc[0])
+        stale_score = float(scored.loc[scored["ticker"] == "STALE", "predicted_alpha"].iloc[0])
+        reasons = str(scored.loc[scored["ticker"] == "EVENT", "model_reason_summary"].iloc[0])
+        self.assertGreater(event_score, stale_score)
+        self.assertIn("analyst", reasons)
+
+    def test_event_ic_model_uses_event_feature_subset(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        frame = pd.DataFrame(
+            [
+                {
+                    "snapshot_date": pd.Timestamp("2026-01-02"),
+                    "ticker": "AAA",
+                    "sector": "Technology",
+                    "analyst_target_upside": 0.20,
+                    "last_earnings_gap_pct": 0.05,
+                    "relative_strength_index_vs_spy": 90.0,
+                }
+            ]
+        )
+
+        feature_columns = service._event_feature_columns_for_frame(frame)
+
+        self.assertIn("analyst_target_upside", feature_columns)
+        self.assertIn("last_earnings_gap_pct__rank_all", feature_columns)
+        self.assertNotIn("relative_strength_index_vs_spy", feature_columns)
+
     def test_reversal_fold_feature_screen_uses_matched_pool(self) -> None:
         dates = pd.bdate_range("2026-01-02", periods=12)
 
@@ -1037,6 +1108,8 @@ class ShortlistModelServiceTests(unittest.TestCase):
             self.assertIn("- promotion_top_n: 2", report_text)
             self.assertIn("- candidate_models:", report_text)
             self.assertIn("reversal_rules", report_text)
+            self.assertIn("event_signal", report_text)
+            self.assertIn("event_ic_model", report_text)
             self.assertIn("- selected_model:", report_text)
             self.assertIn("## Regime Matching", report_text)
             self.assertIn("- regime_matching_folds: attempted=", report_text)
