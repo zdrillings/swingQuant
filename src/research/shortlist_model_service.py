@@ -30,7 +30,7 @@ from src.utils.performance_metrics import annualized_sharpe, newey_west_t_stat, 
 PROMOTION_BASKET_SIZE = 2
 REGIME_MATCHING_MODES = {"off", "train_only", "train_and_flip"}
 REGIME_TRANSITION_PURGE_MODES = {"off", "majority", "strict"}
-SHORTLIST_HEURISTIC_MODELS = {"signal_proxy", "reversal_rules", "event_signal"}
+SHORTLIST_HEURISTIC_MODELS = {"signal_proxy", "reversal_rules", "event_signal", "structure_factor_signal"}
 SHORTLIST_MODEL_EXCLUDED_BASE_FEATURES = {
     "analyst_snapshot_age_days",
     "analyst_revision_snapshot_age_days",
@@ -76,6 +76,17 @@ EVENT_ANALYST_FEATURES = (
     "analyst_recommendation_score",
     "analyst_eps_revision_breadth",
     "analyst_upgrade_downgrade_score",
+)
+STRUCTURE_FACTOR_COMPONENTS = (
+    ("distance_from_52w_high", 1.0),
+    ("distance_above_20d_high", 1.0),
+    ("sector_pct_above_50", 1.0),
+    ("atr_pct_14", -1.0),
+    ("base_range_pct_20", -1.0),
+    ("avg_abs_gap_pct_20", -1.0),
+    ("roc_126", -1.0),
+    ("days_since_last_earnings", -1.0),
+    ("days_to_next_earnings", 1.0),
 )
 
 
@@ -192,6 +203,7 @@ class ShortlistModelService:
             "reversal_rules",
             "event_signal",
             "event_ic_model",
+            "structure_factor_signal",
             "ridge_model",
             "lasso_model",
             "elastic_net_model",
@@ -1334,6 +1346,8 @@ class ShortlistModelService:
                 target_column=target_column,
                 feature_columns_override=self._event_feature_columns_for_frame(train_frame),
             )
+        if model_name == "structure_factor_signal":
+            return self._score_structure_factor_signal(test_frame)
         if model_name == "ridge_model":
             return self._score_ridge_closed_form(
                 train_frame,
@@ -1537,6 +1551,35 @@ class ShortlistModelService:
                     "last_earnings_volume_ratio_20": row.get("last_earnings_volume_ratio_20_event_rank"),
                     "close_vs_last_earnings_close": row.get("close_vs_last_earnings_close_event_rank"),
                     "days_to_next_earnings": row.get("event_earnings_safety"),
+                }
+            ),
+            axis=1,
+        )
+        working["model_reason_summary"] = working["model_top_reasons"].apply(self._format_reason_summary)
+        return working
+
+    def _score_structure_factor_signal(self, frame: pd.DataFrame) -> pd.DataFrame:
+        working = frame.copy()
+        rank_columns: list[str] = []
+        for component, direction in STRUCTURE_FACTOR_COMPONENTS:
+            if component not in working.columns:
+                working[component] = np.nan
+            values = pd.to_numeric(working[component], errors="coerce")
+            rank_column = f"{component}_structure_rank"
+            ascending = bool(float(direction) > 0.0)
+            if working["snapshot_date"].nunique() > 1:
+                ranks = values.groupby(working["snapshot_date"]).rank(method="average", pct=True, ascending=ascending)
+            else:
+                ranks = values.rank(method="average", pct=True, ascending=ascending)
+            working[rank_column] = ranks.fillna(0.5)
+            rank_columns.append(rank_column)
+
+        working["predicted_alpha"] = working[rank_columns].mean(axis=1, skipna=True).fillna(0.5)
+        working["model_top_reasons"] = working.apply(
+            lambda row: self._top_reason_names(
+                {
+                    component: row.get(f"{component}_structure_rank")
+                    for component, _ in STRUCTURE_FACTOR_COMPONENTS
                 }
             ),
             axis=1,

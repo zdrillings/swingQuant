@@ -754,6 +754,50 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertIn("last_earnings_gap_pct__rank_all", feature_columns)
         self.assertNotIn("relative_strength_index_vs_spy", feature_columns)
 
+    def test_structure_factor_signal_ranks_low_risk_constructive_setups(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        date = pd.Timestamp("2026-02-03")
+        frame = pd.DataFrame(
+            [
+                {
+                    "snapshot_date": date,
+                    "ticker": "CLEAN",
+                    "sector": "Industrials",
+                    "distance_from_52w_high": 0.02,
+                    "distance_above_20d_high": 0.04,
+                    "sector_pct_above_50": 0.80,
+                    "atr_pct_14": 0.02,
+                    "base_range_pct_20": 0.04,
+                    "avg_abs_gap_pct_20": 0.01,
+                    "roc_126": -0.03,
+                    "days_since_last_earnings": 5.0,
+                    "days_to_next_earnings": 45.0,
+                },
+                {
+                    "snapshot_date": date,
+                    "ticker": "NOISY",
+                    "sector": "Industrials",
+                    "distance_from_52w_high": -0.30,
+                    "distance_above_20d_high": -0.05,
+                    "sector_pct_above_50": 0.20,
+                    "atr_pct_14": 0.09,
+                    "base_range_pct_20": 0.20,
+                    "avg_abs_gap_pct_20": 0.06,
+                    "roc_126": 0.45,
+                    "days_since_last_earnings": 70.0,
+                    "days_to_next_earnings": 5.0,
+                },
+            ]
+        )
+
+        scored = service._score_structure_factor_signal(frame)
+
+        clean_score = float(scored.loc[scored["ticker"] == "CLEAN", "predicted_alpha"].iloc[0])
+        noisy_score = float(scored.loc[scored["ticker"] == "NOISY", "predicted_alpha"].iloc[0])
+        reasons = str(scored.loc[scored["ticker"] == "CLEAN", "model_reason_summary"].iloc[0])
+        self.assertGreater(clean_score, noisy_score)
+        self.assertNotEqual(reasons, "None")
+
     def test_reversal_fold_feature_screen_uses_matched_pool(self) -> None:
         dates = pd.bdate_range("2026-01-02", periods=12)
 
