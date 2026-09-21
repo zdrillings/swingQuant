@@ -798,6 +798,93 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertGreater(clean_score, noisy_score)
         self.assertNotEqual(reasons, "None")
 
+    def test_structure_factor_event_signal_only_scores_event_proximate_rows(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        date = pd.Timestamp("2026-02-03")
+        base = {
+            "snapshot_date": date,
+            "sector": "Industrials",
+            "distance_from_52w_high": 0.02,
+            "distance_above_20d_high": 0.04,
+            "sector_pct_above_50": 0.80,
+            "atr_pct_14": 0.02,
+            "base_range_pct_20": 0.04,
+            "avg_abs_gap_pct_20": 0.01,
+            "roc_126": -0.03,
+            "days_since_last_earnings": 40.0,
+            "days_to_next_earnings": 45.0,
+            "analyst_snapshot_age_days": 99.0,
+            "analyst_revision_snapshot_age_days": 99.0,
+        }
+        frame = pd.DataFrame(
+            [
+                {**base, "ticker": "FRESH_ANALYST", "analyst_snapshot_age_days": 3.0},
+                {**base, "ticker": "NEAR_EARNINGS", "days_to_next_earnings": 7.0},
+                {**base, "ticker": "STALE"},
+            ]
+        )
+
+        scored = service._score_structure_factor_event_signal(frame)
+
+        self.assertEqual(set(scored["ticker"].astype(str)), {"FRESH_ANALYST", "NEAR_EARNINGS"})
+        self.assertIn("event_condition_reason", scored.columns)
+
+    def test_structure_event_variant_requires_base_non_regression(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        summaries = pd.DataFrame(
+            [
+                {
+                    "model": "structure_factor_signal_full_oos",
+                    "mean_target_excess": 0.01,
+                    "hit_rate_excess": 0.01,
+                    "spearman": 0.01,
+                },
+                {
+                    "model": "structure_factor_signal_last_fold",
+                    "mean_target_excess": 0.01,
+                    "hit_rate_excess": -0.01,
+                    "spearman": 0.01,
+                },
+                {
+                    "model": "structure_factor_signal_trailing_3folds",
+                    "mean_target_excess": 0.01,
+                    "hit_rate_excess": 0.01,
+                    "spearman": 0.01,
+                },
+            ]
+        )
+
+        self.assertFalse(
+            service._model_passes_variant_guard(
+                model_name="structure_factor_event_signal",
+                acceptance_summaries=summaries,
+                required_fold_windows=(1, 3),
+            )
+        )
+
+    def test_event_filtered_candidate_does_not_shrink_ensemble_universe(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        base_rows = pd.DataFrame(
+            [
+                {"snapshot_date": pd.Timestamp("2026-01-02"), "ticker": "AAA", "predicted_alpha": 0.3, "model_top_reasons": []},
+                {"snapshot_date": pd.Timestamp("2026-01-02"), "ticker": "BBB", "predicted_alpha": 0.2, "model_top_reasons": []},
+                {"snapshot_date": pd.Timestamp("2026-01-03"), "ticker": "AAA", "predicted_alpha": 0.4, "model_top_reasons": []},
+                {"snapshot_date": pd.Timestamp("2026-01-03"), "ticker": "BBB", "predicted_alpha": 0.1, "model_top_reasons": []},
+            ]
+        )
+        sparse_event_rows = base_rows.iloc[:1].copy()
+
+        ensemble = service._build_ensemble_predictions(
+            {
+                "structure_factor_signal": base_rows,
+                "ridge_model": base_rows,
+                "structure_factor_event_signal": sparse_event_rows,
+            }
+        )
+
+        self.assertIsNotNone(ensemble)
+        self.assertEqual(len(ensemble.index), len(base_rows.index))
+
     def test_reversal_fold_feature_screen_uses_matched_pool(self) -> None:
         dates = pd.bdate_range("2026-01-02", periods=12)
 

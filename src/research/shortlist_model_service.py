@@ -30,7 +30,13 @@ from src.utils.performance_metrics import annualized_sharpe, newey_west_t_stat, 
 PROMOTION_BASKET_SIZE = 2
 REGIME_MATCHING_MODES = {"off", "train_only", "train_and_flip"}
 REGIME_TRANSITION_PURGE_MODES = {"off", "majority", "strict"}
-SHORTLIST_HEURISTIC_MODELS = {"signal_proxy", "reversal_rules", "event_signal", "structure_factor_signal"}
+SHORTLIST_HEURISTIC_MODELS = {
+    "signal_proxy",
+    "reversal_rules",
+    "event_signal",
+    "structure_factor_signal",
+    "structure_factor_event_signal",
+}
 SHORTLIST_MODEL_EXCLUDED_BASE_FEATURES = {
     "analyst_snapshot_age_days",
     "analyst_revision_snapshot_age_days",
@@ -88,6 +94,9 @@ STRUCTURE_FACTOR_COMPONENTS = (
     ("days_since_last_earnings", -1.0),
     ("days_to_next_earnings", 1.0),
 )
+STRUCTURE_FACTOR_EVENT_MODEL = "structure_factor_event_signal"
+STRUCTURE_FACTOR_BASE_MODEL = "structure_factor_signal"
+SHORTLIST_ENSEMBLE_EXCLUDED_MODELS = {STRUCTURE_FACTOR_EVENT_MODEL}
 
 
 @dataclass(frozen=True)
@@ -204,6 +213,7 @@ class ShortlistModelService:
             "event_signal",
             "event_ic_model",
             "structure_factor_signal",
+            "structure_factor_event_signal",
             "ridge_model",
             "lasso_model",
             "elastic_net_model",
@@ -1348,6 +1358,8 @@ class ShortlistModelService:
             )
         if model_name == "structure_factor_signal":
             return self._score_structure_factor_signal(test_frame)
+        if model_name == "structure_factor_event_signal":
+            return self._score_structure_factor_event_signal(test_frame)
         if model_name == "ridge_model":
             return self._score_ridge_closed_form(
                 train_frame,
@@ -1586,6 +1598,52 @@ class ShortlistModelService:
         )
         working["model_reason_summary"] = working["model_top_reasons"].apply(self._format_reason_summary)
         return working
+
+    def _score_structure_factor_event_signal(self, frame: pd.DataFrame) -> pd.DataFrame:
+        scored = self._score_structure_factor_signal(frame)
+        event_mask = self._event_proximity_mask(scored)
+        filtered = scored[event_mask].copy()
+        if filtered.empty:
+            return filtered
+        filtered["event_condition_reason"] = self._event_condition_reason(filtered)
+        return filtered
+
+    def _event_proximity_mask(self, frame: pd.DataFrame) -> pd.Series:
+        analyst_age = self._numeric_frame_column(frame, "analyst_snapshot_age_days")
+        revision_age = self._numeric_frame_column(frame, "analyst_revision_snapshot_age_days")
+        days_since_earnings = self._numeric_frame_column(frame, "days_since_last_earnings")
+        days_to_earnings = self._numeric_frame_column(frame, "days_to_next_earnings")
+        mask = (
+            ((analyst_age >= 0.0) & (analyst_age <= 5.0))
+            | ((revision_age >= 0.0) & (revision_age <= 5.0))
+            | ((days_since_earnings >= 0.0) & (days_since_earnings <= 10.0))
+            | ((days_to_earnings >= 0.0) & (days_to_earnings <= 10.0))
+        )
+        return mask.fillna(False)
+
+    def _event_condition_reason(self, frame: pd.DataFrame) -> pd.Series:
+        reasons: list[str] = []
+        analyst_age = self._numeric_frame_column(frame, "analyst_snapshot_age_days")
+        revision_age = self._numeric_frame_column(frame, "analyst_revision_snapshot_age_days")
+        days_since_earnings = self._numeric_frame_column(frame, "days_since_last_earnings")
+        days_to_earnings = self._numeric_frame_column(frame, "days_to_next_earnings")
+        for index in frame.index:
+            row_reasons: list[str] = []
+            if pd.notna(analyst_age.loc[index]) and 0.0 <= float(analyst_age.loc[index]) <= 5.0:
+                row_reasons.append("fresh analyst snapshot")
+            if pd.notna(revision_age.loc[index]) and 0.0 <= float(revision_age.loc[index]) <= 5.0:
+                row_reasons.append("fresh analyst revision")
+            if pd.notna(days_since_earnings.loc[index]) and 0.0 <= float(days_since_earnings.loc[index]) <= 10.0:
+                row_reasons.append("recent earnings")
+            if pd.notna(days_to_earnings.loc[index]) and 0.0 <= float(days_to_earnings.loc[index]) <= 10.0:
+                row_reasons.append("near earnings")
+            reasons.append(", ".join(row_reasons) if row_reasons else "event proximity")
+        return pd.Series(reasons, index=frame.index)
+
+    def _numeric_frame_column(self, frame: pd.DataFrame, column: str) -> pd.Series:
+        if column not in frame.columns:
+            return pd.Series(np.nan, index=frame.index, dtype=float)
+        return pd.to_numeric(frame[column], errors="coerce")
 
     def _score_reversal_rules(self, frame: pd.DataFrame) -> pd.DataFrame:
         working = frame.copy()
@@ -1921,6 +1979,7 @@ class ShortlistModelService:
             model_name: frame.copy()
             for model_name, frame in predictions_by_model.items()
             if frame is not None and not frame.empty
+            and model_name not in SHORTLIST_ENSEMBLE_EXCLUDED_MODELS
         }
         if len(usable) < 2:
             return None
@@ -3009,6 +3068,15 @@ class ShortlistModelService:
                 required_fold_windows=required_fold_windows,
             )
         }
+        passing_models = {
+            model
+            for model in passing_models
+            if self._model_passes_variant_guard(
+                model_name=model,
+                acceptance_summaries=acceptance_summaries,
+                required_fold_windows=required_fold_windows,
+            )
+        }
         if passing_models:
             passing_ranked = ranked[ranked["model"].astype(str).isin(passing_models)].copy()
             return str(passing_ranked.iloc[0]["model"]), True
@@ -3084,6 +3152,38 @@ class ShortlistModelService:
         ]
         if full_row.empty:
             return False
+        return True
+
+    def _model_passes_variant_guard(
+        self,
+        *,
+        model_name: str,
+        acceptance_summaries: pd.DataFrame,
+        required_fold_windows: tuple[int, ...],
+    ) -> bool:
+        if model_name != STRUCTURE_FACTOR_EVENT_MODEL:
+            return True
+        if acceptance_summaries.empty:
+            return False
+        required_names = [f"{STRUCTURE_FACTOR_BASE_MODEL}_full_oos"]
+        required_names.extend(
+            self._fold_window_model_name(
+                model_name=STRUCTURE_FACTOR_BASE_MODEL,
+                fold_count=int(folds),
+            )
+            for folds in required_fold_windows
+        )
+        for summary_name in required_names:
+            row = acceptance_summaries[acceptance_summaries["model"].astype(str) == summary_name]
+            if row.empty:
+                return False
+            summary = row.iloc[0]
+            if not self._finite_at_least(summary.get("mean_target_excess"), 0.0):
+                return False
+            if not self._finite_at_least(summary.get("hit_rate_excess"), 0.0):
+                return False
+            if not self._finite_at_least(summary.get("spearman"), 0.0):
+                return False
         return True
 
     def _finite_at_least(self, value, threshold) -> bool:
