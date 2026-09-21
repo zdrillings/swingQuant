@@ -146,6 +146,11 @@ def build_parser() -> argparse.ArgumentParser:
     universe_backfill_parser.add_argument("--date-from", required=True, type=str)
     universe_backfill_parser.add_argument("--date-to", default=None, type=str)
     universe_backfill_parser.add_argument("--skip-existing", action="store_true")
+    path_label_backfill_parser = subparsers.add_parser("path-label-backfill", help="Fill missing path-aware label columns without rebuilding snapshot features.")
+    path_label_backfill_parser.add_argument("--horizon", type=int, default=60)
+    path_label_backfill_parser.add_argument("--date-from", required=True, type=str)
+    path_label_backfill_parser.add_argument("--date-to", required=True, type=str)
+    path_label_backfill_parser.add_argument("--batch-size-dates", type=int, default=20)
     universe_analysis_parser = subparsers.add_parser("universe-analysis", help="Analyze broad-universe snapshots to find missed winners and gate blind spots.")
     universe_analysis_parser.add_argument("--top", type=int, default=10)
     universe_analysis_parser.add_argument("--horizon-days", type=int, default=10)
@@ -519,6 +524,20 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 f"Universe analysis written to {report.output_path} "
                 f"(rows={report.snapshot_rows}, dates={report.snapshot_dates}, horizon_days={report.horizon_days})"
+            )
+            return 0
+
+        if args.command == "path-label-backfill":
+            report = UniverseSnapshotBackfillService(db_manager).run_path_label_backfill(
+                horizon_days=args.horizon,
+                date_from=args.date_from,
+                date_to=args.date_to,
+                batch_size_dates=args.batch_size_dates,
+            )
+            print(
+                f"Path label backfill complete "
+                f"(horizon_days={report.horizon_days}, dates={report.snapshot_dates_processed}, "
+                f"rows={report.total_rows}, updated={report.updated_rows}, unavailable={report.unavailable_rows})"
             )
             return 0
 

@@ -8,6 +8,8 @@ from pathlib import Path
 import json
 import sqlite3
 
+import pandas as pd
+
 from src.settings import AppPaths, get_settings
 
 
@@ -806,20 +808,27 @@ class DatabaseManager:
         with self.duckdb_connection() as connection:
             return connection.execute(query, [ticker, window]).df()
 
-    def load_price_history(self, tickers: Iterable[str]):
+    def load_price_history(self, tickers: Iterable[str], date_from: str | None = None, date_to: str | None = None):
         ticker_list = list(tickers)
         if not ticker_list:
             raise ValueError("At least one ticker is required")
 
         placeholders = ", ".join(["?"] * len(ticker_list))
+        params: list[object] = list(ticker_list)
         query = f"""
             SELECT ticker, date, open, high, low, close, volume, adj_close
             FROM historical_ohlcv
             WHERE ticker IN ({placeholders})
-            ORDER BY date ASC, ticker ASC
         """
+        if date_from is not None:
+            query += " AND date >= ?"
+            params.append(str(date_from))
+        if date_to is not None:
+            query += " AND date <= ?"
+            params.append(str(date_to))
+        query += " ORDER BY date ASC, ticker ASC"
         with self.duckdb_connection() as connection:
-            return connection.execute(query, ticker_list).df()
+            return connection.execute(query, params).df()
 
     def load_latest_rows(self, tickers: Iterable[str]):
         ticker_list = list(tickers)
@@ -2007,6 +2016,86 @@ class DatabaseManager:
                     for row in payload
                 ],
             )
+        return len(payload)
+
+    def list_missing_universe_path_label_dates(
+        self,
+        *,
+        horizon_days: int,
+        date_from: str,
+        date_to: str,
+    ) -> list[str]:
+        horizon = int(horizon_days)
+        if horizon not in (20, 60):
+            raise ValueError("Path label horizon must be 20 or 60 days.")
+        path_column = f"path_alpha_vs_sector_{horizon}d"
+        query = f"""
+            SELECT DISTINCT snapshot_date
+            FROM universe_daily_snapshots
+            WHERE snapshot_date BETWEEN ? AND ?
+              AND {path_column} IS NULL
+            ORDER BY snapshot_date ASC
+        """
+        with self.duckdb_connection() as connection:
+            rows = connection.execute(query, [str(date_from), str(date_to)]).fetchall()
+        return [str(row[0]) for row in rows]
+
+    def load_universe_path_label_inputs(
+        self,
+        *,
+        horizon_days: int,
+        date_from: str,
+        date_to: str,
+    ):
+        horizon = int(horizon_days)
+        if horizon not in (20, 60):
+            raise ValueError("Path label horizon must be 20 or 60 days.")
+        path_column = f"path_alpha_vs_sector_{horizon}d"
+        query = f"""
+            SELECT snapshot_date, ticker, sector, passed_slots_json
+            FROM universe_daily_snapshots
+            WHERE snapshot_date BETWEEN ? AND ?
+              AND {path_column} IS NULL
+            ORDER BY snapshot_date ASC, ticker ASC
+        """
+        with self.duckdb_connection() as connection:
+            return connection.execute(query, [str(date_from), str(date_to)]).df()
+
+    def update_universe_path_labels(self, *, horizon_days: int, rows: Iterable[dict]) -> int:
+        horizon = int(horizon_days)
+        if horizon not in (20, 60):
+            raise ValueError("Path label horizon must be 20 or 60 days.")
+        payload = list(rows)
+        if not payload:
+            return 0
+        frame = pd.DataFrame(payload)
+        expected_columns = [
+            "snapshot_date",
+            "ticker",
+            f"path_return_{horizon}d",
+            f"path_alpha_vs_sector_{horizon}d",
+            f"path_exit_reason_{horizon}d",
+            f"path_holding_days_{horizon}d",
+        ]
+        for column in expected_columns:
+            if column not in frame.columns:
+                frame[column] = None
+        frame = frame[expected_columns].copy()
+        with self.duckdb_connection() as connection:
+            connection.register("path_label_updates", frame)
+            connection.execute(
+                f"""
+                UPDATE universe_daily_snapshots AS snapshots
+                SET path_return_{horizon}d = updates.path_return_{horizon}d,
+                    path_alpha_vs_sector_{horizon}d = updates.path_alpha_vs_sector_{horizon}d,
+                    path_exit_reason_{horizon}d = updates.path_exit_reason_{horizon}d,
+                    path_holding_days_{horizon}d = updates.path_holding_days_{horizon}d
+                FROM path_label_updates AS updates
+                WHERE snapshots.snapshot_date = CAST(updates.snapshot_date AS DATE)
+                  AND snapshots.ticker = updates.ticker
+                """
+            )
+            connection.unregister("path_label_updates")
         return len(payload)
 
     def replace_regime_meter_rows(self, rows: Iterable[dict]) -> int:

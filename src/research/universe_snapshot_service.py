@@ -126,6 +126,15 @@ class UniverseSnapshotBackfillReport:
     total_rows: int
 
 
+@dataclass(frozen=True)
+class PathLabelBackfillReport:
+    horizon_days: int
+    snapshot_dates_processed: int
+    total_rows: int
+    updated_rows: int
+    unavailable_rows: int
+
+
 class UniverseSnapshotBackfillService:
     def __init__(self, db_manager: DatabaseManager) -> None:
         self.db_manager = db_manager
@@ -239,6 +248,158 @@ class UniverseSnapshotBackfillService:
             snapshot_dates_skipped=skipped,
             total_rows=total_rows,
         )
+
+    def run_path_label_backfill(
+        self,
+        *,
+        horizon_days: int,
+        date_from: str,
+        date_to: str,
+        batch_size_dates: int = 20,
+    ) -> PathLabelBackfillReport:
+        horizon = int(horizon_days)
+        if horizon not in (20, 60):
+            raise ValueError("Path label horizon must be 20 or 60 days.")
+        if batch_size_dates <= 0:
+            raise ValueError("batch_size_dates must be positive.")
+        self.db_manager.initialize()
+        strategies = {
+            slot: strategy
+            for slot, strategy in load_active_strategies().items()
+            if getattr(strategy, "scan_enabled", True)
+        }
+        list_dates = getattr(self.db_manager, "list_missing_universe_path_label_dates")
+        load_inputs = getattr(self.db_manager, "load_universe_path_label_inputs")
+        update_labels = getattr(self.db_manager, "update_universe_path_labels")
+        missing_dates = list_dates(horizon_days=horizon, date_from=date_from, date_to=date_to)
+        if not missing_dates:
+            return PathLabelBackfillReport(
+                horizon_days=horizon,
+                snapshot_dates_processed=0,
+                total_rows=0,
+                updated_rows=0,
+                unavailable_rows=0,
+            )
+
+        processed_dates = 0
+        total_rows = 0
+        updated_rows = 0
+        unavailable_rows = 0
+        for start in range(0, len(missing_dates), batch_size_dates):
+            batch_dates = missing_dates[start : start + batch_size_dates]
+            batch_start = str(batch_dates[0])
+            batch_end = str(batch_dates[-1])
+            input_frame = load_inputs(horizon_days=horizon, date_from=batch_start, date_to=batch_end)
+            if input_frame.empty:
+                continue
+            history_start = pd.Timestamp(batch_start).strftime("%Y-%m-%d")
+            history_end = (pd.Timestamp(batch_end) + pd.Timedelta(days=max(horizon * 3, 90))).strftime("%Y-%m-%d")
+            tickers = sorted(set(input_frame["ticker"].astype(str).str.upper()).union(REFERENCE_TICKERS))
+            price_history = self._load_price_history_for_path_labels(
+                tickers=tickers,
+                date_from=history_start,
+                date_to=history_end,
+            )
+            history_context = self._history_context(price_history) if not price_history.empty else {}
+            updates: list[dict[str, object]] = []
+            for row in input_frame.to_dict(orient="records"):
+                payload = self._path_label_payload_for_existing_snapshot(
+                    snapshot_row=row,
+                    horizon=horizon,
+                    strategies=strategies,
+                    history_context=history_context,
+                )
+                if payload[f"path_alpha_vs_sector_{horizon}d"] is None:
+                    unavailable_rows += 1
+                updates.append(payload)
+            updated_rows += update_labels(horizon_days=horizon, rows=updates)
+            processed_dates += len(batch_dates)
+            total_rows += len(updates)
+            self.logger.info(
+                "Path label backfill progress: horizon=%sd processed_dates=%s/%s current_range=%s..%s rows=%s unavailable=%s",
+                horizon,
+                processed_dates,
+                len(missing_dates),
+                batch_start,
+                batch_end,
+                len(updates),
+                unavailable_rows,
+            )
+        return PathLabelBackfillReport(
+            horizon_days=horizon,
+            snapshot_dates_processed=processed_dates,
+            total_rows=total_rows,
+            updated_rows=updated_rows,
+            unavailable_rows=unavailable_rows,
+        )
+
+    def _load_price_history_for_path_labels(self, *, tickers: list[str], date_from: str, date_to: str) -> pd.DataFrame:
+        try:
+            return self.db_manager.load_price_history(tickers, date_from=date_from, date_to=date_to)
+        except TypeError:
+            return self.db_manager.load_price_history(tickers)
+
+    def _path_label_payload_for_existing_snapshot(
+        self,
+        *,
+        snapshot_row: dict,
+        horizon: int,
+        strategies: dict,
+        history_context: dict[str, dict[str, object]],
+    ) -> dict[str, object]:
+        snapshot_date = pd.Timestamp(snapshot_row["snapshot_date"]).strftime("%Y-%m-%d")
+        ticker = str(snapshot_row["ticker"]).strip().upper()
+        sector = "" if pd.isna(snapshot_row.get("sector")) else str(snapshot_row.get("sector", ""))
+        passed_slots = self._parsed_passed_slots(snapshot_row.get("passed_slots_json"))
+        path_return = None
+        path_alpha = None
+        exit_reason = None
+        holding_days = None
+        ticker_context = history_context.get(ticker)
+        index = None if ticker_context is None else ticker_context["index_by_date"].get(snapshot_date)
+        if index is not None:
+            path_outcome = self._path_outcome(
+                ticker_frame=ticker_context["frame"],
+                index=int(index),
+                horizon=horizon,
+                exit_rules=self._exit_rules_for_snapshot(
+                    strategies=strategies,
+                    passed_slots=passed_slots,
+                    sector=sector,
+                ),
+            )
+            path_return = path_outcome["return"]
+            exit_reason = path_outcome["exit_reason"]
+            holding_days = path_outcome["holding_days"]
+            benchmark_return = self._path_benchmark_return(
+                history_context=history_context,
+                snapshot_date=snapshot_date,
+                horizon=int(holding_days) if holding_days is not None else horizon,
+                benchmark_ticker=benchmark_etf_for_sector(sector),
+            )
+            if path_return is not None and benchmark_return is not None:
+                path_alpha = float(path_return) - float(benchmark_return)
+        return {
+            "snapshot_date": snapshot_date,
+            "ticker": ticker,
+            f"path_return_{horizon}d": path_return,
+            f"path_alpha_vs_sector_{horizon}d": path_alpha,
+            f"path_exit_reason_{horizon}d": exit_reason,
+            f"path_holding_days_{horizon}d": holding_days,
+        }
+
+    def _parsed_passed_slots(self, value: object) -> list[str]:
+        if value in (None, ""):
+            return []
+        if isinstance(value, list):
+            return [str(slot) for slot in value]
+        if not isinstance(value, str):
+            return []
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError:
+            return []
+        return [str(slot) for slot in parsed] if isinstance(parsed, list) else []
 
     def _dedupe_universe_rows(self, universe_rows: list[dict[str, object]]) -> list[dict[str, object]]:
         deduped: dict[str, dict[str, object]] = {}
