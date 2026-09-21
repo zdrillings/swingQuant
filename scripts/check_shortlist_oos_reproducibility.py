@@ -35,6 +35,8 @@ def _evaluate(
         universe = pd.to_numeric(day_frame[target_column], errors="coerce").dropna()
         if target.empty or universe.empty:
             continue
+        net_target = target - float(cost_fraction)
+        net_universe = universe - float(cost_fraction)
         score = pd.to_numeric(ordered["predicted_alpha"], errors="coerce")
         full_target = pd.to_numeric(ordered[target_column], errors="coerce")
         valid = score.notna() & full_target.notna()
@@ -47,9 +49,10 @@ def _evaluate(
             {
                 "pick_count": len(picks.index),
                 "gross_mean_target": float(target.mean()),
-                "mean_target": float(target.mean()) - float(cost_fraction),
-                "hit_rate": float((target - float(cost_fraction) > 0.0).mean()),
-                "universe_mean_target": float(universe.mean()),
+                "mean_target": float(net_target.mean()),
+                "hit_rate": float((net_target > 0.0).mean()),
+                "universe_mean_target": float(net_universe.mean()),
+                "universe_hit_rate": float((net_universe > 0.0).mean()),
                 "spearman": spearman,
             }
         )
@@ -65,6 +68,10 @@ def _evaluate(
         "gross_mean_target": float(summary["gross_mean_target"].mean()),
         "mean_target": float(summary["mean_target"].mean()),
         "hit_rate": float(summary["hit_rate"].mean()),
+        "universe_mean_target": float(summary["universe_mean_target"].mean()),
+        "universe_hit_rate": float(summary["universe_hit_rate"].mean()),
+        "mean_target_excess": float((summary["mean_target"] - summary["universe_mean_target"]).mean()),
+        "hit_rate_excess": float((summary["hit_rate"] - summary["universe_hit_rate"]).mean()),
         "beat_universe_rate": float((summary["mean_target"] > summary["universe_mean_target"]).mean()),
         "spearman": float(summary["spearman"].dropna().mean()) if summary["spearman"].notna().any() else float("nan"),
         "net_sharpe": sharpe,

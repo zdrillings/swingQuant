@@ -141,10 +141,10 @@ def load_live_shortlist_model_context(
     live_predictions["model_rank"] = range(1, len(live_predictions.index) + 1)
     live_predictions = _annotate_live_prediction_comparisons(live_predictions, top_n=int(top_n))
     recent_metrics = {
-        20: {"beat_rate": None, "mean_target": None, "hit_rate": None, "spearman": None},
-        60: {"beat_rate": None, "mean_target": None, "hit_rate": None, "spearman": None},
-        1: {"beat_rate": None, "mean_target": None, "hit_rate": None, "spearman": None},
-        3: {"beat_rate": None, "mean_target": None, "hit_rate": None, "spearman": None},
+        20: _empty_recent_metrics(),
+        60: _empty_recent_metrics(),
+        1: _empty_recent_metrics(),
+        3: _empty_recent_metrics(),
     }
     try:
         oos_predictions = db_manager.load_shortlist_model_predictions(
@@ -209,9 +209,11 @@ def load_live_shortlist_model_context(
 
 def _score_recent_oos_basket(frame: pd.DataFrame) -> dict[str, float | None]:
     if frame.empty:
-        return {"beat_rate": None, "mean_target": None, "hit_rate": None, "spearman": None}
+        return _empty_recent_metrics()
     daily_means = []
     daily_universe = []
+    daily_hit_rates = []
+    daily_universe_hit_rates = []
     daily_spearman = []
     pick_actuals = []
     for _snap_date, day_frame in frame.groupby("snapshot_date", sort=True):
@@ -234,18 +236,54 @@ def _score_recent_oos_basket(frame: pd.DataFrame) -> dict[str, float | None]:
         if not actual.empty and not universe.empty:
             daily_means.append(float(actual.mean()))
             daily_universe.append(float(universe.mean()))
+            daily_hit_rates.append(float((actual > 0.0).mean()))
+            daily_universe_hit_rates.append(float((universe > 0.0).mean()))
             pick_actuals.extend(float(value) for value in actual.tolist())
     beat_rate = None
     mean_target = None
+    universe_mean_target = None
+    mean_target_excess = None
     hit_rate = None
+    universe_hit_rate = None
+    hit_rate_excess = None
     if daily_means:
         mean_target = float(np.mean(daily_means))
+        universe_mean_target = float(np.mean(daily_universe))
+        mean_target_excess = float(np.mean([pick_mean - universe_mean for pick_mean, universe_mean in zip(daily_means, daily_universe)]))
         beats = sum(1 for picks_mean, universe_mean in zip(daily_means, daily_universe) if picks_mean > universe_mean)
         beat_rate = beats / len(daily_means)
+    if daily_hit_rates:
+        hit_rate = float(np.mean(daily_hit_rates))
+        universe_hit_rate = float(np.mean(daily_universe_hit_rates))
+        hit_rate_excess = float(
+            np.mean([pick_hit - universe_hit for pick_hit, universe_hit in zip(daily_hit_rates, daily_universe_hit_rates)])
+        )
     if pick_actuals:
-        hit_rate = sum(1 for value in pick_actuals if value > 0) / len(pick_actuals)
+        hit_rate = hit_rate if hit_rate is not None else sum(1 for value in pick_actuals if value > 0) / len(pick_actuals)
     spearman = float(np.mean(daily_spearman)) if daily_spearman else None
-    return {"beat_rate": beat_rate, "mean_target": mean_target, "hit_rate": hit_rate, "spearman": spearman}
+    return {
+        "beat_rate": beat_rate,
+        "mean_target": mean_target,
+        "universe_mean_target": universe_mean_target,
+        "mean_target_excess": mean_target_excess,
+        "hit_rate": hit_rate,
+        "universe_hit_rate": universe_hit_rate,
+        "hit_rate_excess": hit_rate_excess,
+        "spearman": spearman,
+    }
+
+
+def _empty_recent_metrics() -> dict[str, float | None]:
+    return {
+        "beat_rate": None,
+        "mean_target": None,
+        "universe_mean_target": None,
+        "mean_target_excess": None,
+        "hit_rate": None,
+        "universe_hit_rate": None,
+        "hit_rate_excess": None,
+        "spearman": None,
+    }
 
 
 def _runtime_promotion_gate() -> dict[str, float | bool]:
@@ -259,18 +297,18 @@ def _runtime_promotion_gate() -> dict[str, float | bool]:
     )
     return {
         "enabled": bool(payload.get("enabled", True)),
-        "min_recent_20d_hit_rate": float(payload.get("min_recent_20d_hit_rate", 0.50)),
+        "min_recent_20d_hit_rate_excess": float(payload.get("min_recent_20d_hit_rate_excess", 0.02)),
         "min_recent_20d_beat_universe_rate": float(payload.get("min_recent_20d_beat_universe_rate", 0.50)),
-        "min_recent_20d_mean_target": float(payload.get("min_recent_20d_mean_target", 0.0)),
-        "min_recent_60d_hit_rate": float(payload.get("min_recent_60d_hit_rate", 0.50)),
+        "min_recent_20d_mean_target_excess": float(payload.get("min_recent_20d_mean_target_excess", 0.0)),
+        "min_recent_60d_hit_rate_excess": float(payload.get("min_recent_60d_hit_rate_excess", 0.02)),
         "min_recent_60d_beat_universe_rate": float(payload.get("min_recent_60d_beat_universe_rate", 0.50)),
-        "min_recent_60d_mean_target": float(payload.get("min_recent_60d_mean_target", 0.0)),
-        "min_recent_1fold_hit_rate": float(payload.get("min_recent_1fold_hit_rate", 0.50)),
+        "min_recent_60d_mean_target_excess": float(payload.get("min_recent_60d_mean_target_excess", 0.0)),
+        "min_recent_1fold_hit_rate_excess": float(payload.get("min_recent_1fold_hit_rate_excess", 0.02)),
         "min_recent_1fold_beat_universe_rate": float(payload.get("min_recent_1fold_beat_universe_rate", 0.50)),
-        "min_recent_1fold_mean_target": float(payload.get("min_recent_1fold_mean_target", 0.0)),
-        "min_recent_3fold_hit_rate": float(payload.get("min_recent_3fold_hit_rate", 0.50)),
+        "min_recent_1fold_mean_target_excess": float(payload.get("min_recent_1fold_mean_target_excess", 0.0)),
+        "min_recent_3fold_hit_rate_excess": float(payload.get("min_recent_3fold_hit_rate_excess", 0.02)),
         "min_recent_3fold_beat_universe_rate": float(payload.get("min_recent_3fold_beat_universe_rate", 0.50)),
-        "min_recent_3fold_mean_target": float(payload.get("min_recent_3fold_mean_target", 0.0)),
+        "min_recent_3fold_mean_target_excess": float(payload.get("min_recent_3fold_mean_target_excess", 0.0)),
         "min_recent_20d_spearman": float(payload.get("min_recent_20d_spearman", 0.0)),
         "min_recent_60d_spearman": float(payload.get("min_recent_60d_spearman", 0.0)),
         "min_recent_1fold_spearman": float(payload.get("min_recent_1fold_spearman", 0.0)),
@@ -302,21 +340,21 @@ def _passes_runtime_promotion_gate(
         return True
     for window in _runtime_recent_windows(horizon_days=int(horizon_days)):
         metrics = recent_metrics.get(window, {})
-        if not _finite_at_least(metrics.get("hit_rate"), gate[f"min_recent_{window}d_hit_rate"]):
+        if not _finite_at_least(metrics.get("hit_rate_excess"), gate[f"min_recent_{window}d_hit_rate_excess"]):
             return False
         if not _finite_at_least(metrics.get("beat_rate"), gate[f"min_recent_{window}d_beat_universe_rate"]):
             return False
-        if not _finite_at_least(metrics.get("mean_target"), gate[f"min_recent_{window}d_mean_target"]):
+        if not _finite_at_least(metrics.get("mean_target_excess"), gate[f"min_recent_{window}d_mean_target_excess"]):
             return False
         if not _finite_at_least(metrics.get("spearman"), gate[f"min_recent_{window}d_spearman"]):
             return False
     for folds in _runtime_fold_windows(horizon_days=int(horizon_days)):
         metrics = recent_metrics.get(folds, {})
-        if not _finite_at_least(metrics.get("hit_rate"), gate[f"min_recent_{folds}fold_hit_rate"]):
+        if not _finite_at_least(metrics.get("hit_rate_excess"), gate[f"min_recent_{folds}fold_hit_rate_excess"]):
             return False
         if not _finite_at_least(metrics.get("beat_rate"), gate[f"min_recent_{folds}fold_beat_universe_rate"]):
             return False
-        if not _finite_at_least(metrics.get("mean_target"), gate[f"min_recent_{folds}fold_mean_target"]):
+        if not _finite_at_least(metrics.get("mean_target_excess"), gate[f"min_recent_{folds}fold_mean_target_excess"]):
             return False
         if not _finite_at_least(metrics.get("spearman"), gate[f"min_recent_{folds}fold_spearman"]):
             return False

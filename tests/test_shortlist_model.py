@@ -13,11 +13,36 @@ from src.research.shortlist_bakeoff_service import MODEL_FEATURE_COLUMNS
 from src.research.shortlist_model_service import ShortlistModelService
 from src.research.shortlist_universe import filter_eligible_universe
 from src.settings import AppPaths
-from src.utils.shortlist_runtime import load_live_shortlist_model_context
+from src.utils.shortlist_runtime import _passes_runtime_promotion_gate, load_live_shortlist_model_context
 from src.utils.performance_metrics import annualized_sharpe
 
 
 class ShortlistModelServiceTests(unittest.TestCase):
+    def _gate_row(
+        self,
+        model: str,
+        *,
+        hit_rate: float = 0.55,
+        universe_hit_rate: float = 0.50,
+        mean_target: float = 0.03,
+        universe_mean_target: float = 0.01,
+        beat_universe_rate: float = 0.60,
+        spearman: float = 0.02,
+        top_ticker_date_rate: float = 0.20,
+    ) -> dict:
+        return {
+            "model": model,
+            "hit_rate": hit_rate,
+            "universe_hit_rate": universe_hit_rate,
+            "hit_rate_excess": hit_rate - universe_hit_rate,
+            "mean_target": mean_target,
+            "universe_mean_target": universe_mean_target,
+            "mean_target_excess": mean_target - universe_mean_target,
+            "beat_universe_rate": beat_universe_rate,
+            "spearman": spearman,
+            "top_ticker_date_rate": top_ticker_date_rate,
+        }
+
     def test_oos_reproducibility_helpers_apply_costs_and_acceptance_windows(self) -> None:
         rows = []
         for date_index, snapshot_date in enumerate(pd.bdate_range("2026-01-02", periods=65)):
@@ -389,41 +414,31 @@ class ShortlistModelServiceTests(unittest.TestCase):
         service = ShortlistModelService(db_manager=FakeDB())
         summaries = pd.DataFrame(
             [
-                {
-                    "model": "xgboost_model_last_fold",
-                    "dates": 2,
-                    "avg_pick_count": 2.0,
-                    "gross_mean_target": 0.10,
-                    "mean_target": 0.09,
-                    "hit_rate": 0.75,
-                    "beat_universe_rate": 0.75,
-                    "spearman": 0.10,
-                    "positive_date_rate": 0.75,
-                    "ge_2pct_rate": 0.75,
-                    "ge_5pct_rate": 0.50,
-                    "top_ticker_date_rate": 0.25,
-                },
-                {
-                    "model": "xgboost_model_full_oos",
-                    "dates": 6,
-                    "avg_pick_count": 2.0,
-                    "gross_mean_target": 0.10,
-                    "mean_target": 0.09,
-                    "hit_rate": 0.75,
-                    "beat_universe_rate": 0.75,
-                    "spearman": 0.10,
-                    "positive_date_rate": 0.75,
-                    "ge_2pct_rate": 0.75,
-                    "ge_5pct_rate": 0.50,
-                    "top_ticker_date_rate": 0.25,
-                },
+                dict(
+                    self._gate_row("xgboost_model_last_fold", hit_rate=0.75, universe_hit_rate=0.50, mean_target=0.09, universe_mean_target=0.01, beat_universe_rate=0.75, spearman=0.10, top_ticker_date_rate=0.25),
+                    dates=2,
+                    avg_pick_count=2.0,
+                    gross_mean_target=0.10,
+                    positive_date_rate=0.75,
+                    ge_2pct_rate=0.75,
+                    ge_5pct_rate=0.50,
+                ),
+                dict(
+                    self._gate_row("xgboost_model_full_oos", hit_rate=0.75, universe_hit_rate=0.50, mean_target=0.09, universe_mean_target=0.01, beat_universe_rate=0.75, spearman=0.10, top_ticker_date_rate=0.25),
+                    dates=6,
+                    avg_pick_count=2.0,
+                    gross_mean_target=0.10,
+                    positive_date_rate=0.75,
+                    ge_2pct_rate=0.75,
+                    ge_5pct_rate=0.50,
+                ),
             ]
         )
         gate = {
             "enabled": True,
-            "min_recent_1fold_hit_rate": 0.50,
+            "min_recent_1fold_hit_rate_excess": 0.02,
             "min_recent_1fold_beat_universe_rate": 0.50,
-            "min_recent_1fold_mean_target": 0.0,
+            "min_recent_1fold_mean_target_excess": 0.0,
             "min_recent_1fold_spearman": 0.0,
             "max_recent_1fold_top_ticker_date_rate": 0.40,
         }
@@ -467,6 +482,166 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertEqual(before, after)
         self.assertIn("diagnostic only", "\n".join(lines))
         self.assertIn("xgboost_model_last_fold", "\n".join(lines))
+
+    def test_promotion_gate_uses_excess_hit_and_mean_floors(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        gate = {
+            "enabled": True,
+            "min_recent_1fold_hit_rate_excess": 0.02,
+            "min_recent_1fold_beat_universe_rate": 0.50,
+            "min_recent_1fold_mean_target_excess": 0.0,
+            "min_recent_1fold_spearman": 0.0,
+            "max_recent_1fold_top_ticker_date_rate": 0.40,
+        }
+
+        at_base = pd.DataFrame(
+            [
+                self._gate_row("ridge_model_last_fold", hit_rate=0.43, universe_hit_rate=0.43, mean_target=0.01, universe_mean_target=0.01),
+                self._gate_row("ridge_model_full_oos"),
+            ]
+        )
+        self.assertFalse(
+            service._model_passes_promotion_gate(
+                model_name="ridge_model",
+                acceptance_summaries=at_base,
+                promotion_gate=gate,
+                required_recent_windows=(),
+                required_fold_windows=(1,),
+            )
+        )
+
+        boundary = pd.DataFrame(
+            [
+                self._gate_row("ridge_model_last_fold", hit_rate=0.45, universe_hit_rate=0.43, mean_target=0.01, universe_mean_target=0.01),
+                self._gate_row("ridge_model_full_oos"),
+            ]
+        )
+        self.assertTrue(
+            service._model_passes_promotion_gate(
+                model_name="ridge_model",
+                acceptance_summaries=boundary,
+                promotion_gate=gate,
+                required_recent_windows=(),
+                required_fold_windows=(1,),
+            )
+        )
+
+        negative_mean_excess = pd.DataFrame(
+            [
+                self._gate_row("ridge_model_last_fold", hit_rate=0.46, universe_hit_rate=0.43, mean_target=0.00, universe_mean_target=0.01),
+                self._gate_row("ridge_model_full_oos"),
+            ]
+        )
+        self.assertFalse(
+            service._model_passes_promotion_gate(
+                model_name="ridge_model",
+                acceptance_summaries=negative_mean_excess,
+                promotion_gate=gate,
+                required_recent_windows=(),
+                required_fold_windows=(1,),
+            )
+        )
+
+    def test_promotion_gate_fails_closed_without_universe_excess_columns(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        summaries = pd.DataFrame(
+            [
+                {"model": "ridge_model_last_fold", "hit_rate": 0.90, "mean_target": 0.20, "beat_universe_rate": 1.0, "spearman": 0.50},
+                {"model": "ridge_model_full_oos", "hit_rate": 0.90, "mean_target": 0.20, "beat_universe_rate": 1.0, "spearman": 0.50},
+            ]
+        )
+        gate = {
+            "enabled": True,
+            "min_recent_1fold_hit_rate_excess": 0.02,
+            "min_recent_1fold_beat_universe_rate": 0.50,
+            "min_recent_1fold_mean_target_excess": 0.0,
+            "min_recent_1fold_spearman": 0.0,
+            "max_recent_1fold_top_ticker_date_rate": 0.40,
+        }
+
+        self.assertFalse(
+            service._model_passes_promotion_gate(
+                model_name="ridge_model",
+                acceptance_summaries=summaries,
+                promotion_gate=gate,
+                required_recent_windows=(),
+                required_fold_windows=(1,),
+            )
+        )
+
+    def test_runtime_gate_mirrors_excess_promotion_gate(self) -> None:
+        metrics = {
+            60: {
+                "hit_rate": 0.45,
+                "universe_hit_rate": 0.43,
+                "hit_rate_excess": 0.02,
+                "mean_target": 0.01,
+                "universe_mean_target": 0.01,
+                "mean_target_excess": 0.0,
+                "beat_rate": 0.50,
+                "spearman": 0.0,
+            },
+            3: {
+                "hit_rate": 0.45,
+                "universe_hit_rate": 0.43,
+                "hit_rate_excess": 0.02,
+                "mean_target": 0.01,
+                "universe_mean_target": 0.01,
+                "mean_target_excess": 0.0,
+                "beat_rate": 0.50,
+                "spearman": 0.0,
+            }
+        }
+
+        self.assertTrue(_passes_runtime_promotion_gate(recent_metrics=metrics, horizon_days=60))
+        failing = {60: dict(metrics[60]), 3: dict(metrics[3], hit_rate_excess=0.0)}
+        self.assertFalse(_passes_runtime_promotion_gate(recent_metrics=failing, horizon_days=60))
+        missing = {
+            60: dict(metrics[60]),
+            3: {"hit_rate": 0.90, "mean_target": 0.20, "beat_rate": 1.0, "spearman": 0.50},
+        }
+        self.assertFalse(_passes_runtime_promotion_gate(recent_metrics=missing, horizon_days=60))
+
+    def test_report_renders_excess_gate_metrics(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        summaries = pd.DataFrame(
+            [
+                dict(
+                    self._gate_row("ridge_model_last_fold", hit_rate=0.45, universe_hit_rate=0.43, mean_target=0.01, universe_mean_target=0.01),
+                    dates=20,
+                    avg_pick_count=2.0,
+                    gross_mean_target=0.011,
+                    round_trip_cost=0.001,
+                    positive_date_rate=0.50,
+                    ge_2pct_rate=0.25,
+                    ge_5pct_rate=0.10,
+                    top_ticker="AAA",
+                    top_ticker_pick_share=0.10,
+                    net_sharpe=0.20,
+                    newey_west_t=0.30,
+                    years_for_t_1_96=10.0,
+                )
+            ]
+        )
+        gate = service._load_promotion_gate()
+
+        text = "\n".join(
+            service._render_promotion_gate(
+                promotion_gate=gate,
+                summaries=summaries,
+                required_recent_windows=(),
+                required_fold_windows=(1,),
+            )
+        )
+
+        self.assertIn("gate_note: floors are excess-over-universe", text)
+        self.assertIn("min_recent_1fold_hit_rate_excess", text)
+        self.assertIn("- hit_rate: 0.450000", text)
+        self.assertIn("- universe_hit_rate: 0.430000", text)
+        self.assertIn("- hit_rate_excess: 0.020000", text)
+        self.assertIn("- net_mean_target: 0.010000", text)
+        self.assertIn("- universe_mean_target: 0.010000", text)
+        self.assertIn("- mean_target_excess: 0.000000", text)
 
     def test_reversal_rules_rank_pullbacks_on_reversal_dates(self) -> None:
         service = ShortlistModelService(db_manager=object())
@@ -817,18 +992,18 @@ class ShortlistModelServiceTests(unittest.TestCase):
                         "min_feature_ic": 0.0,
                         "promotion_gate": {
                             "enabled": True,
-                            "min_recent_20d_hit_rate": 0.0,
+                            "min_recent_20d_hit_rate_excess": -1.0,
                             "min_recent_20d_beat_universe_rate": 0.0,
-                            "min_recent_20d_mean_target": -1.0,
-                            "min_recent_60d_hit_rate": 0.0,
+                            "min_recent_20d_mean_target_excess": -1.0,
+                            "min_recent_60d_hit_rate_excess": -1.0,
                             "min_recent_60d_beat_universe_rate": 0.0,
-                            "min_recent_60d_mean_target": -1.0,
-                            "min_recent_1fold_hit_rate": 0.0,
+                            "min_recent_60d_mean_target_excess": -1.0,
+                            "min_recent_1fold_hit_rate_excess": -1.0,
                             "min_recent_1fold_beat_universe_rate": 0.0,
-                            "min_recent_1fold_mean_target": -1.0,
-                            "min_recent_3fold_hit_rate": 0.0,
+                            "min_recent_1fold_mean_target_excess": -1.0,
+                            "min_recent_3fold_hit_rate_excess": -1.0,
                             "min_recent_3fold_beat_universe_rate": 0.0,
-                            "min_recent_3fold_mean_target": -1.0,
+                            "min_recent_3fold_mean_target_excess": -1.0,
                             "min_recent_20d_spearman": -1.0,
                             "min_recent_60d_spearman": -1.0,
                             "min_recent_1fold_spearman": -1.0,
@@ -1679,12 +1854,12 @@ class ShortlistModelServiceTests(unittest.TestCase):
                         "min_feature_ic": 0.0,
                         "promotion_gate": {
                             "enabled": True,
-                            "min_recent_20d_hit_rate": 1.01,
+                            "min_recent_20d_hit_rate_excess": 1.01,
                             "min_recent_20d_beat_universe_rate": 1.01,
-                            "min_recent_20d_mean_target": 1.01,
-                            "min_recent_60d_hit_rate": 1.01,
+                            "min_recent_20d_mean_target_excess": 1.01,
+                            "min_recent_60d_hit_rate_excess": 1.01,
                             "min_recent_60d_beat_universe_rate": 1.01,
-                            "min_recent_60d_mean_target": 1.01,
+                            "min_recent_60d_mean_target_excess": 1.01,
                             "min_recent_20d_spearman": 1.01,
                             "min_recent_60d_spearman": 1.01,
                             "min_recent_1fold_spearman": 1.01,
@@ -1782,12 +1957,12 @@ class ShortlistModelServiceTests(unittest.TestCase):
                         "min_feature_ic": 0.0,
                         "promotion_gate": {
                             "enabled": True,
-                            "min_recent_20d_hit_rate": 1.01,
+                            "min_recent_20d_hit_rate_excess": 1.01,
                             "min_recent_20d_beat_universe_rate": 1.01,
-                            "min_recent_20d_mean_target": 1.01,
-                            "min_recent_60d_hit_rate": 1.01,
+                            "min_recent_20d_mean_target_excess": 1.01,
+                            "min_recent_60d_hit_rate_excess": 1.01,
                             "min_recent_60d_beat_universe_rate": 1.01,
-                            "min_recent_60d_mean_target": 1.01,
+                            "min_recent_60d_mean_target_excess": 1.01,
                             "min_recent_20d_spearman": 1.01,
                             "min_recent_60d_spearman": 1.01,
                             "min_recent_1fold_spearman": 1.01,
@@ -1928,18 +2103,18 @@ class ShortlistModelServiceTests(unittest.TestCase):
         )
         promotion_gate = {
             "enabled": True,
-            "min_recent_20d_hit_rate": 0.50,
+            "min_recent_20d_hit_rate_excess": 0.50,
             "min_recent_20d_beat_universe_rate": 0.50,
-            "min_recent_20d_mean_target": 0.0,
-            "min_recent_60d_hit_rate": 0.50,
+            "min_recent_20d_mean_target_excess": 0.0,
+            "min_recent_60d_hit_rate_excess": 0.50,
             "min_recent_60d_beat_universe_rate": 0.50,
-            "min_recent_60d_mean_target": 0.0,
-            "min_recent_1fold_hit_rate": 0.50,
+            "min_recent_60d_mean_target_excess": 0.0,
+            "min_recent_1fold_hit_rate_excess": 0.50,
             "min_recent_1fold_beat_universe_rate": 0.50,
-            "min_recent_1fold_mean_target": 0.0,
-            "min_recent_3fold_hit_rate": 0.50,
+            "min_recent_1fold_mean_target_excess": 0.0,
+            "min_recent_3fold_hit_rate_excess": 0.50,
             "min_recent_3fold_beat_universe_rate": 0.50,
-            "min_recent_3fold_mean_target": 0.0,
+            "min_recent_3fold_mean_target_excess": 0.0,
             "min_recent_20d_spearman": 0.0,
             "min_recent_60d_spearman": 0.0,
             "min_recent_1fold_spearman": 0.0,
@@ -1969,18 +2144,18 @@ class ShortlistModelServiceTests(unittest.TestCase):
         )
         promotion_gate = {
             "enabled": True,
-            "min_recent_20d_hit_rate": 0.50,
+            "min_recent_20d_hit_rate_excess": 0.50,
             "min_recent_20d_beat_universe_rate": 0.50,
-            "min_recent_20d_mean_target": 0.0,
-            "min_recent_60d_hit_rate": 0.50,
+            "min_recent_20d_mean_target_excess": 0.0,
+            "min_recent_60d_hit_rate_excess": 0.50,
             "min_recent_60d_beat_universe_rate": 0.50,
-            "min_recent_60d_mean_target": 0.0,
-            "min_recent_1fold_hit_rate": 0.50,
+            "min_recent_60d_mean_target_excess": 0.0,
+            "min_recent_1fold_hit_rate_excess": 0.50,
             "min_recent_1fold_beat_universe_rate": 0.50,
-            "min_recent_1fold_mean_target": 0.0,
-            "min_recent_3fold_hit_rate": 0.50,
+            "min_recent_1fold_mean_target_excess": 0.0,
+            "min_recent_3fold_hit_rate_excess": 0.50,
             "min_recent_3fold_beat_universe_rate": 0.50,
-            "min_recent_3fold_mean_target": 0.0,
+            "min_recent_3fold_mean_target_excess": 0.0,
             "min_recent_20d_spearman": 0.0,
             "min_recent_60d_spearman": 0.0,
             "min_recent_1fold_spearman": 0.0,
@@ -2031,9 +2206,9 @@ class ShortlistModelServiceTests(unittest.TestCase):
         )
         acceptance_summaries = pd.DataFrame(
             [
-                {"model": "xgboost_model_last_fold", "hit_rate": 0.60, "beat_universe_rate": 0.60, "mean_target": 0.01, "spearman": 0.01},
-                {"model": "xgboost_model_trailing_3folds", "hit_rate": 0.60, "beat_universe_rate": 0.60, "mean_target": 0.08, "spearman": 0.02},
-                {"model": "xgboost_model_full_oos", "hit_rate": 0.60, "beat_universe_rate": 0.60, "mean_target": 0.08, "spearman": 0.02},
+                self._gate_row("xgboost_model_last_fold", hit_rate=0.60, universe_hit_rate=0.57, beat_universe_rate=0.60, mean_target=0.01, universe_mean_target=0.0, spearman=0.01),
+                self._gate_row("xgboost_model_trailing_3folds", hit_rate=0.60, universe_hit_rate=0.57, beat_universe_rate=0.60, mean_target=0.08, universe_mean_target=0.0, spearman=0.02),
+                self._gate_row("xgboost_model_full_oos", hit_rate=0.60, universe_hit_rate=0.57, beat_universe_rate=0.60, mean_target=0.08, universe_mean_target=0.0, spearman=0.02),
             ]
         )
         promotion_gate = service._load_promotion_gate()

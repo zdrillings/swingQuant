@@ -372,18 +372,18 @@ scan_policy:
     production_feature_profile: full
     promotion_gate:
       enabled: true
-      min_recent_20d_hit_rate: 0.50
+      min_recent_20d_hit_rate_excess: 0.02
       min_recent_20d_beat_universe_rate: 0.50
-      min_recent_20d_mean_target: 0.0
-      min_recent_60d_hit_rate: 0.50
+      min_recent_20d_mean_target_excess: 0.0
+      min_recent_60d_hit_rate_excess: 0.02
       min_recent_60d_beat_universe_rate: 0.50
-      min_recent_60d_mean_target: 0.0
-      min_recent_1fold_hit_rate: 0.50
+      min_recent_60d_mean_target_excess: 0.0
+      min_recent_1fold_hit_rate_excess: 0.02
       min_recent_1fold_beat_universe_rate: 0.50
-      min_recent_1fold_mean_target: 0.0
-      min_recent_3fold_hit_rate: 0.50
+      min_recent_1fold_mean_target_excess: 0.0
+      min_recent_3fold_hit_rate_excess: 0.02
       min_recent_3fold_beat_universe_rate: 0.50
-      min_recent_3fold_mean_target: 0.0
+      min_recent_3fold_mean_target_excess: 0.0
       min_recent_20d_spearman: 0.0
       min_recent_60d_spearman: 0.0
       min_recent_1fold_spearman: 0.0

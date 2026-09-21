@@ -2432,6 +2432,8 @@ class ShortlistModelService:
             universe_target = pd.to_numeric(day_frame[target_column], errors="coerce").clip(lower=-1.0, upper=1.0).dropna()
             if target.empty or universe_target.empty:
                 continue
+            net_target = target - cost_fraction
+            net_universe_target = universe_target - cost_fraction
             full_target = pd.to_numeric(ordered[target_column], errors="coerce")
             full_score = pd.to_numeric(ordered["predicted_alpha"], errors="coerce")
             spearman = float("nan")
@@ -2445,9 +2447,10 @@ class ShortlistModelService:
                     "date": pd.Timestamp(snapshot_date),
                     "pick_count": len(picks.index),
                     "gross_mean_target": float(target.mean()),
-                    "mean_target": float(target.mean()) - cost_fraction,
-                    "hit_rate": float((target - cost_fraction > 0.0).mean()),
-                    "universe_mean_target": float(universe_target.mean()) - cost_fraction,
+                    "mean_target": float(net_target.mean()),
+                    "hit_rate": float((net_target > 0.0).mean()),
+                    "universe_mean_target": float(net_universe_target.mean()),
+                    "universe_hit_rate": float((net_universe_target > 0.0).mean()),
                     "spearman": spearman,
                 }
             )
@@ -2471,6 +2474,10 @@ class ShortlistModelService:
             "gross_mean_target": float(gross_targets.mean()) if not gross_targets.empty else float("nan"),
             "mean_target": float(frame["mean_target"].mean()),
             "hit_rate": float(frame["hit_rate"].mean()),
+            "universe_mean_target": float(frame["universe_mean_target"].mean()),
+            "universe_hit_rate": float(frame["universe_hit_rate"].mean()),
+            "mean_target_excess": float((frame["mean_target"] - frame["universe_mean_target"]).mean()),
+            "hit_rate_excess": float((frame["hit_rate"] - frame["universe_hit_rate"]).mean()),
             "beat_universe_rate": float((frame["mean_target"] > frame["universe_mean_target"]).mean()),
             "spearman": float(frame["spearman"].dropna().mean()) if frame["spearman"].notna().any() else float("nan"),
             "positive_date_rate": float((frame["mean_target"] > 0.0).mean()),
@@ -2783,18 +2790,18 @@ class ShortlistModelService:
         )
         return {
             "enabled": bool(payload.get("enabled", True)),
-            "min_recent_20d_hit_rate": float(payload.get("min_recent_20d_hit_rate", 0.50)),
+            "min_recent_20d_hit_rate_excess": float(payload.get("min_recent_20d_hit_rate_excess", 0.02)),
             "min_recent_20d_beat_universe_rate": float(payload.get("min_recent_20d_beat_universe_rate", 0.50)),
-            "min_recent_20d_mean_target": float(payload.get("min_recent_20d_mean_target", 0.0)),
-            "min_recent_60d_hit_rate": float(payload.get("min_recent_60d_hit_rate", 0.50)),
+            "min_recent_20d_mean_target_excess": float(payload.get("min_recent_20d_mean_target_excess", 0.0)),
+            "min_recent_60d_hit_rate_excess": float(payload.get("min_recent_60d_hit_rate_excess", 0.02)),
             "min_recent_60d_beat_universe_rate": float(payload.get("min_recent_60d_beat_universe_rate", 0.50)),
-            "min_recent_60d_mean_target": float(payload.get("min_recent_60d_mean_target", 0.0)),
-            "min_recent_1fold_hit_rate": float(payload.get("min_recent_1fold_hit_rate", 0.50)),
+            "min_recent_60d_mean_target_excess": float(payload.get("min_recent_60d_mean_target_excess", 0.0)),
+            "min_recent_1fold_hit_rate_excess": float(payload.get("min_recent_1fold_hit_rate_excess", 0.02)),
             "min_recent_1fold_beat_universe_rate": float(payload.get("min_recent_1fold_beat_universe_rate", 0.50)),
-            "min_recent_1fold_mean_target": float(payload.get("min_recent_1fold_mean_target", 0.0)),
-            "min_recent_3fold_hit_rate": float(payload.get("min_recent_3fold_hit_rate", 0.50)),
+            "min_recent_1fold_mean_target_excess": float(payload.get("min_recent_1fold_mean_target_excess", 0.0)),
+            "min_recent_3fold_hit_rate_excess": float(payload.get("min_recent_3fold_hit_rate_excess", 0.02)),
             "min_recent_3fold_beat_universe_rate": float(payload.get("min_recent_3fold_beat_universe_rate", 0.50)),
-            "min_recent_3fold_mean_target": float(payload.get("min_recent_3fold_mean_target", 0.0)),
+            "min_recent_3fold_mean_target_excess": float(payload.get("min_recent_3fold_mean_target_excess", 0.0)),
             "min_recent_20d_spearman": float(payload.get("min_recent_20d_spearman", 0.0)),
             "min_recent_60d_spearman": float(payload.get("min_recent_60d_spearman", 0.0)),
             "min_recent_1fold_spearman": float(payload.get("min_recent_1fold_spearman", 0.0)),
@@ -2872,14 +2879,14 @@ class ShortlistModelService:
             if row.empty:
                 return False
             summary = row.iloc[0]
-            if not self._finite_at_least(summary.get("hit_rate"), promotion_gate.get(f"min_recent_{window}d_hit_rate", 0.50)):
+            if not self._finite_at_least(summary.get("hit_rate_excess"), promotion_gate.get(f"min_recent_{window}d_hit_rate_excess", 0.02)):
                 return False
             if not self._finite_at_least(
                 summary.get("beat_universe_rate"),
                 promotion_gate.get(f"min_recent_{window}d_beat_universe_rate", 0.50),
             ):
                 return False
-            if not self._finite_at_least(summary.get("mean_target"), promotion_gate.get(f"min_recent_{window}d_mean_target", 0.0)):
+            if not self._finite_at_least(summary.get("mean_target_excess"), promotion_gate.get(f"min_recent_{window}d_mean_target_excess", 0.0)):
                 return False
             if not self._finite_at_least(summary.get("spearman"), promotion_gate.get(f"min_recent_{window}d_spearman", 0.0)):
                 return False
@@ -2895,14 +2902,14 @@ class ShortlistModelService:
             if row.empty:
                 return False
             summary = row.iloc[0]
-            if not self._finite_at_least(summary.get("hit_rate"), promotion_gate.get(f"min_recent_{folds}fold_hit_rate", 0.50)):
+            if not self._finite_at_least(summary.get("hit_rate_excess"), promotion_gate.get(f"min_recent_{folds}fold_hit_rate_excess", 0.02)):
                 return False
             if not self._finite_at_least(
                 summary.get("beat_universe_rate"),
                 promotion_gate.get(f"min_recent_{folds}fold_beat_universe_rate", 0.50),
             ):
                 return False
-            if not self._finite_at_least(summary.get("mean_target"), promotion_gate.get(f"min_recent_{folds}fold_mean_target", 0.0)):
+            if not self._finite_at_least(summary.get("mean_target_excess"), promotion_gate.get(f"min_recent_{folds}fold_mean_target_excess", 0.0)):
                 return False
             if not self._finite_at_least(summary.get("spearman"), promotion_gate.get(f"min_recent_{folds}fold_spearman", 0.0)):
                 return False
@@ -2950,15 +2957,16 @@ class ShortlistModelService:
         lines.extend(
             [
                 "- enabled: true",
+                "- gate_note: floors are excess-over-universe by design; calibrated 2026-09-21 to the original fixed-20d stringency intent.",
                 f"- active_recent_windows: {recent_label}",
                 f"- active_fold_windows: {fold_label}",
                 "- active_full_window: full_oos",
-                f"- min_recent_1fold_hit_rate: {float(promotion_gate['min_recent_1fold_hit_rate']):.2f}",
+                f"- min_recent_1fold_hit_rate_excess: {float(promotion_gate['min_recent_1fold_hit_rate_excess']):.2f}",
                 f"- min_recent_1fold_beat_universe_rate: {float(promotion_gate['min_recent_1fold_beat_universe_rate']):.2f}",
-                f"- min_recent_1fold_mean_target: {float(promotion_gate['min_recent_1fold_mean_target']):.4f}",
-                f"- min_recent_3fold_hit_rate: {float(promotion_gate['min_recent_3fold_hit_rate']):.2f}",
+                f"- min_recent_1fold_mean_target_excess: {float(promotion_gate['min_recent_1fold_mean_target_excess']):.4f}",
+                f"- min_recent_3fold_hit_rate_excess: {float(promotion_gate['min_recent_3fold_hit_rate_excess']):.2f}",
                 f"- min_recent_3fold_beat_universe_rate: {float(promotion_gate['min_recent_3fold_beat_universe_rate']):.2f}",
-                f"- min_recent_3fold_mean_target: {float(promotion_gate['min_recent_3fold_mean_target']):.4f}",
+                f"- min_recent_3fold_mean_target_excess: {float(promotion_gate['min_recent_3fold_mean_target_excess']):.4f}",
                 f"- min_recent_1fold_spearman: {float(promotion_gate['min_recent_1fold_spearman']):.4f}",
                 f"- min_recent_3fold_spearman: {float(promotion_gate['min_recent_3fold_spearman']):.4f}",
                 f"- max_recent_1fold_top_ticker_date_rate: {float(promotion_gate.get('max_recent_1fold_top_ticker_date_rate', 0.40)):.2f}",
@@ -3125,6 +3133,10 @@ class ShortlistModelService:
             "gross_mean_target": float("nan"),
             "mean_target": float("nan"),
             "hit_rate": float("nan"),
+            "universe_mean_target": float("nan"),
+            "universe_hit_rate": float("nan"),
+            "mean_target_excess": float("nan"),
+            "hit_rate_excess": float("nan"),
             "beat_universe_rate": float("nan"),
             "spearman": float("nan"),
             "positive_date_rate": float("nan"),
@@ -3316,8 +3328,12 @@ class ShortlistModelService:
             lines.append(f"- avg_pick_count: {self._fmt(row.avg_pick_count)}")
             lines.append(f"- gross_mean_target: {self._fmt(getattr(row, 'gross_mean_target', float('nan')))}")
             lines.append(f"- net_mean_target: {self._fmt(row.mean_target)}")
+            lines.append(f"- universe_mean_target: {self._fmt(getattr(row, 'universe_mean_target', float('nan')))}")
+            lines.append(f"- mean_target_excess: {self._fmt(getattr(row, 'mean_target_excess', float('nan')))}")
             lines.append(f"- round_trip_cost: {self._fmt(getattr(row, 'round_trip_cost', float('nan')))}")
             lines.append(f"- hit_rate: {self._fmt(row.hit_rate)}")
+            lines.append(f"- universe_hit_rate: {self._fmt(getattr(row, 'universe_hit_rate', float('nan')))}")
+            lines.append(f"- hit_rate_excess: {self._fmt(getattr(row, 'hit_rate_excess', float('nan')))}")
             lines.append(f"- beat_universe_rate: {self._fmt(row.beat_universe_rate)}")
             lines.append(f"- spearman: {self._fmt(getattr(row, 'spearman', float('nan')))}")
             lines.append(f"- net_sharpe_ann: {self._fmt(getattr(row, 'net_sharpe', float('nan')))}")
