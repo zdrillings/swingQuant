@@ -3503,6 +3503,22 @@ class MonitorServiceTests(unittest.TestCase):
         self.assertEqual(result["action_tier"], "sell")
         self.assertIn("relative alpha", result["action_basis"])
 
+    def test_monitor_policy_note_flags_floor_stop_and_regime_time_limit_work(self) -> None:
+        service = MonitorService(db_manager=None, email_sender=lambda subject, html_body, settings: None)
+
+        note = service._summarize_exit_policy_note(
+            hard_stop_pct=0.05,
+            hard_stop_triggered=True,
+            time_limit_days=20,
+            time_limit_triggered=True,
+            atr_pct_14=0.065,
+        )
+
+        self.assertIn("5% grid floor", note)
+        self.assertIn("ATR 6.5% exceeds stop width", note)
+        self.assertIn("triggered mechanically", note)
+        self.assertIn("predates regime layer", note)
+
     def test_monitor_counts_actual_trading_sessions_for_time_limit(self) -> None:
         service = MonitorService(db_manager=None, email_sender=lambda subject, html_body, settings: None)
         price_history = pd.DataFrame(
@@ -4062,7 +4078,7 @@ class MonitorServiceTests(unittest.TestCase):
             strategy_id=1,
             promoted_at="2026-05-05T17:00:00",
             indicators={"rsi_14_max": 35.0},
-            exit_rules=ExitRules(0.05, 0.12, 20),
+            exit_rules=ExitRules(0.05, 0.12, 20, hard_stop_pct=0.05),
         )
         analysis_frame = pd.DataFrame(
             [
@@ -4102,8 +4118,13 @@ class MonitorServiceTests(unittest.TestCase):
         self.assertIn("Alpha Since Entry", email_calls[0].html_body)
         self.assertIn("Fresh Setup", email_calls[0].html_body)
         self.assertIn("How to read this:", email_calls[0].html_body)
+        self.assertIn("Action Summary", email_calls[0].html_body)
+        self.assertIn("Policy Notes", email_calls[0].html_body)
+        self.assertIn("5% hard stops are the uniform grid floor", email_calls[0].html_body)
+        self.assertIn("regime-conditional time limits are a future parameterization pass", email_calls[0].html_body)
         self.assertIn("Main Risk", email_calls[0].html_body)
         self.assertIn("Price Context", email_calls[0].html_body)
+        self.assertIn("Policy Note", email_calls[0].html_body)
         self.assertIn("<td>sell</td>", email_calls[0].html_body)
         self.assertIn("Fresh Setup Note", email_calls[0].html_body)
 

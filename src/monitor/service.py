@@ -206,6 +206,11 @@ class MonitorService:
                 entry_price=float(trade["entry_price"]),
                 exit_rules=strategy.exit_rules,
             )
+            hard_stop_pct = (
+                float(strategy.exit_rules.hard_stop_pct)
+                if strategy.exit_rules.hard_stop_pct is not None
+                else None
+            )
             exit_flags = {
                 "hard_stop": bool(
                     current_price is not None
@@ -295,6 +300,17 @@ class MonitorService:
                     and max_price_seen >= target_price
                 ),
             )
+            exit_policy_note = self._summarize_exit_policy_note(
+                hard_stop_pct=hard_stop_pct,
+                hard_stop_triggered=exit_flags["hard_stop"],
+                time_limit_days=int(strategy.exit_rules.time_limit_days),
+                time_limit_triggered=exit_flags["time_limit"],
+                atr_pct_14=(
+                    float(latest_ticker_row["atr_pct_14"])
+                    if pd.notna(latest_ticker_row.get("atr_pct_14"))
+                    else None
+                ),
+            )
             holding_rows.append(
                 {
                     "strategy_source": resolution.source,
@@ -313,6 +329,8 @@ class MonitorService:
                     "action_basis": action_context["action_basis"],
                     "raw_exit": action_context["raw_exit"],
                     "chart_link": f"https://www.tradingview.com/chart/?symbol={trade['ticker']}",
+                    "hard_stop_price": hard_stop_price,
+                    "hard_stop_pct": hard_stop_pct,
                     "stop_price": stop_price,
                     "target_price": target_price,
                     "distance_to_stop_pct": (
@@ -343,6 +361,7 @@ class MonitorService:
                     "setup_now": setup_now,
                     "main_risk": main_risk,
                     "price_context": price_context,
+                    "exit_policy_note": exit_policy_note,
                 }
             )
 
@@ -663,6 +682,7 @@ class MonitorService:
         sell_table = self._build_digest_table(triggered_rows) if triggered_rows else "<p>No current sell signals.</p>"
         review_table = self._build_digest_table(review_rows) if review_rows else "<p>No review-only signals.</p>"
         holdings_table = self._build_digest_table(holding_rows)
+        action_summary = self._build_action_summary(holding_rows)
         return (
             "<html><body>"
             "<h1>Hourly Monitor Digest</h1>"
@@ -672,6 +692,13 @@ class MonitorService:
             "<em>Trade Action</em> and <em>Exit Reasons</em> apply to your existing position. "
             "<em>Fresh Setup</em> answers whether we would newly buy the stock today. "
             "Trailing stops are classified with capital-loss, benchmark-relative, setup-validity, and portfolio-shock context.</p>"
+            "<h2>Action Summary</h2>"
+            f"{action_summary}"
+            "<h2>Policy Notes</h2>"
+            "<ul>"
+            "<li>Hard stops are enforced mechanically, but 5% hard stops are the uniform grid floor and still need per-slot swept evidence.</li>"
+            "<li>Time limits are enforced mechanically, but the 10-20 session sweep predates the regime layer; regime-conditional time limits are a future parameterization pass.</li>"
+            "</ul>"
             "<h2>Sell Now</h2>"
             f"{sell_table}"
             "<h2>Review Before Selling</h2>"
@@ -690,8 +717,10 @@ class MonitorService:
                 if row[name]
             ]
             exit_context = []
+            if row.get("hard_stop_price") is not None:
+                exit_context.append(f"hard stop {row['hard_stop_price']:.2f}")
             if row["stop_price"] is not None:
-                exit_context.append(f"stop {row['stop_price']:.2f}")
+                exit_context.append(f"trailing stop {row['stop_price']:.2f}")
             if row["target_price"] is not None:
                 exit_context.append(f"target {row['target_price']:.2f}")
             if row["distance_to_stop_pct"] is not None:
@@ -724,14 +753,41 @@ class MonitorService:
                 f"<td>{row['main_risk']}</td>"
                 f"<td>{row['price_context']}</td>"
                 f"<td>{row['buy_setup_note']}</td>"
+                f"<td>{row.get('exit_policy_note', '')}</td>"
                 f"<td>{', '.join(exit_context)}</td>"
                 f"<td><a href=\"{row['chart_link']}\">chart</a></td>"
                 "</tr>"
             )
         return (
             "<table border='1' cellpadding='6' cellspacing='0'>"
-            "<tr><th>Strategy Slot</th><th>Resolution</th><th>Ticker</th><th>Sector</th><th>Entry</th><th>Current</th><th>Price Source</th><th>P&L %</th><th>Trade Action</th><th>Tier</th><th>Action Basis</th><th>Benchmark</th><th>Alpha Since Entry</th><th>Exit Reasons</th><th>Fresh Setup</th><th>Main Risk</th><th>Price Context</th><th>Fresh Setup Note</th><th>Exit Context</th><th>Chart</th></tr>"
+            "<tr><th>Strategy Slot</th><th>Resolution</th><th>Ticker</th><th>Sector</th><th>Entry</th><th>Current</th><th>Price Source</th><th>P&L %</th><th>Trade Action</th><th>Tier</th><th>Action Basis</th><th>Benchmark</th><th>Alpha Since Entry</th><th>Exit Reasons</th><th>Fresh Setup</th><th>Main Risk</th><th>Price Context</th><th>Fresh Setup Note</th><th>Policy Note</th><th>Exit Context</th><th>Chart</th></tr>"
             f"{''.join(html_rows)}"
+            "</table>"
+        )
+
+    def _build_action_summary(self, rows: list[dict]) -> str:
+        if not rows:
+            return "<p>No open holdings.</p>"
+        summary_rows = []
+        for row in rows:
+            if row["recommended_action"] == "hold" and not row.get("raw_exit"):
+                continue
+            summary_rows.append(
+                "<tr>"
+                f"<td>{row['recommended_action']}</td>"
+                f"<td>{row['ticker']}</td>"
+                f"<td>{row.get('action_tier', '')}</td>"
+                f"<td>{row.get('action_basis', '')}</td>"
+                f"<td>{row['main_risk']}</td>"
+                f"<td>{row.get('exit_policy_note', '')}</td>"
+                "</tr>"
+            )
+        if not summary_rows:
+            return "<p>No actionable exit signals. Holdings are included below for context.</p>"
+        return (
+            "<table border='1' cellpadding='6' cellspacing='0'>"
+            "<tr><th>Action</th><th>Ticker</th><th>Tier</th><th>Basis</th><th>Main Risk</th><th>Policy Note</th></tr>"
+            f"{''.join(summary_rows)}"
             "</table>"
         )
 
@@ -837,6 +893,29 @@ class MonitorService:
             return f"{distance_to_target_pct * 100.0:.1f}% to target"
         return "target unavailable"
 
+    def _summarize_exit_policy_note(
+        self,
+        *,
+        hard_stop_pct: float | None,
+        hard_stop_triggered: bool,
+        time_limit_days: int,
+        time_limit_triggered: bool,
+        atr_pct_14: float | None,
+    ) -> str:
+        notes = []
+        if hard_stop_pct is not None and hard_stop_pct <= 0.0501:
+            note = "hard stop uses 5% grid floor; per-slot swept stop still needed"
+            if atr_pct_14 is not None and atr_pct_14 > hard_stop_pct:
+                note += f"; ATR {atr_pct_14:.1%} exceeds stop width"
+            if hard_stop_triggered:
+                note += "; triggered mechanically"
+            notes.append(note)
+        if time_limit_triggered:
+            notes.append(
+                f"time limit {int(time_limit_days)} sessions predates regime layer; review in next parameterization pass"
+            )
+        return "; ".join(notes) if notes else "policy inputs OK"
+
     def _trading_sessions_held(
         self,
         *,
@@ -912,6 +991,8 @@ class MonitorService:
             "benchmark_return_since_entry": None,
             "relative_alpha_since_entry": None,
             "chart_link": f"https://www.tradingview.com/chart/?symbol={ticker}",
+            "hard_stop_price": None,
+            "hard_stop_pct": None,
             "stop_price": None,
             "target_price": None,
             "distance_to_stop_pct": None,
@@ -930,6 +1011,7 @@ class MonitorService:
             "setup_now": "unknown",
             "main_risk": "manual review: strategy unresolved",
             "price_context": "exit rules not evaluated",
+            "exit_policy_note": "strategy unresolved; exit policy not evaluated",
         }
 
     def _should_backfill_strategy_assignment(self, trade) -> bool:
