@@ -2,13 +2,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import html
 import math
 from pathlib import Path
 
 import pandas as pd
 
-from src.settings import load_feature_config
+from src.settings import load_feature_config, get_settings
 from src.utils.db_manager import DatabaseManager
+from src.utils.emailer import send_html_email
 
 
 @dataclass(frozen=True)
@@ -18,13 +20,22 @@ class RegimeMeterReport:
     latest_matured_date: str | None
     classification: str | None
     mom_ic_20d_avg: float | None
+    emailed: bool = False
 
 
 class RegimeMeterService:
-    def __init__(self, db_manager: DatabaseManager) -> None:
+    def __init__(self, db_manager: DatabaseManager, email_sender=send_html_email) -> None:
         self.db_manager = db_manager
+        self.email_sender = email_sender
 
-    def run(self, *, backfill: bool = False, latest: bool = False, report: bool = False) -> RegimeMeterReport:
+    def run(
+        self,
+        *,
+        backfill: bool = False,
+        latest: bool = False,
+        report: bool = False,
+        email: bool = False,
+    ) -> RegimeMeterReport:
         self.db_manager.initialize()
         if not backfill and not latest and not report:
             latest = True
@@ -42,6 +53,13 @@ class RegimeMeterService:
         if report:
             output_path = self._write_report()
             latest_row = self._latest_known_row()
+        emailed = False
+        if email:
+            if output_path is None:
+                output_path = self._write_report()
+                latest_row = self._latest_known_row()
+            self._send_report_email(report_path=output_path, latest_row=latest_row)
+            emailed = True
         latest_date = None
         if latest_row is not None:
             latest_date = pd.to_datetime(latest_row["snapshot_date"]).date().isoformat()
@@ -57,6 +75,7 @@ class RegimeMeterService:
                 if latest_row is not None and pd.notna(latest_row.get("mom_ic_20d_avg"))
                 else None
             ),
+            emailed=emailed,
         )
 
     def _build_rows(self) -> pd.DataFrame:
@@ -267,6 +286,36 @@ class RegimeMeterService:
             return None
         frame = frame.sort_values("snapshot_date")
         return frame.iloc[-1].to_dict()
+
+    def _send_report_email(self, *, report_path: Path, latest_row: dict | None) -> None:
+        report_text = report_path.read_text(encoding="utf-8") if report_path.exists() else ""
+        classification = "unknown"
+        latest_date = "unknown"
+        if latest_row is not None:
+            classification = str(latest_row.get("classification") or "unknown")
+            raw_date = latest_row.get("snapshot_date")
+            if raw_date is not None and pd.notna(raw_date):
+                latest_date = pd.to_datetime(raw_date).date().isoformat()
+        self.email_sender(
+            subject=f"SwingQuant Regime Report: {classification} as of {latest_date}",
+            html_body=self._render_report_email(report_text=report_text, report_path=report_path),
+            settings=get_settings(),
+        )
+
+    @staticmethod
+    def _render_report_email(*, report_text: str, report_path: Path) -> str:
+        escaped = html.escape(report_text)
+        return "\n".join(
+            [
+                "<html><body>",
+                "<h2>SwingQuant Regime Report</h2>",
+                f"<p><strong>source:</strong> {html.escape(str(report_path))}</p>",
+                "<pre style=\"font-family: ui-monospace, SFMono-Regular, Consolas, monospace; white-space: pre-wrap; line-height: 1.35;\">",
+                escaped,
+                "</pre>",
+                "</body></html>",
+            ]
+        )
 
     @staticmethod
     def classify(

@@ -178,7 +178,7 @@ echo "[$(date --iso-8601=seconds)] regime-meter latest"
 ./sq regime-meter --latest || echo "[$(date --iso-8601=seconds)] regime-meter latest failed; continuing"
 
 echo "[$(date --iso-8601=seconds)] regime-meter report"
-./sq regime-meter --report || echo "[$(date --iso-8601=seconds)] regime-meter report failed; continuing"
+./sq regime-meter --report --email || echo "[$(date --iso-8601=seconds)] regime-meter report failed; continuing"
 
 echo "[$(date --iso-8601=seconds)] path-label-tearsheet"
 ./sq path-label-tearsheet --horizon 20

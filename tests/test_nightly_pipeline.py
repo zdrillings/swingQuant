@@ -42,7 +42,7 @@ class NightlyPipelineScriptTests(unittest.TestCase):
         self.assertNotIn("--horizon 20 \\", script)
         self.assertNotIn("--model-scope sector_specific", script)
         self.assertIn("regime-meter --latest", script)
-        self.assertIn("regime-meter --report", script)
+        self.assertIn("regime-meter --report --email", script)
         self.assertIn("regime-meter latest failed; continuing", script)
         self.assertIn("regime-meter report failed; continuing", script)
         self.assertIn("phase2-research", script)

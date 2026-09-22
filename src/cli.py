@@ -168,6 +168,7 @@ def build_parser() -> argparse.ArgumentParser:
     regime_meter_parser.add_argument("--backfill", action="store_true")
     regime_meter_parser.add_argument("--latest", action="store_true")
     regime_meter_parser.add_argument("--report", action="store_true")
+    regime_meter_parser.add_argument("--email", action="store_true")
     shortlist_bakeoff_parser = subparsers.add_parser("shortlist-bakeoff", help="Compare shortlist policies directly on forward sector alpha.")
     shortlist_bakeoff_parser.add_argument("--top", type=int, default=6)
     shortlist_bakeoff_parser.add_argument("--horizon", type=int, default=20)
@@ -590,6 +591,7 @@ def main(argv: list[str] | None = None) -> int:
                 backfill=args.backfill,
                 latest=args.latest,
                 report=args.report,
+                email=args.email,
             )
             location = f" report={report.output_path}" if report.output_path else ""
             print(
@@ -598,6 +600,7 @@ def main(argv: list[str] | None = None) -> int:
                 f"latest_matured_date={report.latest_matured_date}",
                 f"classification={report.classification}",
                 f"mom_ic_20d_avg={report.mom_ic_20d_avg}",
+                f"emailed={report.emailed}",
                 location,
             )
             return 0

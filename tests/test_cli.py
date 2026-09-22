@@ -10,12 +10,13 @@ from src.settings import AppPaths, RuntimeSettings
 
 class CliTests(unittest.TestCase):
     def test_regime_meter_parser_accepts_required_modes(self) -> None:
-        args = build_parser().parse_args(["regime-meter", "--backfill", "--latest", "--report"])
+        args = build_parser().parse_args(["regime-meter", "--backfill", "--latest", "--report", "--email"])
 
         self.assertEqual(args.command, "regime-meter")
         self.assertTrue(args.backfill)
         self.assertTrue(args.latest)
         self.assertTrue(args.report)
+        self.assertTrue(args.email)
 
     def test_monitor_parser_disables_email_by_default(self) -> None:
         default_args = build_parser().parse_args(["monitor"])

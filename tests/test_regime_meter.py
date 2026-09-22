@@ -124,6 +124,41 @@ class RegimeMeterServiceTests(unittest.TestCase):
 
         self.assertNotIn("bogus", set(frame["classification"].astype(str)))
 
+    def test_report_email_sends_rendered_regime_report(self) -> None:
+        email_calls = []
+        with TemporaryDirectory() as tmp:
+            paths = _paths(Path(tmp))
+            manager = DatabaseManager(paths)
+            manager.initialize()
+            manager.replace_regime_meter_rows(
+                [
+                    {
+                        "snapshot_date": "2026-09-01",
+                        "mom_ic_daily": -0.06,
+                        "wml_20d_alpha": -0.02,
+                        "wml_1d": 0.001,
+                        "mom_ic_20d_avg": -0.07,
+                        "mom_ic_60d_avg": -0.03,
+                        "classification": "reversal",
+                    }
+                ]
+            )
+            service = RegimeMeterService(
+                manager,
+                email_sender=lambda subject, html_body, settings: email_calls.append((subject, html_body, settings)),
+            )
+
+            with patch("src.research.regime_meter_service.get_settings", return_value=_settings(paths)):
+                report = service.run(report=True, email=True)
+
+        self.assertTrue(report.emailed)
+        self.assertEqual(len(email_calls), 1)
+        subject, html_body, settings = email_calls[0]
+        self.assertIn("SwingQuant Regime Report: reversal as of 2026-09-01", subject)
+        self.assertIn("Regime Meter", html_body)
+        self.assertIn("current_classification: reversal", html_body)
+        self.assertEqual(settings.env["RECIPIENT_EMAIL"], "recipient@example.com")
+
     def test_scan_uses_latest_matured_regime_row_without_lookahead(self) -> None:
         with TemporaryDirectory() as tmp:
             paths = _paths(Path(tmp))
