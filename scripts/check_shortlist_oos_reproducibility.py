@@ -89,6 +89,7 @@ def _rolling_window_summaries(
     cost_fraction: float,
     windows: tuple[int, ...] = (20, 40, 60),
     fold_windows: tuple[int, ...] = (1, 3),
+    fold_size: int = 20,
 ) -> list[tuple[str, dict[str, float | int]]]:
     rows: list[tuple[str, dict[str, float | int]]] = []
     dates = sorted(frame["snapshot_date"].drop_duplicates().tolist())
@@ -102,7 +103,8 @@ def _rolling_window_summaries(
             )
         )
     for fold_count in fold_windows:
-        selected_dates = dates[-min(int(fold_count), len(dates)) :]
+        fold_date_count = max(int(fold_count), 1) * max(int(fold_size), 1)
+        selected_dates = dates[-min(fold_date_count, len(dates)) :]
         scoped = frame[frame["snapshot_date"].isin(selected_dates)].copy()
         rows.append(
             (
@@ -111,6 +113,32 @@ def _rolling_window_summaries(
             )
         )
     return rows
+
+
+def _resolve_target_column(frame: pd.DataFrame, requested_target_column: str | None) -> str:
+    if requested_target_column:
+        if requested_target_column not in frame.columns:
+            raise SystemExit(
+                f"Requested target column '{requested_target_column}' is absent from the OOS artifact."
+            )
+        return requested_target_column
+    if "artifact_evaluation_target_column" not in frame.columns:
+        raise SystemExit(
+            "OOS artifact does not declare artifact_evaluation_target_column; "
+            "pass --target-column explicitly for legacy artifacts."
+        )
+    declared = frame["artifact_evaluation_target_column"].dropna().astype(str).unique().tolist()
+    if len(declared) != 1:
+        raise SystemExit(
+            "OOS artifact has inconsistent artifact_evaluation_target_column values: "
+            + ", ".join(sorted(declared))
+        )
+    target_column = declared[0]
+    if target_column not in frame.columns:
+        raise SystemExit(
+            f"OOS artifact declares evaluation target '{target_column}', but that column is absent."
+        )
+    return target_column
 
 
 def _target_horizon_days(target_column: str) -> int:
@@ -123,34 +151,38 @@ def _target_horizon_days(target_column: str) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Recompute shortlist model OOS acceptance summaries from persisted CSV rows.")
     parser.add_argument("--csv", type=Path, default=Path("reports/shortlist_model_oos_predictions.csv"))
-    parser.add_argument("--target-column", default="alpha_vs_sector_20d")
+    parser.add_argument("--target-column", default=None)
     parser.add_argument("--costs", choices=("net", "gross"), default="net")
     parser.add_argument("--slippage-bps-per-side", type=float, default=5.0)
     parser.add_argument("--commission-bps-per-side", type=float, default=0.0)
     parser.add_argument("--recent-dates", type=int, default=60)
+    parser.add_argument("--fold-size", type=int, default=20)
     args = parser.parse_args()
     if args.costs == "net":
         cost_fraction = ((float(args.slippage_bps_per_side) + float(args.commission_bps_per_side)) * 2.0) / 10_000.0
     else:
         cost_fraction = 0.0
 
-    frame = pd.read_csv(args.csv)
-    required = {"snapshot_date", "ticker", "model_name", "predicted_alpha", args.target_column}
+    frame = pd.read_csv(args.csv, low_memory=False)
+    target_column = _resolve_target_column(frame, args.target_column)
+    required = {"snapshot_date", "ticker", "model_name", "predicted_alpha", target_column}
     missing = sorted(required.difference(frame.columns))
     if missing:
         raise SystemExit(f"Missing required columns in {args.csv}: {', '.join(missing)}")
     frame["snapshot_date"] = pd.to_datetime(frame["snapshot_date"]).dt.normalize()
+    print(f"target_column: {target_column}")
     for model_name, model_frame in frame.groupby("model_name", sort=True):
         print(f"{model_name}:")
-        print(f"  full: {_evaluate(model_frame, target_column=args.target_column, cost_fraction=cost_fraction)}")
+        print(f"  full: {_evaluate(model_frame, target_column=target_column, cost_fraction=cost_fraction)}")
         recent_dates = sorted(model_frame["snapshot_date"].drop_duplicates().tolist())[-max(int(args.recent_dates), 1):]
         recent = model_frame[model_frame["snapshot_date"].isin(recent_dates)].copy()
-        print(f"  recent_{len(recent_dates)}: {_evaluate(recent, target_column=args.target_column, cost_fraction=cost_fraction)}")
+        print(f"  recent_{len(recent_dates)}: {_evaluate(recent, target_column=target_column, cost_fraction=cost_fraction)}")
         for label, summary in _rolling_window_summaries(
             model_frame,
             model_name=str(model_name),
-            target_column=args.target_column,
+            target_column=target_column,
             cost_fraction=cost_fraction,
+            fold_size=int(args.fold_size),
         ):
             print(f"  {label}: {summary}")
     return 0

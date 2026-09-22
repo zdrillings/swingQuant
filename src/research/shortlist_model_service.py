@@ -288,6 +288,7 @@ class ShortlistModelService:
                         fallback_only=True,
                     )
                 model_predictions[model_name] = predicted
+        model_predictions = self._align_model_predictions_to_common_oos_grid(model_predictions)
         ensemble_predictions = self._build_ensemble_predictions(model_predictions)
         if ensemble_predictions is not None:
             model_predictions["ensemble_model"] = ensemble_predictions
@@ -307,6 +308,11 @@ class ShortlistModelService:
             ],
             axis=0,
             ignore_index=True,
+        )
+        combined_predictions = self._stamp_oos_artifact_metadata(
+            combined_predictions,
+            target_column=target_column,
+            evaluation_target_column=evaluation_target_column,
         )
         combined_predictions = self._annotate_oos_artifact_ranks(combined_predictions)
         combined_predictions = self._annotate_calibrated_probabilities(
@@ -640,6 +646,58 @@ class ShortlistModelService:
             oos_dates=int(combined_predictions["snapshot_date"].nunique()),
             live_candidates=len(live_predictions.index),
         )
+
+    def _align_model_predictions_to_common_oos_grid(
+        self,
+        predictions_by_model: dict[str, pd.DataFrame],
+    ) -> dict[str, pd.DataFrame]:
+        non_empty = {
+            model_name: predictions.copy()
+            for model_name, predictions in predictions_by_model.items()
+            if predictions is not None and not predictions.empty and "snapshot_date" in predictions.columns
+        }
+        if len(non_empty) <= 1:
+            return non_empty
+        date_sets = [
+            set(pd.to_datetime(predictions["snapshot_date"], errors="coerce").dt.normalize().dropna().tolist())
+            for predictions in non_empty.values()
+        ]
+        common_dates = set.intersection(*date_sets) if date_sets else set()
+        if not common_dates:
+            return {}
+        aligned: dict[str, pd.DataFrame] = {}
+        for model_name, predictions in non_empty.items():
+            working = predictions.copy()
+            normalized_dates = pd.to_datetime(working["snapshot_date"], errors="coerce").dt.normalize()
+            before_dates = int(normalized_dates.nunique())
+            working = working.loc[normalized_dates.isin(common_dates)].copy()
+            after_dates = int(pd.to_datetime(working["snapshot_date"], errors="coerce").dt.normalize().nunique())
+            if after_dates < before_dates:
+                self.logger.info(
+                    "Aligned %s OOS grid from %d dates to %d common dates.",
+                    model_name,
+                    before_dates,
+                    after_dates,
+                )
+            if not working.empty:
+                aligned[model_name] = working
+        return aligned
+
+    def _stamp_oos_artifact_metadata(
+        self,
+        frame: pd.DataFrame,
+        *,
+        target_column: str,
+        evaluation_target_column: str,
+    ) -> pd.DataFrame:
+        stamped = frame.copy()
+        stamped["artifact_target_column"] = str(target_column)
+        stamped["artifact_evaluation_target_column"] = str(evaluation_target_column)
+        if evaluation_target_column not in stamped.columns:
+            raise ValueError(
+                f"OOS artifact is missing evaluation target column '{evaluation_target_column}'."
+            )
+        return stamped
 
     def _prepare_snapshot_frame(self, frame: pd.DataFrame) -> pd.DataFrame:
         working = frame.copy()

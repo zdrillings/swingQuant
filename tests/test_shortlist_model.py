@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from scripts.check_shortlist_oos_reproducibility import _evaluate, _rolling_window_summaries
+from scripts.check_shortlist_oos_reproducibility import _evaluate, _resolve_target_column, _rolling_window_summaries
 from src.cli import build_parser
 from src.research.shortlist_bakeoff_service import MODEL_FEATURE_COLUMNS
 from src.research.shortlist_model_service import ShortlistModelService
@@ -90,6 +90,41 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertIn("ridge_model_last_1fold", windows)
         self.assertIn("ridge_model_last_3fold", windows)
         self.assertEqual(windows["ridge_model_20d"]["dates"], 20)
+        self.assertEqual(windows["ridge_model_last_1fold"]["dates"], 20)
+        self.assertEqual(windows["ridge_model_last_3fold"]["dates"], 60)
+
+    def test_oos_reproducibility_resolves_declared_artifact_target(self) -> None:
+        frame = pd.DataFrame(
+            [
+                {
+                    "snapshot_date": "2026-01-02",
+                    "ticker": "AAA",
+                    "model_name": "ridge_model",
+                    "predicted_alpha": 0.1,
+                    "path_alpha_vs_sector_60d": 0.02,
+                    "artifact_evaluation_target_column": "path_alpha_vs_sector_60d",
+                }
+            ]
+        )
+
+        self.assertEqual(_resolve_target_column(frame, None), "path_alpha_vs_sector_60d")
+
+    def test_oos_reproducibility_refuses_missing_declared_target(self) -> None:
+        frame = pd.DataFrame(
+            [
+                {
+                    "snapshot_date": "2026-01-02",
+                    "ticker": "AAA",
+                    "model_name": "ridge_model",
+                    "predicted_alpha": 0.1,
+                    "alpha_vs_sector_20d": 0.02,
+                    "artifact_evaluation_target_column": "path_alpha_vs_sector_60d",
+                }
+            ]
+        )
+
+        with self.assertRaises(SystemExit):
+            _resolve_target_column(frame, None)
 
     def test_twenty_day_basket_sharpe_uses_horizon_frequency(self) -> None:
         values = pd.Series([0.02, 0.01, -0.01, 0.03, 0.00])
@@ -885,6 +920,33 @@ class ShortlistModelServiceTests(unittest.TestCase):
 
         self.assertIsNotNone(ensemble)
         self.assertEqual(len(ensemble.index), len(base_rows.index))
+
+    def test_model_predictions_align_to_common_oos_grid_before_evaluation(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        dates = pd.bdate_range("2026-01-02", periods=3)
+        broad = pd.DataFrame(
+            [
+                {"snapshot_date": date, "ticker": "AAA", "predicted_alpha": 0.1}
+                for date in dates
+            ]
+        )
+        strided = pd.DataFrame(
+            [
+                {"snapshot_date": dates[1], "ticker": "AAA", "predicted_alpha": 0.2},
+                {"snapshot_date": dates[2], "ticker": "AAA", "predicted_alpha": 0.3},
+            ]
+        )
+
+        aligned = service._align_model_predictions_to_common_oos_grid(
+            {
+                "structure_factor_fresh_signal": broad,
+                "ridge_model": strided,
+            }
+        )
+
+        self.assertEqual(set(aligned), {"structure_factor_fresh_signal", "ridge_model"})
+        for predictions in aligned.values():
+            self.assertEqual(set(pd.to_datetime(predictions["snapshot_date"])), set(dates[1:]))
 
     def test_reversal_fold_feature_screen_uses_matched_pool(self) -> None:
         dates = pd.bdate_range("2026-01-02", periods=12)
