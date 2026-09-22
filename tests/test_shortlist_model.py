@@ -7,7 +7,13 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from scripts.check_shortlist_oos_reproducibility import _evaluate, _resolve_target_column, _rolling_window_summaries
+from scripts.check_shortlist_oos_reproducibility import (
+    _comparison_rows,
+    _evaluate,
+    _render_comparison_report,
+    _resolve_target_column,
+    _rolling_window_summaries,
+)
 from src.cli import build_parser
 from src.research.shortlist_bakeoff_service import MODEL_FEATURE_COLUMNS
 from src.research.shortlist_model_service import ShortlistModelService
@@ -125,6 +131,49 @@ class ShortlistModelServiceTests(unittest.TestCase):
 
         with self.assertRaises(SystemExit):
             _resolve_target_column(frame, None)
+
+    def test_oos_reproducibility_compares_path_and_endpoint_labels(self) -> None:
+        frame = pd.DataFrame(
+            [
+                {
+                    "snapshot_date": "2026-01-02",
+                    "ticker": "AAA",
+                    "model_name": "ridge_model",
+                    "predicted_alpha": 0.3,
+                    "alpha_vs_sector_60d": 0.04,
+                    "path_alpha_vs_sector_60d": 0.01,
+                },
+                {
+                    "snapshot_date": "2026-01-02",
+                    "ticker": "BBB",
+                    "model_name": "ridge_model",
+                    "predicted_alpha": 0.2,
+                    "alpha_vs_sector_60d": 0.02,
+                    "path_alpha_vs_sector_60d": 0.03,
+                },
+                {
+                    "snapshot_date": "2026-01-02",
+                    "ticker": "CCC",
+                    "model_name": "ridge_model",
+                    "predicted_alpha": 0.1,
+                    "alpha_vs_sector_60d": -0.01,
+                    "path_alpha_vs_sector_60d": -0.02,
+                },
+            ]
+        )
+
+        rows = _comparison_rows(
+            frame,
+            target_columns=("alpha_vs_sector_60d", "path_alpha_vs_sector_60d"),
+            cost_fraction=0.0,
+        )
+        report = _render_comparison_report(rows, source_csv=Path("reports/shortlist_model_oos_predictions.csv"))
+
+        self.assertEqual([row["target_column"] for row in rows], ["alpha_vs_sector_60d", "path_alpha_vs_sector_60d"])
+        self.assertAlmostEqual(rows[0]["top2_mean_target"], 0.03)
+        self.assertAlmostEqual(rows[1]["top2_mean_target"], 0.02)
+        self.assertIn("# Shortlist Path vs Endpoint Label Comparison", report)
+        self.assertIn("| ridge_model | alpha_vs_sector_60d |", report)
 
     def test_twenty_day_basket_sharpe_uses_horizon_frequency(self) -> None:
         values = pd.Series([0.02, 0.01, -0.01, 0.03, 0.00])
@@ -2160,9 +2209,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
             self.assertIn("- days_since_last_champion: n/a", report_text)
             self.assertTrue((paths.reports_dir / "shortlist_model_oos_predictions.csv").exists())
             self.assertTrue((paths.reports_dir / "feature_ic_report.md").exists())
-            self.assertEqual(len(fake_db.decommission_calls), 1)
-            self.assertEqual(fake_db.decommission_calls[0]["horizon_days"], 20)
-            self.assertEqual(fake_db.decommission_calls[0]["eligible_universe_mode"], "passed_only")
+            self.assertEqual(fake_db.decommission_calls, [])
 
     def test_shortlist_model_dry_run_does_not_persist_or_decommission(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

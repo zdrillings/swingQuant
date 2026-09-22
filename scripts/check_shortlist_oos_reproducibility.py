@@ -14,10 +14,12 @@ if str(ROOT_DIR) not in sys.path:
 
 import pandas as pd
 
+from src.settings import get_settings
 from src.utils.performance_metrics import annualized_sharpe, newey_west_t_stat, years_required_for_tstat
 
 
 PROMOTION_BASKET_SIZE = 2
+DEFAULT_COMPARISON_TARGETS = ("alpha_vs_sector_60d", "path_alpha_vs_sector_60d")
 
 
 def _evaluate(
@@ -148,6 +150,111 @@ def _target_horizon_days(target_column: str) -> int:
     return 1
 
 
+def _attach_snapshot_targets(
+    frame: pd.DataFrame,
+    *,
+    target_columns: tuple[str, ...],
+    duckdb_path: Path,
+) -> pd.DataFrame:
+    missing_targets = [column for column in target_columns if column not in frame.columns]
+    if not missing_targets:
+        return frame.copy()
+    import duckdb
+
+    keys = frame[["snapshot_date", "ticker"]].drop_duplicates().copy()
+    keys["snapshot_date"] = pd.to_datetime(keys["snapshot_date"]).dt.strftime("%Y-%m-%d")
+    select_columns = ", ".join(f"s.{column}" for column in missing_targets)
+    with duckdb.connect(str(duckdb_path), read_only=True) as conn:
+        conn.register("oos_keys", keys)
+        targets = conn.execute(
+            f"""
+            SELECT
+                k.snapshot_date,
+                k.ticker,
+                {select_columns}
+            FROM oos_keys k
+            LEFT JOIN universe_daily_snapshots s
+              ON CAST(s.snapshot_date AS DATE) = CAST(k.snapshot_date AS DATE)
+             AND s.ticker = k.ticker
+            """
+        ).fetchdf()
+        conn.unregister("oos_keys")
+    targets["snapshot_date"] = pd.to_datetime(targets["snapshot_date"]).dt.normalize()
+    working = frame.copy()
+    working["snapshot_date"] = pd.to_datetime(working["snapshot_date"]).dt.normalize()
+    return working.merge(targets, on=["snapshot_date", "ticker"], how="left")
+
+
+def _comparison_rows(
+    frame: pd.DataFrame,
+    *,
+    target_columns: tuple[str, ...],
+    cost_fraction: float,
+) -> list[dict[str, float | int | str]]:
+    rows: list[dict[str, float | int | str]] = []
+    for model_name, model_frame in frame.groupby("model_name", sort=True):
+        for target_column in target_columns:
+            summary = _evaluate(model_frame, target_column=target_column, cost_fraction=cost_fraction)
+            rows.append(
+                {
+                    "model": str(model_name),
+                    "target_column": target_column,
+                    "dates": int(summary.get("dates", 0)),
+                    "spearman": float(summary.get("spearman", float("nan"))),
+                    "top2_mean_target": float(summary.get("mean_target", float("nan"))),
+                    "top2_hit_rate": float(summary.get("hit_rate", float("nan"))),
+                    "top2_mean_target_excess": float(summary.get("mean_target_excess", float("nan"))),
+                    "top2_hit_rate_excess": float(summary.get("hit_rate_excess", float("nan"))),
+                    "beat_universe_rate": float(summary.get("beat_universe_rate", float("nan"))),
+                    "universe_mean_target": float(summary.get("universe_mean_target", float("nan"))),
+                    "universe_hit_rate": float(summary.get("universe_hit_rate", float("nan"))),
+                }
+            )
+    return rows
+
+
+def _format_float(value: object, *, places: int = 4) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "n/a"
+    if not math.isfinite(number):
+        return "n/a"
+    return f"{number:.{places}f}"
+
+
+def _render_comparison_report(rows: list[dict[str, float | int | str]], *, source_csv: Path) -> str:
+    lines = [
+        "# Shortlist Path vs Endpoint Label Comparison",
+        "",
+        f"- source_oos_csv: {source_csv}",
+        f"- promotion_basket_size: {PROMOTION_BASKET_SIZE}",
+        "",
+        "| model | target | dates | spearman | top2_mean | top2_hit | top2_mean_excess | top2_hit_excess | beat_universe | universe_mean | universe_hit |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for row in rows:
+        lines.append(
+            "| {model} | {target_column} | {dates} | {spearman} | {top2_mean_target} | {top2_hit_rate} | "
+            "{top2_mean_target_excess} | {top2_hit_rate_excess} | {beat_universe_rate} | "
+            "{universe_mean_target} | {universe_hit_rate} |".format(
+                model=row["model"],
+                target_column=row["target_column"],
+                dates=row["dates"],
+                spearman=_format_float(row["spearman"]),
+                top2_mean_target=_format_float(row["top2_mean_target"]),
+                top2_hit_rate=_format_float(row["top2_hit_rate"]),
+                top2_mean_target_excess=_format_float(row["top2_mean_target_excess"]),
+                top2_hit_rate_excess=_format_float(row["top2_hit_rate_excess"]),
+                beat_universe_rate=_format_float(row["beat_universe_rate"]),
+                universe_mean_target=_format_float(row["universe_mean_target"]),
+                universe_hit_rate=_format_float(row["universe_hit_rate"]),
+            )
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Recompute shortlist model OOS acceptance summaries from persisted CSV rows.")
     parser.add_argument("--csv", type=Path, default=Path("reports/shortlist_model_oos_predictions.csv"))
@@ -157,6 +264,13 @@ def main() -> int:
     parser.add_argument("--commission-bps-per-side", type=float, default=0.0)
     parser.add_argument("--recent-dates", type=int, default=60)
     parser.add_argument("--fold-size", type=int, default=20)
+    parser.add_argument(
+        "--compare-path-labels",
+        action="store_true",
+        help="Compare the same persisted predictions against endpoint and path 60d labels.",
+    )
+    parser.add_argument("--duckdb", type=Path, default=None)
+    parser.add_argument("--output", type=Path, default=Path("reports/path_vs_endpoint_label_comparison.md"))
     args = parser.parse_args()
     if args.costs == "net":
         cost_fraction = ((float(args.slippage_bps_per_side) + float(args.commission_bps_per_side)) * 2.0) / 10_000.0
@@ -164,6 +278,23 @@ def main() -> int:
         cost_fraction = 0.0
 
     frame = pd.read_csv(args.csv, low_memory=False)
+    if args.compare_path_labels:
+        target_columns = DEFAULT_COMPARISON_TARGETS
+        duckdb_path = args.duckdb or get_settings().paths.duckdb_path
+        frame = _attach_snapshot_targets(frame, target_columns=target_columns, duckdb_path=duckdb_path)
+        required = {"snapshot_date", "ticker", "model_name", "predicted_alpha", *target_columns}
+        missing = sorted(required.difference(frame.columns))
+        if missing:
+            raise SystemExit(f"Missing required columns for label comparison: {', '.join(missing)}")
+        frame["snapshot_date"] = pd.to_datetime(frame["snapshot_date"]).dt.normalize()
+        rows = _comparison_rows(frame, target_columns=target_columns, cost_fraction=cost_fraction)
+        report = _render_comparison_report(rows, source_csv=args.csv)
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(report, encoding="utf-8")
+        print(report)
+        print(f"wrote: {args.output}")
+        return 0
+
     target_column = _resolve_target_column(frame, args.target_column)
     required = {"snapshot_date", "ticker", "model_name", "predicted_alpha", target_column}
     missing = sorted(required.difference(frame.columns))

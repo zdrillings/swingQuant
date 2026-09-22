@@ -57,23 +57,35 @@ promotion_failures_file="data/promotion_failures.txt"
 last_champion_days_file="data/days_since_last_champion.txt"
 shortlist_report_file="reports/shortlist_model.md"
 
-latest_active_champion_date() {
+latest_champion_date() {
   PYTHONPATH=.vendor python3 - <<'PY'
 from __future__ import annotations
 
 from datetime import datetime, timezone
 import sqlite3
 
+from src.settings import load_feature_config
+
 try:
+    config = load_feature_config()
+    horizon_days = int(
+        config.get("scan_policy", {})
+        .get("shortlist_model", {})
+        .get("horizon_days", 20)
+    )
     conn = sqlite3.connect("file:data/ledger.sqlite?mode=ro", uri=True)
     row = conn.execute(
         """
         SELECT generated_at
         FROM Shortlist_Model_Runs
-        WHERE is_active = 1
+        WHERE horizon_days = ?
+          AND champion_model IS NOT NULL
+          AND TRIM(champion_model) != ''
+          AND LOWER(TRIM(champion_model)) != 'n/a'
         ORDER BY generated_at DESC
         LIMIT 1
-        """
+        """,
+        (horizon_days,),
     ).fetchone()
     conn.close()
 except Exception:
@@ -94,7 +106,7 @@ sync_promotion_failure_state() {
   if [[ ! -f "${promotion_failures_file}" ]]; then
     return
   fi
-  champion_date="$(latest_active_champion_date || true)"
+  champion_date="$(latest_champion_date || true)"
   latest_failure_date="$(tail -n 1 "${promotion_failures_file}" || true)"
   if [[ "${champion_date}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && [[ "${latest_failure_date}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && [[ "${champion_date}" > "${latest_failure_date}" || "${champion_date}" == "${latest_failure_date}" ]]; then
     clear_promotion_failures

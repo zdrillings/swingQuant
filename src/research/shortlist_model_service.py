@@ -378,16 +378,6 @@ class ShortlistModelService:
                 required_fold_windows=required_fold_windows,
             )
         except ValueError as exc:
-            if persist:
-                self._decommission_active_champions(
-                    generated_at=generated_at,
-                    horizon_days=int(horizon_days),
-                    eligible_universe_mode=eligible_universe_mode,
-                    model_scope=model_scope,
-                    xgboost_config=xgboost_config,
-                    feature_profile=feature_profile,
-                    reason=str(exc),
-                )
             combined_predictions.to_csv(oos_path, index=False)
             lines = self._build_report_lines(
                 target_column=target_column,
@@ -559,6 +549,15 @@ class ShortlistModelService:
         report_path.write_text("\n".join(lines), encoding="utf-8")
 
         if persist:
+            self._decommission_active_champions(
+                generated_at=generated_at,
+                horizon_days=int(horizon_days),
+                eligible_universe_mode=eligible_universe_mode,
+                model_scope=model_scope,
+                xgboost_config=xgboost_config,
+                feature_profile=feature_profile,
+                reason=f"replaced by champion {champion_model}",
+            )
             self.db_manager.insert_shortlist_model_run(
                 row={
                     "generated_at": generated_at,
@@ -2424,15 +2423,26 @@ class ShortlistModelService:
         if loader is None:
             return None
         try:
-            runs = loader(horizon_days=int(horizon_days), limit=1)
+            runs = loader(horizon_days=int(horizon_days), active_only=False, limit=50)
         except TypeError:
             try:
-                runs = loader(horizon_days=int(horizon_days), eligible_universe_mode=None, model_scope=None, limit=1)
+                runs = loader(
+                    horizon_days=int(horizon_days),
+                    eligible_universe_mode=None,
+                    model_scope=None,
+                    active_only=False,
+                    limit=50,
+                )
             except Exception:
                 return None
         except Exception:
             return None
         if runs is None or runs.empty or "generated_at" not in runs.columns:
+            return None
+        if "champion_model" in runs.columns:
+            champion_text = runs["champion_model"].fillna("").astype(str).str.strip()
+            runs = runs[champion_text.ne("") & champion_text.str.lower().ne("n/a")].copy()
+        if runs.empty:
             return None
         last_generated = pd.to_datetime(runs.iloc[0].get("generated_at"), errors="coerce", utc=True)
         current_generated = pd.to_datetime(generated_at, errors="coerce", utc=True)
