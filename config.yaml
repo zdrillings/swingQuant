@@ -278,7 +278,7 @@ backtest_costs:
 regime_gating:
   reversal_ic_threshold: -0.05
   trending_ic_threshold: 0.05
-  enforce: false
+  enforce: true
   stand_down_slots: []
 sizing:
   vol_target_daily_pct: 0.025
