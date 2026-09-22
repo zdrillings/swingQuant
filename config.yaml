@@ -280,6 +280,10 @@ regime_gating:
   trending_ic_threshold: 0.05
   enforce: false
   stand_down_slots: []
+sizing:
+  vol_target_daily_pct: 0.025
+  vol_scale_floor: 0.50
+  portfolio_stop_risk_cap_pct: 0.04
 scan_policy:
   max_candidates_total: 6
   max_candidates_per_slot: 3

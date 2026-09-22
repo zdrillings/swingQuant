@@ -20,7 +20,13 @@ from src.utils.emailer import send_html_email
 from src.utils.logging import get_logger
 from src.utils.shortlist_runtime import load_live_shortlist_model_context
 from src.utils.signal_engine import build_analysis_frame, filter_signal_candidates, latest_snapshot, overlay_price_history
-from src.utils.sizing import compute_position_size
+from src.utils.sizing import (
+    HeuristicSizingPolicy,
+    apply_portfolio_stop_risk_cap,
+    compute_heuristic_position_size,
+    compute_position_size,
+    stop_risk_dollars,
+)
 from src.utils.strategy import (
     ProductionStrategy,
     SIGNAL_SCORE_MIN_KEY,
@@ -95,6 +101,18 @@ class RegimeGateState:
 
 
 @dataclass(frozen=True)
+class ScanModeState:
+    mode: str
+    use_model_candidate_source: bool
+    heuristic_production: bool
+    max_candidates_total: int
+    max_candidates_per_slot: int
+    max_candidates_per_sector: int
+    stand_down: bool = False
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
 class ScanPolicy:
     max_candidates_total: int
     max_candidates_per_slot: int
@@ -138,6 +156,7 @@ class ScanPolicy:
     slot_selection_overlay_enabled: bool
     slot_selection_overlay_weights: dict[str, dict[str, float]]
     shortlist_model: ShortlistModelPolicy
+    sizing: HeuristicSizingPolicy
 
     @classmethod
     def from_config(cls, config: dict) -> "ScanPolicy":
@@ -153,6 +172,7 @@ class ScanPolicy:
         raw_overlay_weights = slot_selection_overlay.get("slot_weights", {})
         shortlist_model_configured = "shortlist_model" in policy
         shortlist_model = policy.get("shortlist_model", {})
+        sizing = config.get("sizing", {}) if isinstance(config.get("sizing", {}), dict) else {}
         return cls(
             max_candidates_total=int(policy.get("max_candidates_total", 6)),
             max_candidates_per_slot=int(policy.get("max_candidates_per_slot", 3)),
@@ -240,6 +260,11 @@ class ScanPolicy:
                 production_xgboost_config=str(shortlist_model.get("production_xgboost_config", "baseline") or "baseline"),
                 production_feature_profile=str(shortlist_model.get("production_feature_profile", "full") or "full"),
             ),
+            sizing=HeuristicSizingPolicy(
+                vol_target_daily_pct=float(sizing.get("vol_target_daily_pct", 0.025)),
+                vol_scale_floor=float(sizing.get("vol_scale_floor", 0.50)),
+                portfolio_stop_risk_cap_pct=float(sizing.get("portfolio_stop_risk_cap_pct", 0.04)),
+            ),
         )
 
 
@@ -303,38 +328,6 @@ class ScanService:
             snapshot["ticker"].isin(universe_tickers)
             & snapshot["regime_green"].fillna(False)
         ].copy()
-        stood_down_slots = self._stood_down_slots(
-            regime_state=regime_state,
-            scan_strategies=scan_strategies,
-        )
-        if stood_down_slots:
-            self.logger.info(
-                "Regime stand-down active for slots=%s classification=%s.",
-                ",".join(stood_down_slots),
-                regime_state.classification if regime_state else "unknown",
-            )
-            scan_strategies = {
-                slot: strategy
-                for slot, strategy in scan_strategies.items()
-                if str(slot) not in stood_down_slots
-            }
-        if not scan_strategies:
-            if callable(scan_candidate_writer):
-                scan_candidate_writer(scan_date=date.today().isoformat(), rows=[])
-            if not dry_run:
-                self.email_sender(
-                    subject=self._regime_stand_down_subject(regime_state),
-                    html_body=self._build_regime_stand_down_email(regime_state),
-                    settings=settings,
-                )
-            return ScanReport(
-                candidate_count=0,
-                emailed=not dry_run,
-                learned_ranker_enabled=False,
-                learned_ranker_train_rows=0,
-                learned_ranker_train_dates=0,
-                learned_ranker_reason="Regime stand-down.",
-            )
         sector_map = {row["ticker"]: row["sector"] for row in universe_rows}
         overlap_context = self._build_overlap_context(
             open_trades=open_trades,
@@ -352,15 +345,38 @@ class ScanService:
             raw_shortlist_model_context=raw_shortlist_model_context,
             active_shortlist_model_context=shortlist_model_context,
         )
-        use_model_candidate_source = (
-            shortlist_model_context is not None
-            and scan_policy.shortlist_model.use_as_candidate_source
+        scan_mode = self._resolve_scan_mode(
+            shortlist_model_context=shortlist_model_context,
+            scan_policy=scan_policy,
+            regime_state=regime_state,
         )
+        if scan_mode.heuristic_production:
+            scan_strategies = self._heuristic_production_strategies(scan_strategies)
+        if scan_mode.stand_down:
+            self.logger.info("Scan stand-down active mode=%s reason=%s.", scan_mode.mode, scan_mode.reason)
+            if callable(scan_candidate_writer):
+                scan_candidate_writer(scan_date=date.today().isoformat(), rows=[])
+            if not dry_run:
+                self.email_sender(
+                    subject=self._regime_stand_down_subject(regime_state),
+                    html_body=self._build_regime_stand_down_email(regime_state, scan_mode=scan_mode),
+                    settings=settings,
+                )
+            return ScanReport(
+                candidate_count=0,
+                emailed=not dry_run,
+                learned_ranker_enabled=False,
+                learned_ranker_train_rows=0,
+                learned_ranker_train_dates=0,
+                learned_ranker_reason=scan_mode.reason or "Regime stand-down.",
+            )
+        use_model_candidate_source = scan_mode.use_model_candidate_source
         if (
             scan_policy.shortlist_model.enabled
             and scan_policy.shortlist_model.use_as_candidate_source
             and shortlist_model_context is None
             and not scan_policy.shortlist_model.allow_heuristic_fallback
+            and not scan_mode.heuristic_production
         ):
             raise ValueError(
                 "Shortlist model candidate source is enabled, but no current model context passed freshness/promotion gates. "
@@ -429,10 +445,18 @@ class ScanService:
                     how="left",
                 )
                 candidates["shares"] = candidates.apply(
-                    lambda row: compute_position_size(
+                    lambda row: self._heuristic_position_size(row, strategy=strategy, settings=settings, scan_policy=scan_policy)[0],
+                    axis=1,
+                )
+                candidates["sizing_multiplier"] = candidates.apply(
+                    lambda row: self._heuristic_position_size(row, strategy=strategy, settings=settings, scan_policy=scan_policy)[1],
+                    axis=1,
+                )
+                candidates["stop_risk_dollars"] = candidates.apply(
+                    lambda row: stop_risk_dollars(
+                        shares=int(row["shares"]),
                         price=float(row["adj_close"]),
                         exit_rules=strategy.exit_rules,
-                        settings=settings,
                         entry_atr=float(row["atr_14"]) if pd.notna(row.get("atr_14")) else None,
                     ),
                     axis=1,
@@ -443,6 +467,7 @@ class ScanService:
             if candidate_frames:
                 candidates = pd.concat(candidate_frames, ignore_index=True).reset_index(drop=True)
                 persisted_candidates = pd.concat(persisted_candidate_frames, ignore_index=True).reset_index(drop=True)
+                candidates = candidates[pd.to_numeric(candidates["shares"], errors="coerce").fillna(0) >= 1].copy()
             else:
                 candidates = pd.DataFrame()
                 persisted_candidates = pd.DataFrame()
@@ -507,6 +532,12 @@ class ScanService:
             candidates["model_reason_summary"] = pd.NA
         if "model_comparison_summary" not in candidates.columns:
             candidates["model_comparison_summary"] = pd.NA
+        candidates["scan_mode"] = scan_mode.mode
+        if "sizing_multiplier" not in candidates.columns:
+            candidates["sizing_multiplier"] = pd.NA
+        if "stop_risk_dollars" not in candidates.columns:
+            candidates["stop_risk_dollars"] = pd.NA
+        persisted_candidates["scan_mode"] = scan_mode.mode if not persisted_candidates.empty else pd.NA
         persisted_candidates = self._attach_selection_metadata_to_persisted_candidates(
             persisted_candidates,
             candidates,
@@ -518,13 +549,15 @@ class ScanService:
             eligible_candidates,
             scan_policy=scan_policy,
             selection_opportunity_floor=selection_opportunity_floor,
+            heuristic_production=scan_mode.heuristic_production,
         )
         candidates = self._annotate_candidate_quality_throttle(candidates, throttle_diagnostics)
         persisted_candidates = self._annotate_candidate_quality_throttle(persisted_candidates, throttle_diagnostics)
         confidence_max_candidates = self._confidence_adjusted_max_candidates(
-            base_max=int(throttle_diagnostics["effective_max_candidates"]),
+            base_max=min(int(throttle_diagnostics["effective_max_candidates"]), int(scan_mode.max_candidates_total)),
             scan_policy=scan_policy,
             shortlist_model_context=shortlist_model_context,
+            heuristic_production=scan_mode.heuristic_production,
         )
         effective_cap = max(1, confidence_max_candidates)
         if shortlist_model_context is not None:
@@ -539,7 +572,16 @@ class ScanService:
             selection_pool,
             scan_policy,
             max_candidates_total=effective_cap,
+            max_candidates_per_slot=scan_mode.max_candidates_per_slot,
+            max_candidates_per_sector=scan_mode.max_candidates_per_sector,
         )
+        if scan_mode.heuristic_production:
+            selected = apply_portfolio_stop_risk_cap(
+                selected,
+                settings=settings,
+                sizing_policy=scan_policy.sizing,
+                score_column="signal_score",
+            )
         persisted_rows = self._build_persisted_scan_rows(persisted_candidates, selected)
         if callable(scan_candidate_writer):
             scan_candidate_writer(scan_date=date.today().isoformat(), rows=persisted_rows)
@@ -609,6 +651,7 @@ class ScanService:
             data_freshness_rows=data_freshness_rows,
             shortlist_model_context=shortlist_model_context,
             regime_state=regime_state,
+            scan_mode=scan_mode,
         )
         self.email_sender(
             subject="Evening Brief",
@@ -735,6 +778,90 @@ class ScanService:
             return exact
         mapped = dict(exact)
         return mapped | {"__fallback__": fallback_slot}
+
+    def _resolve_scan_mode(
+        self,
+        *,
+        shortlist_model_context,
+        scan_policy: ScanPolicy,
+        regime_state: RegimeGateState | None,
+    ) -> ScanModeState:
+        model_active = shortlist_model_context is not None and scan_policy.shortlist_model.use_as_candidate_source
+        if model_active:
+            return ScanModeState(
+                mode="MODEL",
+                use_model_candidate_source=True,
+                heuristic_production=False,
+                max_candidates_total=int(scan_policy.max_candidates_total),
+                max_candidates_per_slot=int(scan_policy.max_candidates_per_slot),
+                max_candidates_per_sector=int(scan_policy.max_candidates_per_sector),
+            )
+        if not (regime_state is not None and regime_state.enforce):
+            return ScanModeState(
+                mode="HEURISTIC",
+                use_model_candidate_source=False,
+                heuristic_production=False,
+                max_candidates_total=int(scan_policy.max_candidates_total),
+                max_candidates_per_slot=int(scan_policy.max_candidates_per_slot),
+                max_candidates_per_sector=int(scan_policy.max_candidates_per_sector),
+                reason="heuristic fallback",
+            )
+        classification = str(regime_state.classification or "unknown").lower()
+        if classification == "trending":
+            return ScanModeState(
+                mode="HEURISTIC",
+                use_model_candidate_source=False,
+                heuristic_production=True,
+                max_candidates_total=6,
+                max_candidates_per_slot=3,
+                max_candidates_per_sector=3,
+            )
+        if classification == "neutral":
+            return ScanModeState(
+                mode="REDUCED-HEURISTIC",
+                use_model_candidate_source=False,
+                heuristic_production=True,
+                max_candidates_total=3,
+                max_candidates_per_slot=1,
+                max_candidates_per_sector=2,
+            )
+        return ScanModeState(
+            mode="REGIME STAND-DOWN",
+            use_model_candidate_source=False,
+            heuristic_production=False,
+            max_candidates_total=0,
+            max_candidates_per_slot=0,
+            max_candidates_per_sector=0,
+            stand_down=True,
+            reason=f"regime {classification or 'unknown'}",
+        )
+
+    def _heuristic_production_strategies(
+        self,
+        strategies: dict[str, ProductionStrategy],
+    ) -> dict[str, ProductionStrategy]:
+        return {
+            str(slot): strategy
+            for slot, strategy in strategies.items()
+            if str(slot).lower() != "healthcare"
+        }
+
+    def _heuristic_position_size(
+        self,
+        row,
+        *,
+        strategy: ProductionStrategy,
+        settings,
+        scan_policy: ScanPolicy,
+    ) -> tuple[int, float]:
+        return compute_heuristic_position_size(
+            price=float(row["adj_close"]),
+            exit_rules=strategy.exit_rules,
+            settings=settings,
+            sizing_policy=scan_policy.sizing,
+            atr_pct_14=row.get("atr_pct_14", pd.NA),
+            entry_atr=float(row["atr_14"]) if pd.notna(row.get("atr_14")) else None,
+        )
 
     def _build_shortlist_model_slot_diagnostics(
         self,
@@ -982,6 +1109,7 @@ class ScanService:
         *,
         scan_policy: ScanPolicy,
         selection_opportunity_floor: float,
+        heuristic_production: bool = False,
     ) -> dict[str, object]:
         configured_max = int(scan_policy.max_candidates_total)
         diagnostics: dict[str, object] = {
@@ -995,6 +1123,10 @@ class ScanService:
             "configured_max_candidates": configured_max,
             "effective_max_candidates": configured_max,
         }
+        if heuristic_production:
+            diagnostics["enabled"] = False
+            diagnostics["reason"] = "regime_gated_heuristic_production"
+            return diagnostics
         if not scan_policy.candidate_quality_throttle_enabled:
             return diagnostics
         if candidates.empty:
@@ -1030,9 +1162,12 @@ class ScanService:
         base_max: int,
         scan_policy: ScanPolicy,
         shortlist_model_context,
+        heuristic_production: bool = False,
     ) -> int:
         if base_max <= 0:
             return 0
+        if heuristic_production:
+            return base_max
         if shortlist_model_context is None:
             return max(3, base_max * 3 // 4)
         beat_rate, mean_target, _label = self._active_shortlist_confidence_metrics(shortlist_model_context)
@@ -1110,6 +1245,8 @@ class ScanService:
         scan_policy: ScanPolicy,
         *,
         max_candidates_total: int | None = None,
+        max_candidates_per_slot: int | None = None,
+        max_candidates_per_sector: int | None = None,
     ) -> pd.DataFrame:
         effective_max_candidates = (
             int(scan_policy.max_candidates_total)
@@ -1118,6 +1255,16 @@ class ScanService:
         )
         if effective_max_candidates <= 0:
             return candidates.iloc[0:0].copy()
+        effective_max_per_slot = (
+            int(scan_policy.max_candidates_per_slot)
+            if max_candidates_per_slot is None
+            else max(0, int(max_candidates_per_slot))
+        )
+        effective_max_per_sector = (
+            int(scan_policy.max_candidates_per_sector)
+            if max_candidates_per_sector is None
+            else max(0, int(max_candidates_per_sector))
+        )
         ranked_candidates = candidates.copy()
         if "selection_score" not in ranked_candidates.columns:
             ranked_candidates["selection_score"] = ranked_candidates["signal_score"]
@@ -1137,9 +1284,9 @@ class ScanService:
                 continue
             slot = str(candidate.strategy_slot)
             sector = str(candidate.sector)
-            if slot_counts.get(slot, 0) >= scan_policy.max_candidates_per_slot:
+            if slot_counts.get(slot, 0) >= effective_max_per_slot:
                 continue
-            if sector_counts.get(sector, 0) >= scan_policy.max_candidates_per_sector:
+            if sector_counts.get(sector, 0) >= effective_max_per_sector:
                 continue
             selected_indices.append(int(candidate.Index))
             slot_counts[slot] = slot_counts.get(slot, 0) + 1
@@ -1187,14 +1334,14 @@ class ScanService:
     def _load_regime_gate_state(self, *, policy: RegimeGatePolicy, scan_date: date) -> RegimeGateState | None:
         loader = getattr(self.db_manager, "load_latest_regime_meter", None)
         if not callable(loader):
-            return None
+            return self._unknown_regime_gate_state(policy=policy) if policy.enforce else None
         try:
             row = loader(as_of_date=scan_date.isoformat(), horizon_sessions=20)
         except Exception as exc:
             self.logger.warning("Unable to load regime meter state: %s", exc)
-            return None
+            return self._unknown_regime_gate_state(policy=policy) if policy.enforce else None
         if not row:
-            return None
+            return self._unknown_regime_gate_state(policy=policy) if policy.enforce else None
         return RegimeGateState(
             classification=str(row.get("classification") or "neutral"),
             snapshot_date=self._parse_date(row.get("snapshot_date")),
@@ -1205,13 +1352,26 @@ class ScanService:
             stand_down_slots=policy.stand_down_slots,
         )
 
+    def _unknown_regime_gate_state(self, *, policy: RegimeGatePolicy) -> RegimeGateState:
+        return RegimeGateState(
+            classification="unknown",
+            snapshot_date=None,
+            mom_ic_20d_avg=None,
+            mom_ic_60d_avg=None,
+            wml_20d_alpha=None,
+            enforce=policy.enforce,
+            stand_down_slots=policy.stand_down_slots,
+        )
+
     def _stood_down_slots(
         self,
         *,
         regime_state: RegimeGateState | None,
         scan_strategies: dict[str, ProductionStrategy],
     ) -> set[str]:
-        if regime_state is None or not regime_state.enforce or regime_state.classification != "reversal":
+        if regime_state is None or not regime_state.enforce:
+            return set()
+        if str(regime_state.classification).lower() not in {"reversal", "unknown", "unavailable"}:
             return set()
         configured = {str(slot) for slot in regime_state.stand_down_slots if str(slot)}
         if not configured:
@@ -1224,8 +1384,14 @@ class ScanService:
         value = "nan" if regime_state.mom_ic_20d_avg is None else f"{regime_state.mom_ic_20d_avg:.3f}"
         return f"REGIME STAND-DOWN - momentum IC {value}, no picks emitted"
 
-    def _build_regime_stand_down_email(self, regime_state: RegimeGateState | None) -> str:
+    def _build_regime_stand_down_email(
+        self,
+        regime_state: RegimeGateState | None,
+        *,
+        scan_mode: ScanModeState | None = None,
+    ) -> str:
         line = regime_state.line if regime_state is not None else "regime: unavailable"
+        mode = scan_mode.mode if scan_mode is not None else "REGIME STAND-DOWN"
         latest = (
             regime_state.snapshot_date.isoformat()
             if regime_state is not None and regime_state.snapshot_date is not None
@@ -1239,6 +1405,7 @@ class ScanService:
         return (
             "<html><body style=\"font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:720px;margin:0 auto;padding:16px;color:#212529;\">"
             "<h1 style=\"font-size:16px;\">REGIME STAND-DOWN</h1>"
+            f"<p>mode: {escape(mode)}</p>"
             f"<p>{escape(line)}</p>"
             f"<p>metrics as of {escape(latest)} (20-session label lag by design).</p>"
             f"<p>wml_20d_alpha: {escape(wml)}. No picks emitted.</p>"
@@ -1526,6 +1693,9 @@ class ScanService:
             "model_score_label",
             "model_reason_summary",
             "model_comparison_summary",
+            "scan_mode",
+            "sizing_multiplier",
+            "stop_risk_dollars",
             "ranker_score",
             "selection_score",
             "ranker_enabled",
@@ -1600,6 +1770,7 @@ class ScanService:
                     "model_generated_at": row.get("model_generated_at"),
                     "model_name": row.get("model_name"),
                     "details": {
+                        "scan_mode": row.get("scan_mode"),
                         "why": self._candidate_signal_evidence(row),
                         "already_owned": bool(row.get("already_owned", False)),
                         "pre_penalty_opportunity_score": float(
@@ -1622,6 +1793,9 @@ class ScanService:
                             "model_rank": int(row.get("model_rank")) if pd.notna(row.get("model_rank")) else None,
                             "model_generated_at": row.get("model_generated_at"),
                             "model_name": row.get("model_name"),
+                            "scan_mode": row.get("scan_mode"),
+                            "sizing_multiplier": float(row.get("sizing_multiplier")) if pd.notna(row.get("sizing_multiplier")) else None,
+                            "stop_risk_dollars": float(row.get("stop_risk_dollars")) if pd.notna(row.get("stop_risk_dollars")) else None,
                             "model_target_column": row.get("model_target_column"),
                             "model_score_label": row.get("model_score_label"),
                             "model_reason_summary": row.get("model_reason_summary"),
@@ -1668,6 +1842,7 @@ class ScanService:
         data_freshness_rows: list[dict[str, str]] | None = None,
         shortlist_model_context=None,
         regime_state: RegimeGateState | None = None,
+        scan_mode: ScanModeState | None = None,
     ) -> str:
         sections: list[str] = []
         analyst_contexts = analyst_contexts or {}
@@ -1690,6 +1865,10 @@ class ScanService:
                 preview_rows.append((candidate, exit_plan))
             show_stop = any(item[1]["stop_display"] is not None for item in preview_rows)
             show_target = any(item[1]["target_display"] is not None for item in preview_rows)
+            show_sizing = any(
+                self._is_finite(getattr(item[0], "sizing_multiplier", None))
+                for item in preview_rows
+            )
             rows = []
             for candidate, exit_plan in preview_rows:
                 chart_link = f"https://www.tradingview.com/chart/?symbol={candidate.ticker}"
@@ -1731,6 +1910,10 @@ class ScanService:
                     cells.append(f"<td>{self._format_level_with_distance(candidate, exit_plan, kind='stop')}</td>")
                 if show_target:
                     cells.append(f"<td>{self._format_level_with_distance(candidate, exit_plan, kind='target')}</td>")
+                if show_sizing:
+                    sizing_value = getattr(candidate, "sizing_multiplier", None)
+                    sizing_text = "n/a" if not self._is_finite(sizing_value) else f"{float(sizing_value):.2f}x"
+                    cells.append(f"<td>{sizing_text}</td>")
                 cells.extend(
                     [
                         f"<td>{earnings_status}</td>",
@@ -1764,6 +1947,8 @@ class ScanService:
                 header_cells.append("<th>Stop</th>")
             if show_target:
                 header_cells.append("<th>Target</th>")
+            if show_sizing:
+                header_cells.append("<th>Size Mult</th>")
             header_cells.extend(
                 [
                     "<th>Earnings Status</th>",
@@ -1792,7 +1977,11 @@ class ScanService:
             scan_policy=scan_policy,
             shortlist_model_context=shortlist_model_context,
             regime_state=regime_state,
+            scan_mode=scan_mode,
         )
+        total_cap = scan_mode.max_candidates_total if scan_mode is not None else scan_policy.max_candidates_total
+        slot_cap = scan_mode.max_candidates_per_slot if scan_mode is not None else scan_policy.max_candidates_per_slot
+        sector_cap = scan_mode.max_candidates_per_sector if scan_mode is not None else scan_policy.max_candidates_per_sector
         return (
             "<html><body style=\"font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:720px;margin:0 auto;padding:16px;color:#212529;\">"
             f"{status_header}"
@@ -1803,7 +1992,7 @@ class ScanService:
             f"{self._build_extended_hours_html(extended_hours, selected=candidates, all_candidates=all_candidates, open_trade_tickers=open_trade_tickers or set())}"
             f"{self._build_theme_diversification_html(all_candidates, open_trades=open_trades)}"
             f"{self._build_portfolio_strength_coverage_html(all_candidates, open_trade_tickers=open_trade_tickers)}"
-            f"<p style=\"font-size:11px;color:#6c757d;\">Caps: total={scan_policy.max_candidates_total}, per_slot={scan_policy.max_candidates_per_slot}, per_sector={scan_policy.max_candidates_per_sector} | min_opportunity_score={scan_policy.min_opportunity_score:.2f} | shortlist_model_min_opportunity_score={scan_policy.shortlist_model.min_opportunity_score:.2f}</p>"
+            f"<p style=\"font-size:11px;color:#6c757d;\">Caps: total={total_cap}, per_slot={slot_cap}, per_sector={sector_cap} | min_opportunity_score={scan_policy.min_opportunity_score:.2f} | shortlist_model_min_opportunity_score={scan_policy.shortlist_model.min_opportunity_score:.2f}</p>"
             f"{''.join(sections)}"
             "</body></html>"
         )
@@ -1815,8 +2004,10 @@ class ScanService:
         scan_policy: ScanPolicy,
         shortlist_model_context=None,
         regime_state: RegimeGateState | None = None,
+        scan_mode: ScanModeState | None = None,
     ) -> str:
         pick_count = len(candidates.index)
+        mode_line = f"mode: {scan_mode.mode if scan_mode is not None else ('MODEL' if shortlist_model_context is not None else 'HEURISTIC')}"
         model_active = shortlist_model_context is not None
         if model_active:
             beat_rate, mean_target, confidence_label = self._active_shortlist_confidence_metrics(shortlist_model_context)
@@ -1847,6 +2038,7 @@ class ScanService:
         return f"""
         <div style="background:#f8f9fa;border-radius:6px;padding:12px 16px;margin-bottom:12px;font-size:12px;line-height:1.5;">
             <strong style="font-size:13px;">Scan Status</strong><br>
+            {escape(mode_line)}<br>
             {escape(regime_line)}<br>
             picks: {pick_count} | {model_line}
         </div>

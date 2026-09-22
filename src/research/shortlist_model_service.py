@@ -35,7 +35,6 @@ SHORTLIST_HEURISTIC_MODELS = {
     "reversal_rules",
     "event_signal",
     "structure_factor_signal",
-    "structure_factor_fresh_signal",
 }
 SHORTLIST_MODEL_EXCLUDED_BASE_FEATURES = {
     "analyst_snapshot_age_days",
@@ -213,7 +212,6 @@ class ShortlistModelService:
             "event_signal",
             "event_ic_model",
             "structure_factor_signal",
-            "structure_factor_fresh_signal",
             "ridge_model",
             "lasso_model",
             "elastic_net_model",

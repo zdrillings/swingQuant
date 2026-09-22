@@ -95,11 +95,13 @@ class ScanPerformanceService:
 
         enriched = self._attach_outcomes(selected, horizons=horizons)
         self._persist_selected_outcomes(enriched)
+        scan_modes = self._scan_modes_for_header(enriched)
 
         report_path = self.db_manager.paths.reports_dir / "scan_performance.md"
         lines = [
             "# Scan Performance",
             "",
+            f"- mode: {scan_modes}",
             f"- benchmark: {benchmark}",
             f"- scope: {resolved_scope['scope']}",
             f"- selection_source: {resolved_scope['selection_source'] or 'all'}",
@@ -161,6 +163,20 @@ class ScanPerformanceService:
             scan_dates=len(scoped_dates),
             benchmark=benchmark,
         )
+
+    def _scan_modes_for_header(self, frame: pd.DataFrame) -> str:
+        modes: list[str] = []
+        if "scan_mode" in frame.columns:
+            modes.extend(frame["scan_mode"].dropna().astype(str).tolist())
+        if "details_json" in frame.columns:
+            parsed = frame["details_json"].map(self._parse_details_json)
+            modes.extend(
+                str(value)
+                for value in parsed.map(lambda payload: payload.get("scan_mode")).dropna().tolist()
+                if str(value)
+            )
+        unique = sorted(set(modes))
+        return ", ".join(unique) if unique else "unknown"
 
     def _load_regime_line(self, *, as_of_date) -> str:
         loader = getattr(self.db_manager, "load_latest_regime_meter", None)

@@ -11,12 +11,13 @@ import pandas as pd
 
 from src.scan.analyst_data import AnalystContext
 from src.scan.backfill_service import ScanBackfillService
-from src.scan.service import LearnedRankerStatus, ScanPolicy, ScanService
+from src.scan.service import LearnedRankerStatus, RegimeGateState, ScanPolicy, ScanService
 from src.scan.ranker import RankerValidationReport
 from src.research.universe_snapshot_service import UniverseSnapshotBackfillService
 from src.settings import AppPaths, RuntimeSettings
 from src.sweep.service import BenchmarkContext, SweepService, _optional_finite_float
 from src.utils.db_manager import DatabaseManager
+from src.utils.sizing import HeuristicSizingPolicy, apply_portfolio_stop_risk_cap, compute_heuristic_position_size
 from src.utils.strategy import ExitRules, ProductionStrategy
 from src.monitor.service import MonitorService
 
@@ -461,6 +462,153 @@ class ScanServiceTests(unittest.TestCase):
         self.assertEqual(policy.candidate_quality_min_pool_median_opportunity, 0.40)
         self.assertEqual(policy.candidate_quality_reduced_max_candidates, 0)
         self.assertEqual(policy.candidate_quality_min_pool_size, 8)
+
+    def test_regime_gated_scan_mode_matrix(self) -> None:
+        service = ScanService(db_manager=None)
+        policy = ScanPolicy.from_config({"scan_policy": {"shortlist_model": {"use_as_candidate_source": True}}})
+
+        model_context = SimpleNamespace(champion_model="structure_factor_signal")
+        model_mode = service._resolve_scan_mode(
+            shortlist_model_context=model_context,
+            scan_policy=policy,
+            regime_state=RegimeGateState("reversal", None, -0.1, -0.1, -0.02, True, ()),
+        )
+        self.assertEqual(model_mode.mode, "MODEL")
+        self.assertTrue(model_mode.use_model_candidate_source)
+        self.assertFalse(model_mode.stand_down)
+
+        trending_mode = service._resolve_scan_mode(
+            shortlist_model_context=None,
+            scan_policy=policy,
+            regime_state=RegimeGateState("trending", None, 0.1, 0.1, 0.02, True, ()),
+        )
+        self.assertEqual(trending_mode.mode, "HEURISTIC")
+        self.assertTrue(trending_mode.heuristic_production)
+        self.assertEqual(trending_mode.max_candidates_total, 6)
+        self.assertEqual(trending_mode.max_candidates_per_slot, 3)
+        self.assertEqual(trending_mode.max_candidates_per_sector, 3)
+
+        neutral_mode = service._resolve_scan_mode(
+            shortlist_model_context=None,
+            scan_policy=policy,
+            regime_state=RegimeGateState("neutral", None, 0.0, 0.0, 0.0, True, ()),
+        )
+        self.assertEqual(neutral_mode.mode, "REDUCED-HEURISTIC")
+        self.assertTrue(neutral_mode.heuristic_production)
+        self.assertEqual(neutral_mode.max_candidates_total, 3)
+        self.assertEqual(neutral_mode.max_candidates_per_slot, 1)
+        self.assertEqual(neutral_mode.max_candidates_per_sector, 2)
+
+        reversal_mode = service._resolve_scan_mode(
+            shortlist_model_context=None,
+            scan_policy=policy,
+            regime_state=RegimeGateState("reversal", None, -0.1, -0.1, -0.02, True, ()),
+        )
+        self.assertEqual(reversal_mode.mode, "REGIME STAND-DOWN")
+        self.assertTrue(reversal_mode.stand_down)
+
+        unknown_mode = service._resolve_scan_mode(
+            shortlist_model_context=None,
+            scan_policy=policy,
+            regime_state=None,
+        )
+        self.assertFalse(unknown_mode.stand_down)
+        enforced_unknown_mode = service._resolve_scan_mode(
+            shortlist_model_context=None,
+            scan_policy=policy,
+            regime_state=RegimeGateState("unknown", None, None, None, None, True, ()),
+        )
+        self.assertTrue(enforced_unknown_mode.stand_down)
+
+    def test_heuristic_production_excludes_healthcare_slot(self) -> None:
+        service = ScanService(db_manager=None)
+        healthcare = ProductionStrategy(
+            strategy_id=1,
+            promoted_at="2026-01-01T00:00:00",
+            indicators={},
+            exit_rules=ExitRules(0.05, 0.12, 20),
+            slot="healthcare",
+            sector="Health Care",
+        )
+        energy = ProductionStrategy(
+            strategy_id=2,
+            promoted_at="2026-01-01T00:00:00",
+            indicators={"signal_score_min": 30.0},
+            exit_rules=ExitRules(0.05, 0.12, 20),
+            slot="energy",
+            sector="Energy",
+        )
+
+        filtered = service._heuristic_production_strategies({"healthcare": healthcare, "energy": energy})
+
+        self.assertEqual(set(filtered), {"energy"})
+
+    def test_heuristic_sizing_vol_multiplier_and_portfolio_cap(self) -> None:
+        settings = RuntimeSettings(
+            paths=AppPaths(
+                root_dir=Path("."),
+                data_dir=Path("data"),
+                duckdb_path=Path("data/market_data.duckdb"),
+                sqlite_path=Path("data/ledger.sqlite"),
+                reports_dir=Path("reports"),
+                logs_dir=Path("logs"),
+                config_path=Path("config.yaml"),
+                env_path=Path(".env"),
+                production_strategy_path=Path("production_strategy.json"),
+            ),
+            env={},
+            total_capital=50_000.0,
+            risk_per_trade=0.02,
+        )
+        policy = HeuristicSizingPolicy(
+            vol_target_daily_pct=0.025,
+            vol_scale_floor=0.50,
+            portfolio_stop_risk_cap_pct=0.04,
+        )
+        shares, multiplier = compute_heuristic_position_size(
+            price=100.0,
+            exit_rules=ExitRules(0.05, 0.12, 20),
+            settings=settings,
+            sizing_policy=policy,
+            atr_pct_14=0.05,
+            entry_atr=None,
+        )
+
+        self.assertEqual(multiplier, 0.50)
+        self.assertEqual(shares, 100)
+
+        candidates = pd.DataFrame(
+            [
+                {"ticker": "STRONG", "signal_score": 40.0, "opportunity_score": 0.7, "stop_risk_dollars": 1_100.0},
+                {"ticker": "MID", "signal_score": 35.0, "opportunity_score": 0.6, "stop_risk_dollars": 800.0},
+                {"ticker": "WEAK", "signal_score": 10.0, "opportunity_score": 0.9, "stop_risk_dollars": 700.0},
+            ]
+        )
+        capped = apply_portfolio_stop_risk_cap(
+            candidates,
+            settings=settings,
+            sizing_policy=policy,
+            score_column="signal_score",
+        )
+
+        self.assertEqual(set(capped["ticker"]), {"STRONG", "MID"})
+
+    def test_scan_status_header_renders_mode_line(self) -> None:
+        service = ScanService(db_manager=None)
+        policy = ScanPolicy.from_config({})
+        mode = service._resolve_scan_mode(
+            shortlist_model_context=None,
+            scan_policy=policy,
+            regime_state=RegimeGateState("neutral", None, 0.0, 0.0, 0.0, True, ()),
+        )
+        html = service._build_scan_status_header(
+            candidates=pd.DataFrame([{"ticker": "AAA"}]),
+            scan_policy=policy,
+            regime_state=RegimeGateState("neutral", None, 0.0, 0.0, 0.0, True, ()),
+            scan_mode=mode,
+        )
+
+        self.assertIn("mode: REDUCED-HEURISTIC", html)
 
     def test_candidate_quality_throttle_reduces_effective_selection_count(self) -> None:
         policy = ScanPolicy.from_config(

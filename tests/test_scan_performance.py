@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -12,6 +13,17 @@ from src.settings import AppPaths
 
 
 class ScanPerformanceServiceTests(unittest.TestCase):
+    def test_scan_modes_for_header_reads_persisted_details(self) -> None:
+        service = ScanPerformanceService(db_manager=object())
+        frame = pd.DataFrame(
+            [
+                {"details_json": json.dumps({"scan_mode": "HEURISTIC"})},
+                {"details_json": json.dumps({"scan_mode": "REDUCED-HEURISTIC"})},
+            ]
+        )
+
+        self.assertEqual(service._scan_modes_for_header(frame), "HEURISTIC, REDUCED-HEURISTIC")
+
     def test_performance_email_labels_classification_forward_predictions(self) -> None:
         service = ScanPerformanceService(db_manager=object())
         enriched = pd.DataFrame(
