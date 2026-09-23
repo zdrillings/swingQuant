@@ -3503,6 +3503,36 @@ class MonitorServiceTests(unittest.TestCase):
         self.assertEqual(result["action_tier"], "sell")
         self.assertIn("relative alpha", result["action_basis"])
 
+    def test_monitor_classifies_regime_meter_reversal_as_must_sell(self) -> None:
+        service = MonitorService(db_manager=None, email_sender=lambda subject, html_body, settings: None)
+
+        exit_flags = {
+            "hard_stop": True,
+            "trailing_stop": False,
+            "profit_target": False,
+            "rsi_2": False,
+            "time_limit": False,
+            "regime_flip": True,
+            "pre_earnings_exit": False,
+        }
+        result = service._classify_sell_signal(
+            exit_flags=exit_flags,
+            unrealized_pct=-0.02,
+            relative_alpha_since_entry=0.01,
+            buy_setup_status="yes",
+            policy={
+                "max_loss_pct": 0.15,
+                "relative_underperformance_pct": 0.05,
+                "portfolio_shock_trigger_pct": 0.50,
+                "portfolio_shock_min_triggered": 3,
+            },
+        )
+
+        self.assertEqual(result["recommended_action"], "sell")
+        self.assertEqual(result["action_tier"], "must-sell")
+        self.assertIn("regime meter reversal", result["action_basis"])
+        self.assertEqual(service._monitor_exit_reason(exit_flags=exit_flags, action_context=result), "regime_flip")
+
     def test_monitor_policy_note_flags_floor_stop_and_regime_time_limit_work(self) -> None:
         service = MonitorService(db_manager=None, email_sender=lambda subject, html_body, settings: None)
 
@@ -4125,8 +4155,108 @@ class MonitorServiceTests(unittest.TestCase):
         self.assertIn("Main Risk", email_calls[0].html_body)
         self.assertIn("Price Context", email_calls[0].html_body)
         self.assertIn("Policy Note", email_calls[0].html_body)
+        self.assertIn("Exit Reason", email_calls[0].html_body)
+        self.assertIn("Suggested Command", email_calls[0].html_body)
+        self.assertIn("./sq trade sell BBB 115.00 --exit-reason profit_target", email_calls[0].html_body)
         self.assertIn("<td>sell</td>", email_calls[0].html_body)
         self.assertIn("Fresh Setup Note", email_calls[0].html_body)
+
+    def test_monitor_uses_regime_meter_reversal_for_sell_command_exit_reason(self) -> None:
+        class FakeDB:
+            def initialize(self): return None
+            def list_open_trades(self):
+                return [
+                    {
+                        "ticker": "AAA",
+                        "entry_date": "2026-05-05",
+                        "entry_price": 100.0,
+                        "entry_atr": None,
+                        "shares": 10,
+                        "max_price_seen": 102.0,
+                        "status": "open",
+                        "strategy_id": 1,
+                        "strategy_slot": "industrials",
+                    }
+                ]
+            def load_price_history(self, tickers):
+                rows = []
+                for ticker in ("AAA", "SPY", "QQQ"):
+                    for day in pd.bdate_range("2025-06-01", periods=220):
+                        rows.append(
+                            {
+                                "ticker": ticker,
+                                "date": day.date(),
+                                "open": 100.0,
+                                "high": 101.0,
+                                "low": 99.0,
+                                "close": 100.0,
+                                "volume": 1000,
+                                "adj_close": 100.0,
+                            }
+                        )
+                return pd.DataFrame(rows)
+            def list_universe_rows(self, active_only=False):
+                return [{"ticker": "AAA", "sector": "Industrials", "md_volume_30d": 30_000_000}]
+            def get_latest_open_trade(self, ticker):
+                return {"rowid": 1, "entry_price": 100.0, "entry_atr": None, "shares": 10, "strategy_id": 1, "strategy_slot": "industrials"}
+            def update_trade_max_price(self, trade_rowid, max_price_seen): return None
+            def close_trade(self, trade_rowid, exit_date, exit_price, exit_reason="manual"): return None
+            def load_recent_highs(self, ticker, limit=2):
+                return pd.DataFrame([{"date": "2026-05-05", "high": 102.0}, {"date": "2026-05-04", "high": 101.0}])
+            def load_latest_regime_meter(self, *, as_of_date=None, horizon_sessions=20):
+                return {
+                    "snapshot_date": pd.Timestamp("2026-09-01").date(),
+                    "classification": "reversal",
+                    "mom_ic_20d_avg": -0.12,
+                }
+
+        email_calls: list[EmailCall] = []
+        service = MonitorService(FakeDB(), email_sender=lambda subject, html_body, settings: email_calls.append(EmailCall(subject, html_body)))
+        settings = RuntimeSettings(
+            paths=AppPaths(
+                root_dir=Path("."),
+                data_dir=Path("data"),
+                duckdb_path=Path("data/market_data.duckdb"),
+                sqlite_path=Path("data/ledger.sqlite"),
+                reports_dir=Path("reports"),
+                logs_dir=Path("logs"),
+                config_path=Path("config.yaml"),
+                env_path=Path(".env"),
+                production_strategy_path=Path("production_strategy.json"),
+            ),
+            env={},
+            total_capital=50_000.0,
+            risk_per_trade=0.02,
+        )
+        strategy = ProductionStrategy(
+            strategy_id=1,
+            promoted_at="2026-05-05T17:00:00",
+            indicators={"rsi_14_max": 35.0},
+            exit_rules=ExitRules(0.05, 0.12, 20),
+            slot="industrials",
+            sector="Industrials",
+        )
+        analysis_frame = pd.DataFrame(
+            [
+                {"ticker": "SPY", "date": pd.Timestamp("2026-05-05"), "spy_sma_200": 100.0, "qqq_sma_200": None},
+                {"ticker": "QQQ", "date": pd.Timestamp("2026-05-05"), "spy_sma_200": None, "qqq_sma_200": 100.0},
+                {"ticker": "AAA", "date": pd.Timestamp("2026-05-05"), "atr_14": 4.0},
+            ]
+        )
+
+        with patch.object(service, "_load_intraday_last_prices", return_value={"AAA": 101.0, "SPY": 105.0, "QQQ": 110.0}), \
+             patch.object(service, "_download_recent_daily_history", return_value=pd.DataFrame()), \
+             patch("src.monitor.service.get_settings", return_value=settings), \
+             patch("src.monitor.service.load_active_strategies", return_value={"industrials": strategy}), \
+             patch("src.monitor.service.build_analysis_frame", return_value=(analysis_frame, [])), \
+             patch("src.monitor.service.latest_rsi_2_with_intraday", return_value=20.0):
+            report = service.run(send_email=True)
+
+        self.assertTrue(report.emailed)
+        self.assertEqual(report.triggered_count, 1)
+        self.assertIn("regime meter reversal; exit at close", email_calls[0].html_body)
+        self.assertIn("<td>regime_flip</td>", email_calls[0].html_body)
+        self.assertIn("./sq trade sell AAA 101.00 --exit-reason regime_flip", email_calls[0].html_body)
 
     def test_monitor_does_not_sell_small_industrials_winner_on_rsi_2_alone(self) -> None:
         entry_date = (pd.Timestamp.today().normalize() - pd.offsets.BDay(2)).date().isoformat()

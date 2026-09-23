@@ -86,13 +86,13 @@ The success criteria from `REGIME_GATED_PRODUCTION_SPEC.md` §6 against realized
 
 ## 4. Gaps Between Today and This Model (build order)
 
-**G1 — Exit attribution (Execution → Research interface).** The ledger records exit price but not the rule that fired. Add `exit_reason` to every closed trade (`hard_stop | hard_stop_gap | trailing_stop | profit_target | time_limit | regime_flip | manual`); `sq sell` and `sq monitor` recommendations both supply it. Monthly review then compares the realized exit mix to the path-label tearsheet's predicted mix — the research loop closes.
+**G1 — Exit attribution (Execution → Research interface).** Implemented foundation: closed ledger trades persist `exit_reason`, `sq trade sell` accepts `--exit-reason`, broker-inferred closes default to `manual`, and monitor recommendations render a matching suggested sell command. Monthly review still needs to compare the realized exit mix to the path-label tearsheet's predicted mix.
 
 **G2 — Decision log (human interventions).** The owner is the largest untracked variable. One line per intervention: date, position, what the system said, what was done, why. Monthly review splits *system performance* from *human performance*; today they are inseparable. (The ZScaler 2026-09 trade — no slot linkage, no entry_atr, exit decided on sentiment — is the canonical first entry.)
 
 **G3 — System status page.** One page replacing six reports: regime + gate state + mode + open positions with current rule state + tomorrow's expected behavior. Thirty seconds to read. Everything else feeds it. This is the highest-leverage missing piece.
 
-**G4 — Monitor meter wiring.** The monitor's regime flag still uses the old sector-ETF logic; wire the meter classification so "regime flip to reversal = exit at close" lands in the digest as a must-sell-context alert. (Spec offered 2026-09-22; not yet built.)
+**G4 — Monitor meter wiring.** Implemented: monitor reads the lagged regime meter and renders `regime_flip` as a must-sell when the current classification is `reversal`. The old sector-ETF red/green context remains contextual, not the production exit switch.
 
 **G5 — Capital-layer review.** `RISK_PER_TRADE`, portfolio stop-risk cap, and vol targets were set once. Monthly: do they still match the strategy's expectancy evidence? Reviewed against realized outcomes, not backtests.
 

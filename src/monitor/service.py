@@ -82,6 +82,7 @@ class MonitorService:
         latest_rows_by_ticker = latest_snapshot.set_index("ticker").to_dict(orient="index")
         shortlist_model_context = self._load_shortlist_model_context()
         model_context_summary = self._model_context_summary(shortlist_model_context)
+        regime_meter_state = self._load_regime_meter_state()
         shortlist_predictions = (
             shortlist_model_context.live_predictions.set_index("ticker").to_dict(orient="index")
             if shortlist_model_context is not None and not shortlist_model_context.live_predictions.empty
@@ -211,6 +212,10 @@ class MonitorService:
                 if strategy.exit_rules.hard_stop_pct is not None
                 else None
             )
+            regime_meter_reversal = (
+                regime_meter_state is not None
+                and str(regime_meter_state.get("classification") or "").lower() == "reversal"
+            )
             exit_flags = {
                 "hard_stop": bool(
                     current_price is not None
@@ -240,7 +245,7 @@ class MonitorService:
                     strategy_slot=strategy.slot,
                 ),
                 "time_limit": time_in_trade > strategy.exit_rules.time_limit_days,
-                "regime_flip": not regime_green,
+                "regime_flip": regime_meter_reversal,
                 "pre_earnings_exit": (
                     strategy.exit_rules.exit_before_earnings_days is not None
                     and pd.notna(latest_ticker_row.get("days_to_next_earnings"))
@@ -268,6 +273,7 @@ class MonitorService:
                 buy_setup_status=buy_setup_status,
                 policy=monitor_policy,
             )
+            monitor_exit_reason = self._monitor_exit_reason(exit_flags=exit_flags, action_context=action_context)
             main_risk = self._summarize_main_risk(
                 recommended_action=action_context["recommended_action"],
                 exit_flags=exit_flags,
@@ -328,6 +334,17 @@ class MonitorService:
                     "action_tier": action_context["action_tier"],
                     "action_basis": action_context["action_basis"],
                     "raw_exit": action_context["raw_exit"],
+                    "monitor_exit_reason": monitor_exit_reason,
+                    "suggested_sell_command": self._suggested_sell_command(
+                        ticker=str(trade["ticker"]),
+                        current_price=current_price,
+                        exit_reason=monitor_exit_reason,
+                    ),
+                    "regime_meter_classification": (
+                        str(regime_meter_state.get("classification"))
+                        if regime_meter_state is not None and regime_meter_state.get("classification") is not None
+                        else "unknown"
+                    ),
                     "chart_link": f"https://www.tradingview.com/chart/?symbol={trade['ticker']}",
                     "hard_stop_price": hard_stop_price,
                     "hard_stop_pct": hard_stop_pct,
@@ -456,6 +473,13 @@ class MonitorService:
             relative_alpha_since_entry is not None
             and relative_alpha_since_entry <= -relative_underperformance_pct
         )
+        if exit_flags.get("regime_flip"):
+            return {
+                "recommended_action": "sell",
+                "action_tier": "must-sell",
+                "action_basis": "regime meter reversal; exit at close",
+                "raw_exit": raw_exit,
+            }
         if unrealized_pct is not None and unrealized_pct <= -max_loss_pct:
             return {
                 "recommended_action": "sell",
@@ -503,13 +527,6 @@ class MonitorService:
                 "recommended_action": "review",
                 "action_tier": "review",
                 "action_basis": "stop breached, but benchmark-relative damage/setup does not confirm",
-                "raw_exit": raw_exit,
-            }
-        if exit_flags.get("regime_flip"):
-            return {
-                "recommended_action": "review",
-                "action_tier": "review",
-                "action_basis": "regime flip; review exposure before selling",
                 "raw_exit": raw_exit,
             }
         if exit_flags.get("time_limit"):
@@ -618,6 +635,16 @@ class MonitorService:
                 continue
             prices[ticker] = float(history.iloc[-1]["close"])
         return prices
+
+    def _load_regime_meter_state(self) -> dict | None:
+        loader = getattr(self.db_manager, "load_latest_regime_meter", None)
+        if not callable(loader):
+            return None
+        try:
+            return loader(as_of_date=date.today().isoformat(), horizon_sessions=20)
+        except Exception as exc:
+            self.logger.warning("Unable to load regime meter state in monitor: %s", exc)
+            return None
 
     def _load_yesterday_high(self, ticker: str) -> float | None:
         rows = self.db_manager.load_recent_highs(ticker, limit=2)
@@ -746,6 +773,8 @@ class MonitorService:
                 f"<td>{row['recommended_action']}</td>"
                 f"<td>{row.get('action_tier', '')}</td>"
                 f"<td>{row.get('action_basis', '')}</td>"
+                f"<td>{row.get('monitor_exit_reason', 'manual')}</td>"
+                f"<td>{row.get('suggested_sell_command', '')}</td>"
                 f"<td>{row.get('benchmark_ticker', '-')}</td>"
                 f"<td>{self._fmt_optional_pct(row.get('relative_alpha_since_entry'))}</td>"
                 f"<td>{', '.join(exit_flags) if exit_flags else 'none'}</td>"
@@ -760,7 +789,7 @@ class MonitorService:
             )
         return (
             "<table border='1' cellpadding='6' cellspacing='0'>"
-            "<tr><th>Strategy Slot</th><th>Resolution</th><th>Ticker</th><th>Sector</th><th>Entry</th><th>Current</th><th>Price Source</th><th>P&L %</th><th>Trade Action</th><th>Tier</th><th>Action Basis</th><th>Benchmark</th><th>Alpha Since Entry</th><th>Exit Reasons</th><th>Fresh Setup</th><th>Main Risk</th><th>Price Context</th><th>Fresh Setup Note</th><th>Policy Note</th><th>Exit Context</th><th>Chart</th></tr>"
+            "<tr><th>Strategy Slot</th><th>Resolution</th><th>Ticker</th><th>Sector</th><th>Entry</th><th>Current</th><th>Price Source</th><th>P&L %</th><th>Trade Action</th><th>Tier</th><th>Action Basis</th><th>Exit Reason</th><th>Suggested Command</th><th>Benchmark</th><th>Alpha Since Entry</th><th>Exit Reasons</th><th>Fresh Setup</th><th>Main Risk</th><th>Price Context</th><th>Fresh Setup Note</th><th>Policy Note</th><th>Exit Context</th><th>Chart</th></tr>"
             f"{''.join(html_rows)}"
             "</table>"
         )
@@ -778,6 +807,8 @@ class MonitorService:
                 f"<td>{row['ticker']}</td>"
                 f"<td>{row.get('action_tier', '')}</td>"
                 f"<td>{row.get('action_basis', '')}</td>"
+                f"<td>{row.get('monitor_exit_reason', 'manual')}</td>"
+                f"<td>{row.get('suggested_sell_command', '')}</td>"
                 f"<td>{row['main_risk']}</td>"
                 f"<td>{row.get('exit_policy_note', '')}</td>"
                 "</tr>"
@@ -786,10 +817,30 @@ class MonitorService:
             return "<p>No actionable exit signals. Holdings are included below for context.</p>"
         return (
             "<table border='1' cellpadding='6' cellspacing='0'>"
-            "<tr><th>Action</th><th>Ticker</th><th>Tier</th><th>Basis</th><th>Main Risk</th><th>Policy Note</th></tr>"
+            "<tr><th>Action</th><th>Ticker</th><th>Tier</th><th>Basis</th><th>Exit Reason</th><th>Suggested Command</th><th>Main Risk</th><th>Policy Note</th></tr>"
             f"{''.join(summary_rows)}"
             "</table>"
         )
+
+    def _monitor_exit_reason(self, *, exit_flags: dict[str, bool], action_context: dict[str, object]) -> str:
+        for reason in (
+            "regime_flip",
+            "hard_stop",
+            "profit_target",
+            "pre_earnings_exit",
+            "trailing_stop",
+            "time_limit",
+            "rsi_2",
+        ):
+            if exit_flags.get(reason):
+                return reason
+        return "manual" if action_context.get("recommended_action") in {"sell", "review"} else ""
+
+    def _suggested_sell_command(self, *, ticker: str, current_price: float | None, exit_reason: str) -> str:
+        if not exit_reason:
+            return ""
+        price = f"{current_price:.2f}" if current_price is not None else "<price>"
+        return f"./sq trade sell {ticker} {price} --exit-reason {exit_reason}"
 
     def _summarize_setup_now(
         self,
@@ -1006,6 +1057,9 @@ class MonitorService:
             "time_limit": False,
             "regime_flip": False,
             "pre_earnings_exit": False,
+            "monitor_exit_reason": "manual",
+            "suggested_sell_command": f"./sq trade sell {ticker} <price> --exit-reason manual",
+            "regime_meter_classification": "unknown",
             "buy_setup_status": "unknown",
             "buy_setup_note": "open ledger position has no resolvable active or historical strategy; review manually",
             "setup_now": "unknown",
