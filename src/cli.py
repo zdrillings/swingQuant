@@ -96,6 +96,22 @@ def build_parser() -> argparse.ArgumentParser:
     trade_parser.add_argument("price", type=float)
     trade_parser.add_argument("shares", type=int, nargs="?")
     trade_parser.add_argument("--slot", dest="strategy_slot", type=str, default=None)
+    trade_parser.add_argument(
+        "--exit-reason",
+        choices=(
+            "hard_stop",
+            "hard_stop_gap",
+            "trailing_stop",
+            "profit_target",
+            "time_limit",
+            "regime_flip",
+            "pre_earnings_exit",
+            "rsi_2",
+            "manual",
+        ),
+        default="manual",
+        help="Attribution for sell actions; defaults to manual.",
+    )
 
     subparsers.add_parser("positions", help="Summarize open positions and current sell context.")
     quote_parser = subparsers.add_parser("quote", help="Show current price and live trade context for a ticker.")
@@ -388,7 +404,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.action == "buy":
                 print(service.buy(ticker=args.ticker, price=args.price, shares=args.shares, strategy_slot=args.strategy_slot))
             else:
-                print(service.sell(ticker=args.ticker, price=args.price))
+                print(service.sell(ticker=args.ticker, price=args.price, exit_reason=args.exit_reason))
             return 0
 
         if args.command == "positions":

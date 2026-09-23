@@ -46,18 +46,39 @@ class TradeService:
         )
         return f"Bought {ticker}: {final_shares} shares at {price:.2f} using strategy slot '{strategy.slot}'"
 
-    def sell(self, *, ticker: str, price: float) -> str:
+    def sell(self, *, ticker: str, price: float, exit_reason: str = "manual") -> str:
         self.db_manager.initialize()
         trade = self.db_manager.get_latest_open_trade(ticker)
         if trade is None:
             raise ValueError(f"No open trade found for {ticker}")
+        reason = self._normalize_exit_reason(exit_reason)
         self.db_manager.close_trade(
             trade_rowid=int(trade["rowid"]),
             exit_date=date.today().isoformat(),
             exit_price=price,
+            exit_reason=reason,
         )
         pnl = (price - float(trade["entry_price"])) * int(trade["shares"])
-        return f"Realized P&L for {ticker}: {pnl:.2f}"
+        return f"Realized P&L for {ticker}: {pnl:.2f} exit_reason={reason}"
+
+    @staticmethod
+    def _normalize_exit_reason(value: str | None) -> str:
+        reason = str(value or "manual").strip().lower().replace("-", "_").replace(" ", "_")
+        allowed = {
+            "hard_stop",
+            "hard_stop_gap",
+            "trailing_stop",
+            "profit_target",
+            "time_limit",
+            "regime_flip",
+            "pre_earnings_exit",
+            "rsi_2",
+            "manual",
+        }
+        if reason not in allowed:
+            allowed_text = ", ".join(sorted(allowed))
+            raise ValueError(f"Invalid exit_reason {value!r}. Allowed values: {allowed_text}")
+        return reason
 
     def _load_entry_atr(self, *, ticker: str, current_price: float) -> float:
         base_history = self.db_manager.load_price_history([ticker])

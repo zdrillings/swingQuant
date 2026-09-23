@@ -3594,7 +3594,7 @@ class MonitorServiceTests(unittest.TestCase):
             def assign_trade_strategy(self, trade_rowid, *, strategy_id, strategy_slot):
                 self.assigned.append((trade_rowid, strategy_id, strategy_slot))
             def update_trade_max_price(self, trade_rowid, max_price_seen): return None
-            def close_trade(self, trade_rowid, exit_date, exit_price): return None
+            def close_trade(self, trade_rowid, exit_date, exit_price, exit_reason="manual"): return None
             def load_recent_highs(self, ticker, limit=2):
                 return pd.DataFrame([{"date": "2026-05-05", "high": 105.0}, {"date": "2026-05-04", "high": 105.0}])
 
@@ -3682,7 +3682,7 @@ class MonitorServiceTests(unittest.TestCase):
             def get_latest_open_trade(self, ticker):
                 return {"rowid": 1, "entry_price": 100.0, "entry_atr": None, "shares": 10}
             def update_trade_max_price(self, trade_rowid, max_price_seen): return None
-            def close_trade(self, trade_rowid, exit_date, exit_price): return None
+            def close_trade(self, trade_rowid, exit_date, exit_price, exit_reason="manual"): return None
             def load_recent_highs(self, ticker, limit=2):
                 return pd.DataFrame([{"date": entry_date, "high": 100.0}])
 
@@ -3777,7 +3777,7 @@ class MonitorServiceTests(unittest.TestCase):
             def get_latest_open_trade(self, ticker):
                 return {"rowid": 1, "entry_price": 100.0, "entry_atr": 4.0, "shares": 10}
             def update_trade_max_price(self, trade_rowid, max_price_seen): return None
-            def close_trade(self, trade_rowid, exit_date, exit_price): return None
+            def close_trade(self, trade_rowid, exit_date, exit_price, exit_reason="manual"): return None
             def load_recent_highs(self, ticker, limit=2):
                 return pd.DataFrame([{"date": "2026-05-15", "high": 120.0}])
 
@@ -3877,7 +3877,7 @@ class MonitorServiceTests(unittest.TestCase):
                     "params_json": '{"sector":"Information Technology","indicators":{"rsi_14_max":35.0},"exit_rules":{"trailing_stop_pct":0.05,"profit_target_pct":0.12,"time_limit_days":20}}',
                 }
             def update_trade_max_price(self, trade_rowid, max_price_seen): return None
-            def close_trade(self, trade_rowid, exit_date, exit_price): return None
+            def close_trade(self, trade_rowid, exit_date, exit_price, exit_reason="manual"): return None
             def load_recent_highs(self, ticker, limit=2):
                 return pd.DataFrame([{"date": "2026-05-05", "high": 100.0}, {"date": "2026-05-04", "high": 100.0}])
 
@@ -4051,7 +4051,7 @@ class MonitorServiceTests(unittest.TestCase):
                 return {"rowid": {"AAA": 1, "BBB": 2, "CCC": 3, "DDD": 4, "EEE": 5}[ticker], "entry_price": 100.0, "shares": 10}
             def update_trade_max_price(self, trade_rowid, max_price_seen):
                 self.max_updates.append((trade_rowid, max_price_seen))
-            def close_trade(self, trade_rowid, exit_date, exit_price):
+            def close_trade(self, trade_rowid, exit_date, exit_price, exit_reason="manual"):
                 self.closed.append((trade_rowid, exit_price))
             def load_recent_highs(self, ticker, limit=2):
                 return pd.DataFrame([{"date": "2026-05-05", "high": 105.0}, {"date": "2026-05-04", "high": 100.0}])
@@ -4167,7 +4167,7 @@ class MonitorServiceTests(unittest.TestCase):
             def get_latest_open_trade(self, ticker):
                 return {"rowid": 1, "entry_price": 100.0, "shares": 10}
             def update_trade_max_price(self, trade_rowid, max_price_seen): return None
-            def close_trade(self, trade_rowid, exit_date, exit_price): return None
+            def close_trade(self, trade_rowid, exit_date, exit_price, exit_reason="manual"): return None
             def load_recent_highs(self, ticker, limit=2):
                 return pd.DataFrame([{"date": entry_date, "high": 101.0}])
 
@@ -4251,7 +4251,7 @@ class MonitorServiceTests(unittest.TestCase):
             def get_latest_open_trade(self, ticker):
                 return {"rowid": 1, "entry_price": 100.0, "entry_atr": 4.0, "shares": 10}
             def update_trade_max_price(self, trade_rowid, max_price_seen): return None
-            def close_trade(self, trade_rowid, exit_date, exit_price): return None
+            def close_trade(self, trade_rowid, exit_date, exit_price, exit_reason="manual"): return None
             def load_recent_highs(self, ticker, limit=2):
                 return pd.DataFrame([{"date": "2026-05-05", "high": 100.0}, {"date": "2026-05-04", "high": 100.0}])
 
@@ -4341,7 +4341,7 @@ class MonitorServiceTests(unittest.TestCase):
             def get_latest_open_trade(self, ticker):
                 return {"rowid": 1, "entry_price": 100.0, "shares": 10}
             def update_trade_max_price(self, trade_rowid, max_price_seen): return None
-            def close_trade(self, trade_rowid, exit_date, exit_price): return None
+            def close_trade(self, trade_rowid, exit_date, exit_price, exit_reason="manual"): return None
             def load_recent_highs(self, ticker, limit=2):
                 return pd.DataFrame([{"date": entry_date, "high": 105.0}])
 
@@ -4425,7 +4425,7 @@ class MonitorServiceTests(unittest.TestCase):
             def get_latest_open_trade(self, ticker):
                 return {"rowid": 1, "entry_price": 100.0, "shares": 10}
             def update_trade_max_price(self, trade_rowid, max_price_seen): return None
-            def close_trade(self, trade_rowid, exit_date, exit_price): return None
+            def close_trade(self, trade_rowid, exit_date, exit_price, exit_reason="manual"): return None
             def load_recent_highs(self, ticker, limit=2):
                 return pd.DataFrame([{"date": "2026-05-05", "high": 105.0}, {"date": "2026-05-04", "high": 100.0}])
 
@@ -4510,7 +4510,7 @@ class MonitorServiceTests(unittest.TestCase):
             def get_latest_open_trade(self, ticker):
                 return {"rowid": 1, "entry_price": 100.0, "shares": 10}
             def update_trade_max_price(self, trade_rowid, max_price_seen): return None
-            def close_trade(self, trade_rowid, exit_date, exit_price): return None
+            def close_trade(self, trade_rowid, exit_date, exit_price, exit_reason="manual"): return None
             def load_recent_highs(self, ticker, limit=2):
                 return pd.DataFrame([{"date": "2026-05-05", "high": 105.0}, {"date": "2026-05-04", "high": 100.0}])
 
@@ -4690,7 +4690,7 @@ class MonitorServiceTests(unittest.TestCase):
                 return [{"ticker": "AAA", "sector": "Industrials", "md_volume_30d": 30_000_000}]
             def get_latest_open_trade(self, ticker): return {"rowid": 1, "entry_price": 100.0, "shares": 10}
             def update_trade_max_price(self, trade_rowid, max_price_seen): return None
-            def close_trade(self, trade_rowid, exit_date, exit_price): return None
+            def close_trade(self, trade_rowid, exit_date, exit_price, exit_reason="manual"): return None
             def load_recent_highs(self, ticker, limit=2):
                 return pd.DataFrame([{"date": "2026-05-05", "high": 105.0}, {"date": "2026-05-04", "high": 100.0}])
 

@@ -76,6 +76,7 @@ class DatabaseManagerInitializationTests(unittest.TestCase):
 
             self.assertTrue({"Universe", "Backtest_Results", "Active_Trades", "Scan_Candidates"}.issubset(tables))
             self.assertIn("entry_atr", active_trade_columns)
+            self.assertIn("exit_reason", active_trade_columns)
             self.assertTrue(
                 {
                     "md_volume_30d",

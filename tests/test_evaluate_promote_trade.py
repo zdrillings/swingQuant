@@ -1015,19 +1015,20 @@ class PromoteAndTradeTests(unittest.TestCase):
             )
 
             with patch.object(db, "duckdb_connection", return_value=FakeDuckDBConnection()):
-                message = TradeService(db).sell(ticker="AAA", price=112.5)
+                message = TradeService(db).sell(ticker="AAA", price=112.5, exit_reason="profit_target")
 
-            self.assertEqual(message, "Realized P&L for AAA: 125.00")
+            self.assertEqual(message, "Realized P&L for AAA: 125.00 exit_reason=profit_target")
             connection = sqlite3.connect(paths.sqlite_path)
             connection.row_factory = sqlite3.Row
             try:
                 row = connection.execute(
-                    "SELECT status, exit_date, exit_price FROM Active_Trades WHERE ticker = 'AAA'"
+                    "SELECT status, exit_date, exit_price, exit_reason FROM Active_Trades WHERE ticker = 'AAA'"
                 ).fetchone()
             finally:
                 connection.close()
             self.assertEqual(row["status"], "closed")
             self.assertEqual(row["exit_price"], 112.5)
+            self.assertEqual(row["exit_reason"], "profit_target")
             self.assertIsNotNone(row["exit_date"])
 
     def test_trade_buy_reuses_existing_open_trade_strategy_for_off_universe_ticker(self) -> None:

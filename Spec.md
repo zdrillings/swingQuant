@@ -155,9 +155,9 @@ SQLite Ledger:
 Table 	Columns
 Universe 	ticker, sector, is_active, md_volume_30d
 Backtest_Results 	id, strategy_id, params_json, norm_score, profit_factor, expectancy, mdd, win_rate
-Active_Trades 	ticker, entry_date, entry_price, entry_atr, shares, max_price_seen, status, exit_date, exit_price
+Active_Trades 	ticker, entry_date, entry_price, entry_atr, shares, max_price_seen, status, exit_date, exit_price, exit_reason
 
-Active_Trades.status lifecycle: 'open' → set by sq trade buy. 'closed' → set by sq trade sell. sq monitor is alert-only and recommends actions in its digest but does not close trades automatically.
+Active_Trades.status lifecycle: 'open' → set by sq trade buy. 'closed' → set by sq trade sell. Closed trades must carry exit_reason for attribution. sq monitor is alert-only and recommends actions in its digest but does not close trades automatically.
 4. CLI Command Specifications
 sq sync
 

@@ -88,13 +88,14 @@ class FakeDB:
                 return trade
         return None
 
-    def close_trade(self, *, trade_rowid, exit_date, exit_price):
-        self.closed.append((trade_rowid, exit_date, exit_price))
+    def close_trade(self, *, trade_rowid, exit_date, exit_price, exit_reason="manual"):
+        self.closed.append((trade_rowid, exit_date, exit_price, exit_reason))
         for trade in self.open_trades:
             if trade["rowid"] == trade_rowid:
                 trade["status"] = "closed"
                 trade["exit_date"] = exit_date
                 trade["exit_price"] = exit_price
+                trade["exit_reason"] = exit_reason
 
     def open_trade(self, **kwargs):
         self.opened.append(kwargs)
@@ -203,6 +204,7 @@ class SchwabLedgerSyncServiceTests(unittest.TestCase):
 
         self.assertEqual(report.closed, 2)
         self.assertEqual(len(db.closed), 2)
+        self.assertEqual({row[3] for row in db.closed}, {"manual"})
 
     def test_close_missing_rejects_intraday_exit_price_outside_ohlc_range(self) -> None:
         db = FakeDB()

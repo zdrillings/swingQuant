@@ -244,7 +244,8 @@ CREATE TABLE IF NOT EXISTS Active_Trades (
     max_price_seen REAL NOT NULL,
     status TEXT NOT NULL CHECK(status IN ('open', 'closed')),
     exit_date TEXT,
-    exit_price REAL
+    exit_price REAL,
+    exit_reason TEXT
 );
 
 CREATE TABLE IF NOT EXISTS Earnings_Calendar (
@@ -453,6 +454,8 @@ class DatabaseManager:
             connection.execute("ALTER TABLE Active_Trades ADD COLUMN strategy_id INTEGER")
         if "strategy_slot" not in active_trade_columns:
             connection.execute("ALTER TABLE Active_Trades ADD COLUMN strategy_slot TEXT")
+        if "exit_reason" not in active_trade_columns:
+            connection.execute("ALTER TABLE Active_Trades ADD COLUMN exit_reason TEXT")
         scan_candidate_columns = {
             row["name"]
             for row in connection.execute("PRAGMA table_info(Scan_Candidates)").fetchall()
@@ -999,7 +1002,7 @@ class DatabaseManager:
             return list(
                 connection.execute(
                     """
-                    SELECT rowid, ticker, entry_date, entry_price, entry_atr, strategy_id, strategy_slot, shares, max_price_seen, status, exit_date, exit_price
+                    SELECT rowid, ticker, entry_date, entry_price, entry_atr, strategy_id, strategy_slot, shares, max_price_seen, status, exit_date, exit_price, exit_reason
                     FROM Active_Trades
                     WHERE status = 'open'
                     ORDER BY entry_date ASC, ticker ASC
@@ -1012,7 +1015,7 @@ class DatabaseManager:
             return list(
                 connection.execute(
                     """
-                    SELECT rowid, ticker, entry_date, entry_price, entry_atr, strategy_id, strategy_slot, shares, max_price_seen, status, exit_date, exit_price
+                    SELECT rowid, ticker, entry_date, entry_price, entry_atr, strategy_id, strategy_slot, shares, max_price_seen, status, exit_date, exit_price, exit_reason
                     FROM Active_Trades
                     WHERE status = 'closed'
                     ORDER BY exit_date ASC, ticker ASC, rowid ASC
@@ -1024,7 +1027,7 @@ class DatabaseManager:
         with self.sqlite_connection() as connection:
             return connection.execute(
                 """
-                SELECT rowid, ticker, entry_date, entry_price, entry_atr, strategy_id, strategy_slot, shares, max_price_seen, status, exit_date, exit_price
+                SELECT rowid, ticker, entry_date, entry_price, entry_atr, strategy_id, strategy_slot, shares, max_price_seen, status, exit_date, exit_price, exit_reason
                 FROM Active_Trades
                 WHERE ticker = ? AND status = 'open'
                 ORDER BY entry_date DESC, rowid DESC
@@ -1037,7 +1040,7 @@ class DatabaseManager:
         with self.sqlite_connection() as connection:
             return connection.execute(
                 """
-                SELECT rowid, ticker, entry_date, entry_price, entry_atr, strategy_id, strategy_slot, shares, max_price_seen, status, exit_date, exit_price
+                SELECT rowid, ticker, entry_date, entry_price, entry_atr, strategy_id, strategy_slot, shares, max_price_seen, status, exit_date, exit_price, exit_reason
                 FROM Active_Trades
                 WHERE ticker = ?
                 ORDER BY entry_date DESC, rowid DESC
@@ -1084,15 +1087,16 @@ class DatabaseManager:
         trade_rowid: int,
         exit_date: str,
         exit_price: float,
+        exit_reason: str = "manual",
     ) -> None:
         with self.sqlite_connection() as connection:
             connection.execute(
                 """
                 UPDATE Active_Trades
-                SET status = 'closed', exit_date = ?, exit_price = ?
+                SET status = 'closed', exit_date = ?, exit_price = ?, exit_reason = ?
                 WHERE rowid = ?
                 """,
-                (exit_date, exit_price, trade_rowid),
+                (exit_date, exit_price, exit_reason, trade_rowid),
             )
 
     def replace_earnings_dates(self, ticker: str, earnings_dates: Iterable[date]) -> int:

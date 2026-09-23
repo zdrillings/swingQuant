@@ -108,6 +108,7 @@ class SchwabLedgerSyncService:
                     trade_rowid=int(trade["rowid"]),
                     exit_date=date.today().isoformat(),
                     exit_price=float(exit_price),
+                    exit_reason="manual",
                 )
 
         for ticker in matched:

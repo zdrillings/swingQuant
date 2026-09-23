@@ -2,6 +2,8 @@
 
 SwingQuant is a CLI-driven swing-trading research and operations toolkit built around DuckDB for market history, SQLite for the trading ledger, and a single `sq` command surface.
 
+The current operating target is captured in [OPERATING_MODEL.md](OPERATING_MODEL.md). In short: the system should answer one daily question, "is the regime favorable, and are the rules being followed?", while keeping research, decision, and execution interfaces small and auditable.
+
 ## Scope
 
 Implemented commands:
@@ -17,7 +19,7 @@ Implemented commands:
 - `sq sleeve-research`
 - `sq promote --id <ID> [--slot <name>]`
 - `sq trade buy <ticker> <price> [shares]`
-- `sq trade sell <ticker> <price>`
+- `sq trade sell <ticker> <price> [--exit-reason <reason>]`
 - `sq positions`
 - `sq quote <ticker>`
 - `sq scan`
@@ -257,8 +259,10 @@ Use `--ticker` to always include specific names outside the default source:
 ./sq trade buy DOW 53.25 --slot materials
 ./sq trade buy EOG 118.40 --slot energy
 ./sq trade buy FIX 392.15 --slot industrials
-./sq trade sell AAPL 192.40
+./sq trade sell AAPL 192.40 --exit-reason profit_target
 ```
+
+Sell exit reasons are stored in the ledger for attribution. Allowed values are `hard_stop`, `hard_stop_gap`, `trailing_stop`, `profit_target`, `time_limit`, `regime_flip`, `pre_earnings_exit`, `rsi_2`, and `manual`; omitted reasons default to `manual`.
 
 ## Operational Rules
 

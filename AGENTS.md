@@ -188,6 +188,7 @@ The model's evaluation product is its **top-2 predictions**, not the full top-10
 - When the active strategy uses ATR exits, `buy` must persist `entry_atr` for runtime monitoring.
 - `buy` must also persist strategy linkage (`strategy_id` / `strategy_slot`) whenever a slot can be resolved.
 - `sell` is the only command that closes ledger positions.
+- `sell` must persist `exit_reason` for attribution; default manual exits to `manual`.
 
 ### `sq scan`
 
