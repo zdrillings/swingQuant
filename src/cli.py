@@ -46,6 +46,7 @@ from src.sync.service import SyncService
 from src.trade.service import TradeService
 from src.research.shortlist_bakeoff_service import VALID_SHORTLIST_FEATURE_PROFILES
 from src.research.shortlist_universe import VALID_ELIGIBLE_UNIVERSE_MODES, VALID_MODEL_SCOPES
+from src.settings import load_feature_config
 from src.utils.db_manager import DatabaseManager
 from src.utils.emailer import send_html_email
 from src.utils.logging import configure_logging
@@ -175,8 +176,8 @@ def build_parser() -> argparse.ArgumentParser:
     shortlist_bakeoff_parser.add_argument("--recent-dates", type=int, default=40)
     shortlist_bakeoff_parser.add_argument("--eligible-universe-mode", choices=VALID_ELIGIBLE_UNIVERSE_MODES, default="passed_only")
     shortlist_model_parser = subparsers.add_parser("shortlist-model", help="Train and evaluate walk-forward shortlist models on forward sector alpha.")
-    shortlist_model_parser.add_argument("--top", type=int, default=10)
-    shortlist_model_parser.add_argument("--horizon", type=int, default=20)
+    shortlist_model_parser.add_argument("--top", type=int, default=None)
+    shortlist_model_parser.add_argument("--horizon", type=int, default=None)
     shortlist_model_parser.add_argument("--min-train-dates", type=int, default=252)
     shortlist_model_parser.add_argument("--max-train-dates", type=int, default=None)
     shortlist_model_parser.add_argument("--test-window-dates", type=int, default=20)
@@ -606,9 +607,22 @@ def main(argv: list[str] | None = None) -> int:
             return 0
 
         if args.command == "shortlist-model":
+            top_n = args.top
+            horizon_days = args.horizon
+            if top_n is None or horizon_days is None:
+                shortlist_config = (
+                    load_feature_config()
+                    .get("scan_policy", {})
+                    .get("shortlist_model", {})
+                    or {}
+                )
+                if top_n is None:
+                    top_n = int(shortlist_config.get("top_n", 10))
+                if horizon_days is None:
+                    horizon_days = int(shortlist_config.get("horizon_days", 20))
             report = ShortlistModelService(db_manager).run(
-                top_n=args.top,
-                horizon_days=args.horizon,
+                top_n=top_n,
+                horizon_days=horizon_days,
                 min_train_dates=args.min_train_dates,
                 max_train_dates=args.max_train_dates,
                 test_window_dates=args.test_window_dates,

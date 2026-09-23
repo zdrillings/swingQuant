@@ -543,7 +543,10 @@ class ScanService:
             candidates,
         )
         eligible_candidates = candidates[
-            pd.to_numeric(candidates["opportunity_score"], errors="coerce") >= selection_opportunity_floor
+            self._clears_selection_opportunity_floor(
+                candidates,
+                selection_opportunity_floor=selection_opportunity_floor,
+            )
         ].copy()
         throttle_diagnostics = self._candidate_quality_throttle_diagnostics(
             eligible_candidates,
@@ -1073,8 +1076,12 @@ class ScanService:
                 }
                 continue
             slot_frame["opportunity_score"] = pd.to_numeric(slot_frame["opportunity_score"], errors="coerce")
-            cleared = slot_frame[slot_frame["opportunity_score"] >= float(min_opportunity_score)].copy()
-            dropped = slot_frame[slot_frame["opportunity_score"] < float(min_opportunity_score)].copy()
+            cleared_mask = self._clears_selection_opportunity_floor(
+                slot_frame,
+                selection_opportunity_floor=float(min_opportunity_score),
+            )
+            cleared = slot_frame[cleared_mask].copy()
+            dropped = slot_frame[~cleared_mask].copy()
             cleared = cleared.sort_values(["opportunity_score", "signal_score", "ticker"], ascending=[False, False, True])
             dropped = dropped.sort_values(["opportunity_score", "signal_score", "ticker"], ascending=[False, False, True])
             diagnostics[str(slot)] = {
@@ -1102,6 +1109,21 @@ class ScanService:
                 float(getattr(scan_policy, "opportunity_selection_cap", 0.45)),
             )
         return min(float(scan_policy.min_opportunity_score), float(getattr(scan_policy, "opportunity_selection_cap", 0.45)))
+
+    def _clears_selection_opportunity_floor(
+        self,
+        candidates: pd.DataFrame,
+        *,
+        selection_opportunity_floor: float,
+        model_rank_exemption_max: int = 5,
+    ) -> pd.Series:
+        opportunity = pd.to_numeric(candidates["opportunity_score"], errors="coerce")
+        clears_floor = opportunity >= float(selection_opportunity_floor)
+        if "model_rank" not in candidates.columns:
+            return clears_floor
+        model_rank = pd.to_numeric(candidates["model_rank"], errors="coerce")
+        model_top_exempt = model_rank.between(1, int(model_rank_exemption_max), inclusive="both")
+        return clears_floor | model_top_exempt
 
     def _candidate_quality_throttle_diagnostics(
         self,

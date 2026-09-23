@@ -2442,6 +2442,8 @@ class ShortlistModelService:
             runs = runs[champion_text.ne("") & champion_text.str.lower().ne("n/a")].copy()
         if runs.empty:
             return None
+        runs["_generated_at_sort"] = pd.to_datetime(runs["generated_at"], errors="coerce", utc=True)
+        runs = runs.sort_values("_generated_at_sort", ascending=False, na_position="last")
         last_generated = pd.to_datetime(runs.iloc[0].get("generated_at"), errors="coerce", utc=True)
         current_generated = pd.to_datetime(generated_at, errors="coerce", utc=True)
         if pd.isna(last_generated) or pd.isna(current_generated):

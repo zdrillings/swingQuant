@@ -1187,7 +1187,7 @@ class ScanServiceTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Scan snapshot is stale"):
                 service.run()
 
-    def test_scan_applies_shortlist_model_opportunity_floor_before_caps(self) -> None:
+    def test_scan_exempts_top_shortlist_model_ranks_from_opportunity_floor(self) -> None:
         class FakeDB:
             def initialize(self): return None
             def list_universe_rows(self, active_only=True):
@@ -1259,9 +1259,9 @@ class ScanServiceTests(unittest.TestCase):
         self.assertTrue(report.emailed)
         self.assertEqual(report.candidate_count, 1)
         html = email_calls[0].html_body
-        self.assertIn("AAA", html)
+        self.assertIn("BBB", html)
         slot_section = html.split("<h2>Slot: energy</h2>", maxsplit=1)[1]
-        self.assertNotIn("BBB</td>", slot_section)
+        self.assertNotIn("AAA</td>", slot_section)
         self.assertIn("shortlist_model_min_opportunity_score=0.30", html)
 
     def test_evening_brief_renders_portfolio_strength_coverage(self) -> None:

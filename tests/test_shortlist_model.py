@@ -1427,8 +1427,45 @@ class ShortlistModelServiceTests(unittest.TestCase):
 
         dry_run_args = parser.parse_args(["shortlist-model", "--dry-run"])
         self.assertTrue(dry_run_args.dry_run)
+        self.assertIsNone(dry_run_args.top)
+        self.assertIsNone(dry_run_args.horizon)
         path_args = parser.parse_args(["shortlist-model", "--target-type", "path"])
         self.assertEqual(path_args.target_type, "path")
+
+    def test_days_since_last_champion_counts_decommissioned_champions(self) -> None:
+        class FakeDB:
+            def load_shortlist_model_runs(self, **kwargs):
+                self.kwargs = kwargs
+                return pd.DataFrame(
+                    [
+                        {
+                            "generated_at": "2026-09-05T20:00:00+00:00",
+                            "horizon_days": 60,
+                            "champion_model": "lasso_model",
+                            "is_active": 1,
+                        },
+                        {
+                            "generated_at": "2026-09-18T20:00:00+00:00",
+                            "horizon_days": 60,
+                            "champion_model": "xgboost_model",
+                            "is_active": 0,
+                        },
+                        {
+                            "generated_at": "2026-09-22T20:00:00+00:00",
+                            "horizon_days": 60,
+                            "champion_model": "",
+                            "is_active": 1,
+                        },
+                    ]
+                )
+
+        fake_db = FakeDB()
+        service = ShortlistModelService(fake_db)
+
+        days = service._days_since_last_champion(generated_at="2026-09-22T20:01:00+00:00", horizon_days=60)
+
+        self.assertEqual(days, 4)
+        self.assertFalse(fake_db.kwargs["active_only"])
 
     def test_runtime_loader_returns_lasso_model_context(self) -> None:
         captured: dict[str, object] = {}

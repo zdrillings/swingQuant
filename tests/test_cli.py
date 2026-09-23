@@ -26,6 +26,47 @@ class CliTests(unittest.TestCase):
         self.assertFalse(default_args.email)
         self.assertTrue(email_args.email)
 
+    def test_shortlist_model_defaults_to_config_when_flags_omitted(self) -> None:
+        settings = RuntimeSettings(
+            paths=AppPaths(
+                root_dir=Path("."),
+                data_dir=Path("data"),
+                duckdb_path=Path("data/market_data.duckdb"),
+                sqlite_path=Path("data/ledger.sqlite"),
+                reports_dir=Path("reports"),
+                logs_dir=Path("logs"),
+                config_path=Path("config.yaml"),
+                env_path=Path(".env"),
+                production_strategy_path=Path("production_strategy.json"),
+            ),
+            env={},
+            total_capital=50_000.0,
+            risk_per_trade=0.02,
+        )
+
+        class FakeReport:
+            output_path = Path("reports/shortlist_model.md")
+            target_column = "alpha_vs_sector_60d"
+            champion_model = "xgboost_model"
+            oos_dates = 3
+            live_candidates = 2
+
+        captured: dict[str, object] = {}
+
+        def fake_run(self, **kwargs):
+            captured.update(kwargs)
+            return FakeReport()
+
+        with patch("src.settings.get_settings", return_value=settings), \
+             patch("src.cli.configure_logging", return_value=None), \
+             patch("src.cli.load_feature_config", return_value={"scan_policy": {"shortlist_model": {"horizon_days": 60, "top_n": 2}}}), \
+             patch("src.cli.ShortlistModelService.run", new=fake_run):
+            exit_code = main(["shortlist-model", "--dry-run"])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(captured["horizon_days"], 60)
+        self.assertEqual(captured["top_n"], 2)
+
     def test_scan_failure_sends_failure_email(self) -> None:
         settings = RuntimeSettings(
             paths=AppPaths(

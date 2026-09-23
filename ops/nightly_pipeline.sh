@@ -57,6 +57,22 @@ promotion_failures_file="data/promotion_failures.txt"
 last_champion_days_file="data/days_since_last_champion.txt"
 shortlist_report_file="reports/shortlist_model.md"
 
+read_shortlist_model_config() {
+  PYTHONPATH=.vendor python3 - <<'PY'
+from src.settings import load_feature_config
+
+shortlist_model = (
+    load_feature_config()
+    .get("scan_policy", {})
+    .get("shortlist_model", {})
+    or {}
+)
+print(int(shortlist_model.get("horizon_days", 20)), int(shortlist_model.get("top_n", 10)))
+PY
+}
+
+read -r shortlist_horizon_days shortlist_top_n < <(read_shortlist_model_config)
+
 latest_champion_date() {
   PYTHONPATH=.vendor python3 - <<'PY'
 from __future__ import annotations
@@ -188,6 +204,8 @@ path_shortlist_log="$(mktemp)"
 trap - ERR
 set +e
 ./sq shortlist-model \
+  --horizon "${shortlist_horizon_days}" \
+  --top "${shortlist_top_n}" \
   --target-type path \
   --min-train-dates 252 \
   --max-train-dates 252 \
@@ -211,6 +229,8 @@ shortlist_promotion_failed=0
 trap - ERR
 set +e
 ./sq shortlist-model \
+  --horizon "${shortlist_horizon_days}" \
+  --top "${shortlist_top_n}" \
   --min-train-dates 252 \
   --max-train-dates 252 \
   --test-window-dates 20 \
@@ -224,21 +244,20 @@ trap notify_failure ERR
 if [[ "${shortlist_status}" -ne 0 ]]; then
   if grep -Fq "No shortlist model candidate passed the promotion gate" "${shortlist_log}"; then
     shortlist_promotion_failed=1
-    consecutive_promotion_failures="$(record_promotion_failure)"
+    recorded_promotion_failures="$(record_promotion_failure)"
     days_since_last_champion="$(read_days_since_last_champion)"
     if [[ "${days_since_last_champion}" =~ ^[0-9]+$ ]]; then
       printf '%s\n' "${days_since_last_champion}" > "${last_champion_days_file}"
-      if [[ "${days_since_last_champion}" -gt "${consecutive_promotion_failures}" ]]; then
-        consecutive_promotion_failures="${days_since_last_champion}"
-      fi
+    else
+      days_since_last_champion="${recorded_promotion_failures}"
     fi
     echo "[$(date --iso-8601=seconds)] shortlist-model produced no promotable champion; scan will be skipped"
     if send_failure_email \
       0 \
-      "scan skipped because shortlist promotion gate failed ${consecutive_promotion_failures} consecutive nights" \
+      "scan skipped; ${days_since_last_champion} days since the last promoted champion" \
       "SwingQuant scan skipped - no promotable shortlist champion" \
       "Scan Skipped" \
-      "The shortlist model promotion gate failed tonight. Consecutive recorded promotion failures: ${consecutive_promotion_failures}. Scan will be skipped until a champion is promoted."; then
+      "The shortlist model promotion gate failed tonight. It has been ${days_since_last_champion} days since the last promoted champion. Recorded promotion-failure nights: ${recorded_promotion_failures}. Scan will be skipped until a champion is promoted."; then
       echo "[$(date --iso-8601=seconds)] scan-skip email sent"
     else
       echo "[$(date --iso-8601=seconds)] scan-skip email failed" >&2
