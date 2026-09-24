@@ -50,6 +50,7 @@ class NightlyPipelineScriptTests(unittest.TestCase):
         self.assertIn("regime-meter latest failed; continuing", script)
         self.assertIn("regime-meter report failed; continuing", script)
         self.assertIn("phase2-research", script)
+        self.assertIn("phase2-research --horizon 60 --top 2 --trial-count 200", script)
         self.assertIn("--trial-count 200", script)
         self.assertIn("exit \"${shortlist_status}\"", script)
         self.assertNotIn("days_since_last_champion:' \"${shortlist_log}\"", script)

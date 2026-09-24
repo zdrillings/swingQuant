@@ -282,7 +282,7 @@ else
 fi
 
 echo "[$(date --iso-8601=seconds)] phase2-research"
-./sq phase2-research --horizon 20 --top 2 --trial-count 200
+./sq phase2-research --horizon 60 --top 2 --trial-count 200
 
 echo "[$(date --iso-8601=seconds)] scan-performance"
 ./sq scan-performance --all-sources --email

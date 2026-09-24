@@ -160,8 +160,6 @@ class Phase2ResearchService:
 
     def _normalize_predictions(self, frame: pd.DataFrame) -> pd.DataFrame:
         working = frame.copy()
-        if "actual_alpha_vs_sector" in working.columns and "alpha_vs_sector_20d" not in working.columns:
-            working["alpha_vs_sector_20d"] = working["actual_alpha_vs_sector"]
         working["snapshot_date"] = pd.to_datetime(working["snapshot_date"]).dt.normalize()
         working["predicted_alpha"] = pd.to_numeric(working["predicted_alpha"], errors="coerce")
         return working.dropna(subset=["snapshot_date", "model_name", "predicted_alpha"]).copy()
@@ -178,9 +176,13 @@ class Phase2ResearchService:
         fixed_column = f"alpha_vs_sector_{int(horizon_days)}d"
         if path_column in predictions.columns and pd.to_numeric(predictions[path_column], errors="coerce").notna().any():
             return path_column
-        if fixed_column in predictions.columns:
+        if fixed_column in predictions.columns and pd.to_numeric(predictions[fixed_column], errors="coerce").notna().any():
             return fixed_column
-        return "actual_alpha_vs_sector"
+        raise ValueError(
+            f"No supported outcome column exists for horizon {int(horizon_days)}: "
+            f"expected {path_column} or {fixed_column} in predictions; "
+            "does this run match the production target?"
+        )
 
     def _date_model_baskets(
         self,

@@ -46,7 +46,7 @@ class Phase2ResearchServiceTests(unittest.TestCase):
                                     "ticker": ticker,
                                     "sector": "Energy",
                                     "predicted_alpha": float(3 - ticker_index) + (0.1 if model_name == "ridge_model" else 0.0),
-                                    "actual_alpha_vs_sector": 0.02 - ticker_index * 0.01 + date_index * 0.0001,
+                                    "alpha_vs_sector_20d": 0.02 - ticker_index * 0.01 + date_index * 0.0001,
                                 }
                             )
                     return pd.DataFrame(rows) if model_name in {"signal_proxy", "ridge_model"} else pd.DataFrame()
@@ -114,7 +114,7 @@ class Phase2ResearchServiceTests(unittest.TestCase):
                             "sector": "Energy",
                             "model_name": "artifact_model",
                             "predicted_alpha": 0.20,
-                            "alpha_vs_sector_20d": 0.03,
+                            "path_alpha_vs_sector_60d": 0.03,
                         },
                         {
                             "snapshot_date": snapshot_date,
@@ -122,7 +122,7 @@ class Phase2ResearchServiceTests(unittest.TestCase):
                             "sector": "Materials",
                             "model_name": "artifact_model",
                             "predicted_alpha": 0.10,
-                            "alpha_vs_sector_20d": 0.01,
+                            "path_alpha_vs_sector_60d": 0.01,
                         },
                     ]
                 )
@@ -143,7 +143,7 @@ class Phase2ResearchServiceTests(unittest.TestCase):
                     return pd.DataFrame()
 
             db = FakeDB(paths)
-            report = Phase2ResearchService(db).run(horizon_days=20, top_n=1, trial_count=250)
+            report = Phase2ResearchService(db).run(horizon_days=60, top_n=1, trial_count=250)
 
             self.assertEqual(report.models, 1)
             self.assertEqual(db.prediction_calls, 0)
@@ -151,14 +151,35 @@ class Phase2ResearchServiceTests(unittest.TestCase):
             self.assertIn("- provenance_source: artifact_csv", report_text)
             self.assertIn("- provenance_generated_at: 2026-09-08T20:00:00+00:00", report_text)
             self.assertIn("- provenance_feature_profile: repaired_v2", report_text)
+            self.assertIn("- target_column: path_alpha_vs_sector_60d", report_text)
             self.assertIn("- trial_count: 250", report_text)
+
+    def test_phase2_research_refuses_missing_horizon_target_column(self) -> None:
+        service = Phase2ResearchService(db_manager=object())
+        frame = pd.DataFrame(
+            [
+                {
+                    "snapshot_date": "2026-09-01",
+                    "ticker": "AAA",
+                    "model_name": "model",
+                    "predicted_alpha": 0.1,
+                    "path_alpha_vs_sector_60d": 0.02,
+                }
+            ]
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "expected path_alpha_vs_sector_20d or alpha_vs_sector_20d",
+        ):
+            service._target_column(frame, horizon_days=20)
 
     def test_phase2_research_parser_accepts_args(self) -> None:
         parser = build_parser()
-        args = parser.parse_args(["phase2-research", "--horizon", "20", "--top", "2", "--trial-count", "300"])
+        args = parser.parse_args(["phase2-research", "--horizon", "60", "--top", "2", "--trial-count", "300"])
 
         self.assertEqual(args.command, "phase2-research")
-        self.assertEqual(args.horizon, 20)
+        self.assertEqual(args.horizon, 60)
         self.assertEqual(args.top, 2)
         self.assertEqual(args.trial_count, 300)
 
