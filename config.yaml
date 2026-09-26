@@ -392,6 +392,7 @@ scan_policy:
       min_recent_60d_spearman: 0.0
       min_recent_1fold_spearman: 0.0
       min_recent_3fold_spearman: 0.0
+      min_full_oos_spearman: 0.0
       max_recent_20d_top_ticker_date_rate: 0.40
       max_recent_60d_top_ticker_date_rate: 0.40
       max_recent_1fold_top_ticker_date_rate: 0.40

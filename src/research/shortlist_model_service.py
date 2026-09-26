@@ -3089,6 +3089,7 @@ class ShortlistModelService:
             "min_recent_60d_spearman": float(payload.get("min_recent_60d_spearman", 0.0)),
             "min_recent_1fold_spearman": float(payload.get("min_recent_1fold_spearman", 0.0)),
             "min_recent_3fold_spearman": float(payload.get("min_recent_3fold_spearman", 0.0)),
+            "min_full_oos_spearman": float(payload.get("min_full_oos_spearman", 0.0)),
             "max_recent_20d_top_ticker_date_rate": float(payload.get("max_recent_20d_top_ticker_date_rate", 0.40)),
             "max_recent_60d_top_ticker_date_rate": float(payload.get("max_recent_60d_top_ticker_date_rate", 0.40)),
             "max_recent_1fold_top_ticker_date_rate": float(payload.get("max_recent_1fold_top_ticker_date_rate", 0.40)),
@@ -3212,6 +3213,9 @@ class ShortlistModelService:
         ]
         if full_row.empty:
             return False
+        full_summary = full_row.iloc[0]
+        if not self._finite_at_least(full_summary.get("spearman"), promotion_gate.get("min_full_oos_spearman", 0.0)):
+            return False
         return True
 
     def _model_passes_variant_guard(
@@ -3293,6 +3297,7 @@ class ShortlistModelService:
                 f"- min_recent_3fold_mean_target_excess: {float(promotion_gate['min_recent_3fold_mean_target_excess']):.4f}",
                 f"- min_recent_1fold_spearman: {float(promotion_gate['min_recent_1fold_spearman']):.4f}",
                 f"- min_recent_3fold_spearman: {float(promotion_gate['min_recent_3fold_spearman']):.4f}",
+                f"- min_full_oos_spearman: {float(promotion_gate.get('min_full_oos_spearman', 0.0)):.4f}",
                 f"- max_recent_1fold_top_ticker_date_rate: {float(promotion_gate.get('max_recent_1fold_top_ticker_date_rate', 0.40)):.2f}",
                 f"- max_recent_3fold_top_ticker_date_rate: {float(promotion_gate.get('max_recent_3fold_top_ticker_date_rate', 0.40)):.2f}",
                 "- gate_metric: per-date cross-sectional Spearman over the full OOS slice",

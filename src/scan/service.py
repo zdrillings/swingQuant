@@ -382,6 +382,7 @@ class ScanService:
                 "Shortlist model candidate source is enabled, but no current model context passed freshness/promotion gates. "
                 "Run `sq shortlist-model` from the nightly pipeline and inspect reports/shortlist_model.md."
             )
+        unmapped_model_predictions = pd.DataFrame()
         if use_model_candidate_source:
             candidates = self._build_shortlist_model_candidates(
                 snapshot=snapshot,
@@ -391,7 +392,19 @@ class ScanService:
                 overlap_context=overlap_context,
                 settings=settings,
             )
+            unmapped_model_predictions = self._build_unmapped_model_prediction_diagnostics(
+                snapshot=snapshot,
+                strategies=scan_strategies,
+                shortlist_model_context=shortlist_model_context,
+                scan_mode=scan_mode,
+            )
             if candidates.empty:
+                if callable(scan_candidate_writer) and not unmapped_model_predictions.empty:
+                    diagnostic_rows = self._build_persisted_scan_rows(
+                        unmapped_model_predictions,
+                        selected=unmapped_model_predictions.iloc[0:0].copy(),
+                    )
+                    scan_candidate_writer(scan_date=date.today().isoformat(), rows=diagnostic_rows)
                 if not scan_policy.shortlist_model.allow_heuristic_fallback:
                     raise ValueError(
                         "Shortlist model context loaded, but none of its live predictions mapped to active scan slots. "
@@ -556,6 +569,15 @@ class ScanService:
         )
         candidates = self._annotate_candidate_quality_throttle(candidates, throttle_diagnostics)
         persisted_candidates = self._annotate_candidate_quality_throttle(persisted_candidates, throttle_diagnostics)
+        if shortlist_model_context is not None and "unmapped_model_predictions" in locals() and not unmapped_model_predictions.empty:
+            unmapped_model_predictions = self._annotate_candidate_quality_throttle(
+                unmapped_model_predictions,
+                throttle_diagnostics,
+            )
+            persisted_candidates = pd.concat(
+                [persisted_candidates, unmapped_model_predictions],
+                ignore_index=True,
+            )
         confidence_max_candidates = self._confidence_adjusted_max_candidates(
             base_max=min(int(throttle_diagnostics["effective_max_candidates"]), int(scan_mode.max_candidates_total)),
             scan_policy=scan_policy,
@@ -759,6 +781,84 @@ class ScanService:
             axis=1,
         )
         return merged.drop(columns=["_strategy_key"])
+
+    def _build_unmapped_model_prediction_diagnostics(
+        self,
+        *,
+        snapshot: pd.DataFrame,
+        strategies: dict[str, ProductionStrategy],
+        shortlist_model_context,
+        scan_mode: ScanModeState,
+    ) -> pd.DataFrame:
+        strategy_map = self._build_model_strategy_map(strategies)
+        fallback_strategy = strategy_map.get("__fallback__")
+        if snapshot.empty or fallback_strategy is not None or shortlist_model_context is None:
+            return pd.DataFrame()
+        predictions = shortlist_model_context.live_predictions.copy()
+        if predictions.empty:
+            return pd.DataFrame()
+        prediction_columns = ["ticker", "predicted_alpha", "model_rank"]
+        if "calibrated_p_beat_sector" in predictions.columns:
+            prediction_columns.append("calibrated_p_beat_sector")
+        if "model_reason_summary" in predictions.columns:
+            prediction_columns.append("model_reason_summary")
+        if "model_comparison_summary" in predictions.columns:
+            prediction_columns.append("model_comparison_summary")
+        predictions = predictions[prediction_columns].copy().rename(columns={"predicted_alpha": "model_predicted_alpha"})
+        merged = snapshot.merge(predictions, on="ticker", how="inner")
+        if merged.empty or "sector" not in merged.columns:
+            return pd.DataFrame()
+        mapped_keys = merged["sector"].map(lambda sector: strategy_map.get(str(sector)))
+        dropped = merged[mapped_keys.isna()].copy()
+        if dropped.empty:
+            return pd.DataFrame()
+        dropped["strategy_slot"] = "__unmapped__"
+        dropped["strategy_sector"] = "NO_ACTIVE_STRATEGY"
+        dropped["selection_source"] = "shortlist_model"
+        dropped["model_generated_at"] = shortlist_model_context.generated_at
+        dropped["model_name"] = shortlist_model_context.champion_model
+        dropped["model_target_column"] = getattr(shortlist_model_context, "target_column", None)
+        dropped["model_score_label"] = self._model_score_label(dropped)
+        dropped["selection_score"] = pd.to_numeric(dropped["model_predicted_alpha"], errors="coerce")
+        dropped["shares"] = 0
+        dropped["scan_mode"] = scan_mode.mode
+        dropped["diagnostic_reason"] = "no_active_strategy"
+        dropped["ranker_enabled"] = False
+        dropped["recent_drag_picks"] = 0
+        dropped["recent_missed_winner_count"] = 0
+        dropped["slot_overlay_components"] = [{} for _ in range(len(dropped.index))]
+        dropped["ranker_top_positive_reasons"] = [tuple() for _ in range(len(dropped.index))]
+        dropped["ranker_top_negative_reasons"] = [tuple() for _ in range(len(dropped.index))]
+        for column, default in {
+            "signal_score": 0.0,
+            "setup_quality_score": 0.0,
+            "expected_alpha_score": 0.0,
+            "breadth_score": 0.0,
+            "freshness_score": 0.0,
+            "overlap_penalty": 0.0,
+            "opportunity_score": 0.0,
+            "raw_opportunity_score": 0.0,
+            "sizing_multiplier": pd.NA,
+            "stop_risk_dollars": pd.NA,
+            "ranker_score": pd.NA,
+            "recent_drag_penalty": 0.0,
+            "recent_missed_winner_boost": 0.0,
+            "recent_feedback_adjustment": 0.0,
+            "slot_overlay_adjustment": 0.0,
+            "recent_drag_mean_target": pd.NA,
+            "recent_missed_winner_mean_gap": pd.NA,
+        }.items():
+            if column not in dropped.columns:
+                dropped[column] = default
+        preview = ", ".join(
+            dropped.sort_values(["model_rank", "ticker"], ascending=[True, True])["ticker"].astype(str).head(10).tolist()
+        )
+        self.logger.warning(
+            "Shortlist model dropped %d live predictions with no active strategy: %s",
+            len(dropped.index),
+            preview or "none",
+        )
+        return dropped
 
     def _build_model_strategy_map(
         self,
@@ -1792,6 +1892,9 @@ class ScanService:
                     "model_generated_at": row.get("model_generated_at"),
                     "model_name": row.get("model_name"),
                     "details": {
+                        "diagnostic_reason": None
+                        if pd.isna(row.get("diagnostic_reason"))
+                        else row.get("diagnostic_reason"),
                         "scan_mode": row.get("scan_mode"),
                         "why": self._candidate_signal_evidence(row),
                         "already_owned": bool(row.get("already_owned", False)),

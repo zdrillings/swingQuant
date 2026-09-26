@@ -306,6 +306,87 @@ class ScanServiceTests(unittest.TestCase):
         self.assertAlmostEqual(float(candidates.loc[0, "calibrated_p_beat_sector"]), 0.88, places=6)
         self.assertEqual(candidates.loc[0, "model_score_label"], "Model Score")
 
+    def test_unmapped_model_predictions_persist_as_no_active_strategy_diagnostics(self) -> None:
+        service = ScanService(db_manager=None)
+        technology = ProductionStrategy(
+            strategy_id=1,
+            promoted_at="2026-05-01T00:00:00",
+            indicators={"signal_score_min": 30.0},
+            exit_rules=ExitRules(0.05, 0.12, 20),
+            slot="technology",
+            sector="Information Technology",
+        )
+        snapshot = pd.DataFrame(
+            [
+                {
+                    "ticker": "AAA",
+                    "sector": "Information Technology",
+                    "regime_etf": "QQQ",
+                    "adj_close": 100.0,
+                    "md_volume_30d": 1_000_000.0,
+                },
+                {
+                    "ticker": "BBB",
+                    "sector": "Consumer Staples",
+                    "regime_etf": "XLP",
+                    "adj_close": 50.0,
+                    "md_volume_30d": 2_000_000.0,
+                },
+            ]
+        )
+        context = SimpleNamespace(
+            live_predictions=pd.DataFrame(
+                [
+                    {"ticker": "AAA", "predicted_alpha": 0.20, "model_rank": 1},
+                    {"ticker": "BBB", "predicted_alpha": 0.19, "model_rank": 2},
+                ]
+            ),
+            generated_at="2026-09-25T23:57:14+00:00",
+            champion_model="structure_factor_signal",
+            target_column="alpha_vs_sector_60d",
+        )
+
+        diagnostics = service._build_unmapped_model_prediction_diagnostics(
+            snapshot=snapshot,
+            strategies={"technology": technology},
+            shortlist_model_context=context,
+            scan_mode=SimpleNamespace(mode="MODEL"),
+        )
+        rows = service._build_persisted_scan_rows(diagnostics, selected=diagnostics.iloc[0:0].copy())
+
+        self.assertEqual(diagnostics["ticker"].tolist(), ["BBB"])
+        self.assertEqual(diagnostics.iloc[0]["strategy_slot"], "__unmapped__")
+        self.assertEqual(diagnostics.iloc[0]["diagnostic_reason"], "no_active_strategy")
+        self.assertEqual(rows[0]["model_rank"], 2)
+        self.assertEqual(rows[0]["details"]["diagnostic_reason"], "no_active_strategy")
+
+    def test_unmapped_model_predictions_skip_diagnostics_when_all_fallback_exists(self) -> None:
+        service = ScanService(db_manager=None)
+        fallback = ProductionStrategy(
+            strategy_id=1,
+            promoted_at="2026-05-01T00:00:00",
+            indicators={"signal_score_min": 30.0},
+            exit_rules=ExitRules(0.05, 0.12, 20),
+            slot="all",
+            sector="ALL",
+        )
+        snapshot = pd.DataFrame([{"ticker": "BBB", "sector": "Consumer Staples", "adj_close": 50.0}])
+        context = SimpleNamespace(
+            live_predictions=pd.DataFrame([{"ticker": "BBB", "predicted_alpha": 0.19, "model_rank": 2}]),
+            generated_at="2026-09-25T23:57:14+00:00",
+            champion_model="structure_factor_signal",
+            target_column="alpha_vs_sector_60d",
+        )
+
+        diagnostics = service._build_unmapped_model_prediction_diagnostics(
+            snapshot=snapshot,
+            strategies={"all": fallback},
+            shortlist_model_context=context,
+            scan_mode=SimpleNamespace(mode="MODEL"),
+        )
+
+        self.assertTrue(diagnostics.empty)
+
     def test_scan_filters_out_in_progress_daily_bar_before_close(self) -> None:
         service = ScanService(db_manager=None)
         frame = pd.DataFrame(

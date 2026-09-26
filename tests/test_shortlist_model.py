@@ -302,6 +302,16 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertFalse(bool(matched.loc[1, "regime_flip_applied"]))
         self.assertAlmostEqual(float(matched.loc[1, "predicted_alpha"]), 0.20)
 
+        fallback_frame = frame.iloc[[1]].copy()
+        fallback_frame["regime_matched_training_applied"] = False
+        fallback = service._apply_regime_conditional_score_flip(
+            fallback_frame,
+            horizon_sessions=2,
+            fallback_only=True,
+        )
+        self.assertTrue(bool(fallback.loc[1, "regime_flip_applied"]))
+        self.assertAlmostEqual(float(fallback.loc[1, "predicted_alpha"]), -0.20)
+
     def test_walk_forward_predictions_use_regime_matched_training_rows(self) -> None:
         dates = pd.bdate_range("2026-01-02", periods=80)
 
@@ -524,6 +534,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
             "min_recent_1fold_beat_universe_rate": 0.50,
             "min_recent_1fold_mean_target_excess": 0.0,
             "min_recent_1fold_spearman": 0.0,
+            "min_full_oos_spearman": 0.0,
             "max_recent_1fold_top_ticker_date_rate": 0.40,
         }
         predictions = pd.DataFrame(
@@ -575,6 +586,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
             "min_recent_1fold_beat_universe_rate": 0.50,
             "min_recent_1fold_mean_target_excess": 0.0,
             "min_recent_1fold_spearman": 0.0,
+            "min_full_oos_spearman": 0.0,
             "max_recent_1fold_top_ticker_date_rate": 0.40,
         }
 
@@ -620,6 +632,22 @@ class ShortlistModelServiceTests(unittest.TestCase):
             service._model_passes_promotion_gate(
                 model_name="ridge_model",
                 acceptance_summaries=negative_mean_excess,
+                promotion_gate=gate,
+                required_recent_windows=(),
+                required_fold_windows=(1,),
+            )
+        )
+
+        negative_full_oos_spearman = pd.DataFrame(
+            [
+                self._gate_row("ridge_model_last_fold", hit_rate=0.45, universe_hit_rate=0.43, mean_target=0.01, universe_mean_target=0.01),
+                self._gate_row("ridge_model_full_oos", spearman=-0.01),
+            ]
+        )
+        self.assertFalse(
+            service._model_passes_promotion_gate(
+                model_name="ridge_model",
+                acceptance_summaries=negative_full_oos_spearman,
                 promotion_gate=gate,
                 required_recent_windows=(),
                 required_fold_windows=(1,),
@@ -720,6 +748,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
 
         self.assertIn("gate_note: floors are excess-over-universe", text)
         self.assertIn("min_recent_1fold_hit_rate_excess", text)
+        self.assertIn("min_full_oos_spearman", text)
         self.assertIn("- hit_rate: 0.450000", text)
         self.assertIn("- universe_hit_rate: 0.430000", text)
         self.assertIn("- hit_rate_excess: 0.020000", text)
