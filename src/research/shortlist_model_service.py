@@ -297,8 +297,27 @@ class ShortlistModelService:
         report_path = self.db_manager.paths.reports_dir / "shortlist_model.md"
         oos_path = self.db_manager.paths.reports_dir / "shortlist_model_oos_predictions.csv"
         live_path = self.db_manager.paths.reports_dir / "shortlist_model_live_predictions.csv"
+        regime_flip_attribution_path = self.db_manager.paths.reports_dir / "regime_flip_attribution.md"
         promotion_top_n = PROMOTION_BASKET_SIZE
         generated_at = datetime.now(UTC).replace(microsecond=0).isoformat()
+        regime_flip_variants: dict[str, str] = {}
+        regime_flip_attribution = pd.DataFrame()
+        if regime_matching_mode == "train_and_flip":
+            model_predictions, regime_flip_variants, regime_flip_attribution = self._adopt_regime_flip_variants(
+                model_predictions=model_predictions,
+                target_column=evaluation_target_column,
+                top_n=promotion_top_n,
+                horizon_sessions=max(int(horizon_days), 1),
+            )
+            regime_flip_attribution_path.write_text(
+                "\n".join(
+                    self._render_regime_flip_attribution(
+                        attribution=regime_flip_attribution,
+                        selected_variants=regime_flip_variants,
+                    )
+                ),
+                encoding="utf-8",
+            )
         combined_predictions = pd.concat(
             [
                 predictions.assign(model_name=model_name, dataset_split="oos")
@@ -367,9 +386,19 @@ class ShortlistModelService:
                 ).to_dict(orient="records")
             ]
         )
+        dedup_clusters, evaluated_models = self._promotion_candidate_clusters(
+            model_predictions=model_predictions,
+            full_summaries=full_summaries,
+            top_n=promotion_top_n,
+            fold_size=int(test_window_dates),
+            fold_count=3,
+        )
+        gated_full_summaries = full_summaries[
+            full_summaries["model"].astype(str).isin(evaluated_models)
+        ].copy()
         try:
             champion_model, champion_gate_passed = self._choose_champion_model(
-                full_summaries=full_summaries,
+                full_summaries=gated_full_summaries,
                 acceptance_summaries=acceptance_summaries,
                 promotion_gate=promotion_gate,
                 required_recent_windows=required_recent_windows,
@@ -417,6 +446,10 @@ class ShortlistModelService:
                 required_fold_windows=required_fold_windows,
                 acceptance_summaries=acceptance_summaries,
                 oos_predictions=combined_predictions,
+                regime_flip_attribution_path=regime_flip_attribution_path if regime_matching_mode == "train_and_flip" else None,
+                regime_flip_variants=regime_flip_variants,
+                promotion_dedup_clusters=dedup_clusters,
+                promotion_evaluated_models=evaluated_models,
                 failure_reason=str(exc),
                 days_since_last_champion=self._days_since_last_champion(
                     generated_at=generated_at,
@@ -450,10 +483,10 @@ class ShortlistModelService:
             )
             if scored is not None and not scored.empty:
                 if regime_matching_mode == "train_and_flip":
-                    scored = self._apply_regime_conditional_score_flip(
+                    scored = self._apply_regime_flip_variant(
                         scored,
+                        variant=regime_flip_variants.get(model_name, "as_is"),
                         horizon_sessions=max(int(horizon_days), 1),
-                        fallback_only=True,
                     )
                 scored = self._apply_calibration_from_oos(
                     scored,
@@ -519,6 +552,10 @@ class ShortlistModelService:
             required_fold_windows=required_fold_windows,
             acceptance_summaries=acceptance_summaries,
             oos_predictions=combined_predictions,
+            regime_flip_attribution_path=regime_flip_attribution_path if regime_matching_mode == "train_and_flip" else None,
+            regime_flip_variants=regime_flip_variants,
+            promotion_dedup_clusters=dedup_clusters,
+            promotion_evaluated_models=evaluated_models,
         )
         lines.extend(
             self._render_summary_table(
@@ -1098,8 +1135,17 @@ class ShortlistModelService:
             horizon_sessions=horizon_sessions,
         )
         if not classifications:
-            working["regime_classification"] = working.get("regime_classification", pd.Series("unknown", index=working.index))
+            if "regime_classification" not in working.columns:
+                working["regime_classification"] = pd.Series("unknown", index=working.index)
+            else:
+                working["regime_classification"] = working["regime_classification"].fillna("unknown").astype(str)
             working["regime_flip_applied"] = False
+            flip_mask = working["regime_classification"].astype(str).eq("reversal") & score.notna()
+            if fallback_only and "regime_matched_training_applied" in working.columns:
+                matched = working["regime_matched_training_applied"].fillna(False).astype(bool)
+                flip_mask = flip_mask & ~matched
+            working["regime_flip_applied"] = flip_mask
+            working.loc[flip_mask, "predicted_alpha"] = -score.loc[flip_mask]
             return working
         normalized_dates = pd.to_datetime(working["snapshot_date"], errors="coerce").dt.normalize()
         working["regime_classification"] = normalized_dates.map(classifications).fillna("unknown")
@@ -1110,6 +1156,142 @@ class ShortlistModelService:
         working["regime_flip_applied"] = flip_mask
         working.loc[flip_mask, "predicted_alpha"] = -score.loc[flip_mask]
         return working
+
+    def _apply_regime_flip_variant(
+        self,
+        predictions: pd.DataFrame,
+        *,
+        variant: str,
+        horizon_sessions: int,
+    ) -> pd.DataFrame:
+        if predictions.empty:
+            return predictions.copy()
+        normalized = str(variant or "as_is").strip().lower()
+        working = predictions.copy()
+        raw_score = pd.to_numeric(
+            working.get("raw_predicted_alpha", working.get("predicted_alpha")),
+            errors="coerce",
+        )
+        working["raw_predicted_alpha"] = raw_score
+        working["predicted_alpha"] = raw_score
+        if normalized == "disabled":
+            working["regime_flip_variant"] = "disabled"
+            working["regime_flip_applied"] = False
+            if "regime_classification" not in working.columns:
+                working = self._apply_regime_conditional_score_flip(
+                    working,
+                    horizon_sessions=horizon_sessions,
+                    fallback_only=True,
+                )
+                working["predicted_alpha"] = raw_score
+                working["regime_flip_applied"] = False
+            return working
+        if normalized == "unconditional_reversal":
+            flipped = self._apply_regime_conditional_score_flip(
+                working,
+                horizon_sessions=horizon_sessions,
+                fallback_only=False,
+            )
+            flipped["regime_flip_variant"] = "unconditional_reversal"
+            return flipped
+        flipped = self._apply_regime_conditional_score_flip(
+            working,
+            horizon_sessions=horizon_sessions,
+            fallback_only=True,
+        )
+        flipped["regime_flip_variant"] = "as_is"
+        return flipped
+
+    def _adopt_regime_flip_variants(
+        self,
+        *,
+        model_predictions: dict[str, pd.DataFrame],
+        target_column: str,
+        top_n: int,
+        horizon_sessions: int,
+    ) -> tuple[dict[str, pd.DataFrame], dict[str, str], pd.DataFrame]:
+        adopted: dict[str, pd.DataFrame] = {}
+        selected_variants: dict[str, str] = {}
+        rows: list[dict[str, object]] = []
+        variants = ("as_is", "disabled", "unconditional_reversal")
+        for model_name, predictions in model_predictions.items():
+            variant_frames: dict[str, pd.DataFrame] = {}
+            for variant in variants:
+                frame = self._apply_regime_flip_variant(
+                    predictions,
+                    variant=variant,
+                    horizon_sessions=horizon_sessions,
+                )
+                variant_frames[variant] = frame
+                summary = self._evaluate_predictions(
+                    predictions=frame,
+                    top_n=top_n,
+                    target_column=target_column,
+                    model_name=model_name,
+                )
+                rows.append(
+                    {
+                        "model": model_name,
+                        "variant": variant,
+                        "spearman": summary.get("spearman"),
+                        "mean_target": summary.get("mean_target"),
+                        "hit_rate": summary.get("hit_rate"),
+                        "beat_universe_rate": summary.get("beat_universe_rate"),
+                    }
+                )
+            scored = pd.DataFrame([row for row in rows if row["model"] == model_name])
+            scored["_tie_priority"] = scored["variant"].map(
+                {"as_is": 0, "disabled": 1, "unconditional_reversal": 2}
+            ).fillna(9)
+            scored["_spearman_rank"] = pd.to_numeric(scored["spearman"], errors="coerce").fillna(float("-inf"))
+            best = scored.sort_values(
+                ["_spearman_rank", "_tie_priority"],
+                ascending=[False, True],
+            ).iloc[0]
+            selected_variant = str(best["variant"])
+            selected_variants[model_name] = selected_variant
+            adopted[model_name] = variant_frames[selected_variant]
+        attribution = pd.DataFrame(rows)
+        return adopted, selected_variants, attribution
+
+    def _render_regime_flip_attribution(
+        self,
+        *,
+        attribution: pd.DataFrame,
+        selected_variants: dict[str, str],
+    ) -> list[str]:
+        lines = [
+            "# Regime Flip Attribution",
+            "",
+            "- variants: as_is, disabled, unconditional_reversal",
+            "- adoption_metric: highest full-OOS Spearman; the promotion gate still enforces min_full_oos_spearman.",
+            "",
+        ]
+        if attribution.empty:
+            lines.append("No regime flip attribution rows available.")
+            lines.append("")
+            return lines
+        lines.extend(
+            [
+                "| model | variant | adopted | full_oos_spearman | mean_target | hit_rate | beat_universe_rate |",
+                "|---|---|---:|---:|---:|---:|---:|",
+            ]
+        )
+        ordered = attribution.copy()
+        ordered["model"] = ordered["model"].astype(str)
+        ordered["variant"] = ordered["variant"].astype(str)
+        ordered = ordered.sort_values(["model", "variant"]).reset_index(drop=True)
+        for row in ordered.itertuples(index=False):
+            adopted = selected_variants.get(str(row.model)) == str(row.variant)
+            lines.append(
+                f"| {row.model} | {row.variant} | {str(adopted).lower()} | "
+                f"{self._fmt(getattr(row, 'spearman', float('nan')))} | "
+                f"{self._fmt(getattr(row, 'mean_target', float('nan')))} | "
+                f"{self._fmt(getattr(row, 'hit_rate', float('nan')))} | "
+                f"{self._fmt(getattr(row, 'beat_universe_rate', float('nan')))} |"
+            )
+        lines.append("")
+        return lines
 
     def _regime_matched_train_dates(
         self,
@@ -3146,6 +3328,99 @@ class ShortlistModelService:
             "Inspect the Recent Acceptance Windows in reports/shortlist_model.md or relax scan_policy.shortlist_model.promotion_gate explicitly."
         )
 
+    def _promotion_candidate_clusters(
+        self,
+        *,
+        model_predictions: dict[str, pd.DataFrame],
+        full_summaries: pd.DataFrame,
+        top_n: int,
+        fold_size: int,
+        fold_count: int,
+        overlap_threshold: float = 0.90,
+    ) -> tuple[list[dict[str, object]], tuple[str, ...]]:
+        if not model_predictions:
+            return [], ()
+        ranked_models = self._rank_model_summaries(full_summaries)["model"].astype(str).tolist()
+        model_order = {model: index for index, model in enumerate(ranked_models)}
+        pick_sets = {
+            model_name: self._trailing_top_pick_set(
+                predictions=predictions,
+                top_n=top_n,
+                date_count=max(int(fold_size), 1) * max(int(fold_count), 1),
+            )
+            for model_name, predictions in model_predictions.items()
+        }
+        parent = {model_name: model_name for model_name in model_predictions}
+
+        def find(model_name: str) -> str:
+            while parent[model_name] != model_name:
+                parent[model_name] = parent[parent[model_name]]
+                model_name = parent[model_name]
+            return model_name
+
+        def union(left: str, right: str) -> None:
+            left_root = find(left)
+            right_root = find(right)
+            if left_root != right_root:
+                parent[right_root] = left_root
+
+        models = list(model_predictions.keys())
+        for left_index, left in enumerate(models):
+            for right in models[left_index + 1 :]:
+                overlap = self._pick_overlap_rate(pick_sets.get(left, set()), pick_sets.get(right, set()))
+                if overlap >= float(overlap_threshold):
+                    union(left, right)
+
+        clustered: dict[str, list[str]] = {}
+        for model_name in models:
+            clustered.setdefault(find(model_name), []).append(model_name)
+        rows: list[dict[str, object]] = []
+        representatives: list[str] = []
+        for members in clustered.values():
+            ordered_members = sorted(members, key=lambda item: (model_order.get(item, 10_000), item))
+            representative = ordered_members[0]
+            representatives.append(representative)
+            rows.append(
+                {
+                    "representative": representative,
+                    "members": tuple(ordered_members),
+                    "member_count": len(ordered_members),
+                }
+            )
+        rows.sort(key=lambda row: (model_order.get(str(row["representative"]), 10_000), str(row["representative"])))
+        representatives = [str(row["representative"]) for row in rows]
+        return rows, tuple(representatives)
+
+    def _trailing_top_pick_set(
+        self,
+        *,
+        predictions: pd.DataFrame,
+        top_n: int,
+        date_count: int,
+    ) -> set[tuple[pd.Timestamp, str]]:
+        if predictions.empty or not {"snapshot_date", "ticker", "predicted_alpha"}.issubset(predictions.columns):
+            return set()
+        working = predictions.copy()
+        working["snapshot_date"] = pd.to_datetime(working["snapshot_date"], errors="coerce").dt.normalize()
+        working = working.dropna(subset=["snapshot_date"])
+        dates = sorted(working["snapshot_date"].drop_duplicates().tolist())[-max(int(date_count), 1) :]
+        scoped = working[working["snapshot_date"].isin(dates)].copy()
+        picks: set[tuple[pd.Timestamp, str]] = set()
+        for snapshot_date, day_frame in scoped.groupby("snapshot_date", sort=True):
+            ordered = day_frame.sort_values(["predicted_alpha", "ticker"], ascending=[False, True]).head(int(top_n))
+            for ticker in ordered["ticker"].astype(str).tolist():
+                picks.add((pd.Timestamp(snapshot_date), ticker))
+        return picks
+
+    def _pick_overlap_rate(
+        self,
+        left: set[tuple[pd.Timestamp, str]],
+        right: set[tuple[pd.Timestamp, str]],
+    ) -> float:
+        if not left or not right:
+            return 0.0
+        return float(len(left & right)) / float(min(len(left), len(right)))
+
     def _rank_model_summaries(self, summaries: pd.DataFrame) -> pd.DataFrame:
         if summaries.empty:
             return summaries.copy()
@@ -3155,6 +3430,33 @@ class ShortlistModelService:
         ).reset_index(drop=True)
 
     def _model_passes_promotion_gate(
+        self,
+        *,
+        model_name: str,
+        acceptance_summaries: pd.DataFrame,
+        promotion_gate: dict[str, float | int],
+        required_recent_windows: tuple[int, ...] = (),
+        required_fold_windows: tuple[int, ...] = (1, 3),
+    ) -> bool:
+        if not self._model_passes_non_oos_gate_checks(
+            model_name=model_name,
+            acceptance_summaries=acceptance_summaries,
+            promotion_gate=promotion_gate,
+            required_recent_windows=required_recent_windows,
+            required_fold_windows=required_fold_windows,
+        ):
+            return False
+        full_row = acceptance_summaries[
+            acceptance_summaries["model"].astype(str) == f"{model_name}_full_oos"
+        ]
+        if full_row.empty:
+            return False
+        full_summary = full_row.iloc[0]
+        if not self._finite_at_least(full_summary.get("spearman"), promotion_gate.get("min_full_oos_spearman", 0.0)):
+            return False
+        return True
+
+    def _model_passes_non_oos_gate_checks(
         self,
         *,
         model_name: str,
@@ -3208,14 +3510,6 @@ class ShortlistModelService:
                 return False
             if self._finite_above(summary.get("top_ticker_date_rate"), promotion_gate.get(f"max_recent_{folds}fold_top_ticker_date_rate", 0.40)):
                 return False
-        full_row = acceptance_summaries[
-            acceptance_summaries["model"].astype(str) == f"{model_name}_full_oos"
-        ]
-        if full_row.empty:
-            return False
-        full_summary = full_row.iloc[0]
-        if not self._finite_at_least(full_summary.get("spearman"), promotion_gate.get("min_full_oos_spearman", 0.0)):
-            return False
         return True
 
     def _model_passes_variant_guard(
@@ -3518,6 +3812,10 @@ class ShortlistModelService:
         required_fold_windows: tuple[int, ...] = (1, 3),
         acceptance_summaries: pd.DataFrame,
         oos_predictions: pd.DataFrame,
+        regime_flip_attribution_path=None,
+        regime_flip_variants: dict[str, str] | None = None,
+        promotion_dedup_clusters: list[dict[str, object]] | None = None,
+        promotion_evaluated_models: tuple[str, ...] = (),
         failure_reason: str | None = None,
         days_since_last_champion: int | None = None,
         promotion_top_n: int = PROMOTION_BASKET_SIZE,
@@ -3574,6 +3872,7 @@ class ShortlistModelService:
             f"- champion_model: {selected_model}",
             f"- oos_predictions_csv: {oos_path}",
             f"- live_predictions_csv: {live_path}",
+            f"- regime_flip_attribution: {regime_flip_attribution_path if regime_flip_attribution_path is not None else 'n/a'}",
             f"- generated_at: {generated_at}",
             "",
         ]
@@ -3581,6 +3880,13 @@ class ShortlistModelService:
             self._render_regime_matching(
                 mode=regime_matching_mode,
                 stats=regime_matching_stats,
+            )
+        )
+        lines.extend(self._render_regime_flip_selection(regime_flip_variants or {}))
+        lines.extend(
+            self._render_promotion_deduplication(
+                clusters=promotion_dedup_clusters or [],
+                evaluated_models=promotion_evaluated_models,
             )
         )
         lines.extend(self._render_regime_feature_survivors(regime_feature_stats))
@@ -3615,6 +3921,43 @@ class ShortlistModelService:
                 required_fold_windows=required_fold_windows,
             )
         )
+        return lines
+
+    def _render_regime_flip_selection(self, variants: dict[str, str]) -> list[str]:
+        lines = ["## Regime Flip Selection", ""]
+        if not variants:
+            lines.append("No regime flip variants were evaluated.")
+            lines.append("")
+            return lines
+        lines.append("| model | adopted_variant |")
+        lines.append("|---|---|")
+        for model_name, variant in sorted(variants.items()):
+            lines.append(f"| {model_name} | {variant} |")
+        lines.append("")
+        return lines
+
+    def _render_promotion_deduplication(
+        self,
+        *,
+        clusters: list[dict[str, object]],
+        evaluated_models: tuple[str, ...],
+    ) -> list[str]:
+        lines = [
+            "## Promotion Candidate Deduplication",
+            "",
+            "- overlap_threshold: 0.90 trailing-3-fold top-pick overlap",
+            f"- evaluated_representatives: {', '.join(evaluated_models) if evaluated_models else 'none'}",
+            "",
+        ]
+        if not clusters:
+            lines.append("No promotion candidate clusters were available.")
+            lines.append("")
+            return lines
+        lines.extend(["| representative | members |", "|---|---|"])
+        for cluster in clusters:
+            members = ", ".join(str(member) for member in cluster.get("members", ()))
+            lines.append(f"| {cluster.get('representative')} | {members} |")
+        lines.append("")
         return lines
 
     def _render_regime_matching(self, *, mode: str, stats: dict[str, int]) -> list[str]:
