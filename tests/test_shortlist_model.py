@@ -312,6 +312,94 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertTrue(bool(fallback.loc[1, "regime_flip_applied"]))
         self.assertAlmostEqual(float(fallback.loc[1, "predicted_alpha"]), -0.20)
 
+    def test_regime_flip_attribution_is_diagnostic_only(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        dates = pd.bdate_range("2026-01-02", periods=2)
+        predictions = pd.DataFrame(
+            [
+                {
+                    "snapshot_date": dates[0],
+                    "ticker": "AAA",
+                    "sector": "Technology",
+                    "predicted_alpha": 0.30,
+                    "raw_predicted_alpha": 0.30,
+                    "alpha_vs_sector_20d": -0.05,
+                    "regime_classification": "reversal",
+                    "regime_matched_training_applied": True,
+                },
+                {
+                    "snapshot_date": dates[0],
+                    "ticker": "BBB",
+                    "sector": "Technology",
+                    "predicted_alpha": 0.10,
+                    "raw_predicted_alpha": 0.10,
+                    "alpha_vs_sector_20d": 0.05,
+                    "regime_classification": "reversal",
+                    "regime_matched_training_applied": True,
+                },
+                {
+                    "snapshot_date": dates[0],
+                    "ticker": "CCC",
+                    "sector": "Technology",
+                    "predicted_alpha": 0.20,
+                    "raw_predicted_alpha": 0.20,
+                    "alpha_vs_sector_20d": 0.00,
+                    "regime_classification": "reversal",
+                    "regime_matched_training_applied": True,
+                },
+                {
+                    "snapshot_date": dates[1],
+                    "ticker": "AAA",
+                    "sector": "Technology",
+                    "predicted_alpha": 0.25,
+                    "raw_predicted_alpha": 0.25,
+                    "alpha_vs_sector_20d": -0.04,
+                    "regime_classification": "reversal",
+                    "regime_matched_training_applied": True,
+                },
+                {
+                    "snapshot_date": dates[1],
+                    "ticker": "BBB",
+                    "sector": "Technology",
+                    "predicted_alpha": 0.05,
+                    "raw_predicted_alpha": 0.05,
+                    "alpha_vs_sector_20d": 0.04,
+                    "regime_classification": "reversal",
+                    "regime_matched_training_applied": True,
+                },
+                {
+                    "snapshot_date": dates[1],
+                    "ticker": "CCC",
+                    "sector": "Technology",
+                    "predicted_alpha": 0.15,
+                    "raw_predicted_alpha": 0.15,
+                    "alpha_vs_sector_20d": 0.00,
+                    "regime_classification": "reversal",
+                    "regime_matched_training_applied": True,
+                },
+            ]
+        )
+        before = predictions["predicted_alpha"].copy()
+
+        attribution = service._regime_flip_attribution(
+            model_predictions={"ridge_model": predictions},
+            target_column="alpha_vs_sector_20d",
+            top_n=1,
+            horizon_sessions=20,
+        )
+
+        rows = {
+            str(row["variant"]): float(row["spearman"])
+            for row in attribution.to_dict(orient="records")
+        }
+        self.assertLess(rows["as_is"], 0.0)
+        self.assertLess(rows["disabled"], 0.0)
+        self.assertGreater(rows["unconditional_reversal"], 0.0)
+        pd.testing.assert_series_equal(predictions["predicted_alpha"], before)
+        rendered = "\n".join(service._render_regime_flip_attribution(attribution=attribution))
+        self.assertIn("diagnostic only", rendered)
+        self.assertNotIn("adopted_variant", rendered)
+
     def test_walk_forward_predictions_use_regime_matched_training_rows(self) -> None:
         dates = pd.bdate_range("2026-01-02", periods=80)
 
@@ -1384,6 +1472,8 @@ class ShortlistModelServiceTests(unittest.TestCase):
             self.assertIn("event_ic_model", report_text)
             self.assertIn("- selected_model:", report_text)
             self.assertIn("## Regime Matching", report_text)
+            self.assertIn("regime_flip_attribution.md", report_text)
+            self.assertIn("## Regime Flip Attribution", report_text)
             self.assertIn("- regime_matching_folds: attempted=", report_text)
             self.assertIn("- attempted_folds:", report_text)
             self.assertIn("- matched_folds:", report_text)
@@ -1398,6 +1488,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
 
             self.assertTrue((paths.reports_dir / "shortlist_model_oos_predictions.csv").exists())
             self.assertTrue((paths.reports_dir / "shortlist_model_live_predictions.csv").exists())
+            self.assertTrue((paths.reports_dir / "regime_flip_attribution.md").exists())
             oos_predictions = pd.read_csv(paths.reports_dir / "shortlist_model_oos_predictions.csv")
             self.assertIn("model_rank", oos_predictions.columns)
             self.assertIn("signal_proxy_rank", oos_predictions.columns)

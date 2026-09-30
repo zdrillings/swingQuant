@@ -297,8 +297,25 @@ class ShortlistModelService:
         report_path = self.db_manager.paths.reports_dir / "shortlist_model.md"
         oos_path = self.db_manager.paths.reports_dir / "shortlist_model_oos_predictions.csv"
         live_path = self.db_manager.paths.reports_dir / "shortlist_model_live_predictions.csv"
+        regime_flip_attribution_path = self.db_manager.paths.reports_dir / "regime_flip_attribution.md"
         promotion_top_n = PROMOTION_BASKET_SIZE
         generated_at = datetime.now(UTC).replace(microsecond=0).isoformat()
+        regime_flip_attribution = pd.DataFrame()
+        if regime_matching_mode == "train_and_flip":
+            regime_flip_attribution = self._regime_flip_attribution(
+                model_predictions=model_predictions,
+                target_column=evaluation_target_column,
+                top_n=promotion_top_n,
+                horizon_sessions=max(int(horizon_days), 1),
+            )
+            regime_flip_attribution_path.write_text(
+                "\n".join(
+                    self._render_regime_flip_attribution(
+                        attribution=regime_flip_attribution,
+                    )
+                ),
+                encoding="utf-8",
+            )
         combined_predictions = pd.concat(
             [
                 predictions.assign(model_name=model_name, dataset_split="oos")
@@ -417,6 +434,8 @@ class ShortlistModelService:
                 required_fold_windows=required_fold_windows,
                 acceptance_summaries=acceptance_summaries,
                 oos_predictions=combined_predictions,
+                regime_flip_attribution_path=regime_flip_attribution_path if regime_matching_mode == "train_and_flip" else None,
+                regime_flip_attribution=regime_flip_attribution,
                 failure_reason=str(exc),
                 days_since_last_champion=self._days_since_last_champion(
                     generated_at=generated_at,
@@ -519,6 +538,8 @@ class ShortlistModelService:
             required_fold_windows=required_fold_windows,
             acceptance_summaries=acceptance_summaries,
             oos_predictions=combined_predictions,
+            regime_flip_attribution_path=regime_flip_attribution_path if regime_matching_mode == "train_and_flip" else None,
+            regime_flip_attribution=regime_flip_attribution,
         )
         lines.extend(
             self._render_summary_table(
@@ -1098,8 +1119,16 @@ class ShortlistModelService:
             horizon_sessions=horizon_sessions,
         )
         if not classifications:
-            working["regime_classification"] = working.get("regime_classification", pd.Series("unknown", index=working.index))
-            working["regime_flip_applied"] = False
+            if "regime_classification" not in working.columns:
+                working["regime_classification"] = pd.Series("unknown", index=working.index)
+            else:
+                working["regime_classification"] = working["regime_classification"].fillna("unknown").astype(str)
+            flip_mask = working["regime_classification"].astype(str).eq("reversal") & score.notna()
+            if fallback_only and "regime_matched_training_applied" in working.columns:
+                matched = working["regime_matched_training_applied"].fillna(False).astype(bool)
+                flip_mask = flip_mask & ~matched
+            working["regime_flip_applied"] = flip_mask
+            working.loc[flip_mask, "predicted_alpha"] = -score.loc[flip_mask]
             return working
         normalized_dates = pd.to_datetime(working["snapshot_date"], errors="coerce").dt.normalize()
         working["regime_classification"] = normalized_dates.map(classifications).fillna("unknown")
@@ -1110,6 +1139,122 @@ class ShortlistModelService:
         working["regime_flip_applied"] = flip_mask
         working.loc[flip_mask, "predicted_alpha"] = -score.loc[flip_mask]
         return working
+
+    def _apply_regime_flip_variant(
+        self,
+        predictions: pd.DataFrame,
+        *,
+        variant: str,
+        horizon_sessions: int,
+    ) -> pd.DataFrame:
+        if predictions.empty:
+            return predictions.copy()
+        normalized = str(variant or "as_is").strip().lower()
+        working = predictions.copy()
+        raw_score = pd.to_numeric(
+            working.get("raw_predicted_alpha", working.get("predicted_alpha")),
+            errors="coerce",
+        )
+        working["raw_predicted_alpha"] = raw_score
+        working["predicted_alpha"] = raw_score
+        if normalized == "disabled":
+            working["regime_flip_variant"] = "disabled"
+            working["regime_flip_applied"] = False
+            if "regime_classification" not in working.columns:
+                classified = self._apply_regime_conditional_score_flip(
+                    working,
+                    horizon_sessions=horizon_sessions,
+                    fallback_only=False,
+                )
+                working["regime_classification"] = classified.get("regime_classification", "unknown")
+            return working
+        if normalized == "unconditional_reversal":
+            flipped = self._apply_regime_conditional_score_flip(
+                working,
+                horizon_sessions=horizon_sessions,
+                fallback_only=False,
+            )
+            flipped["regime_flip_variant"] = "unconditional_reversal"
+            return flipped
+        flipped = self._apply_regime_conditional_score_flip(
+            working,
+            horizon_sessions=horizon_sessions,
+            fallback_only=True,
+        )
+        flipped["regime_flip_variant"] = "as_is"
+        return flipped
+
+    def _regime_flip_attribution(
+        self,
+        *,
+        model_predictions: dict[str, pd.DataFrame],
+        target_column: str,
+        top_n: int,
+        horizon_sessions: int,
+    ) -> pd.DataFrame:
+        rows: list[dict[str, object]] = []
+        variants = ("as_is", "disabled", "unconditional_reversal")
+        for model_name, predictions in model_predictions.items():
+            for variant in variants:
+                frame = self._apply_regime_flip_variant(
+                    predictions,
+                    variant=variant,
+                    horizon_sessions=horizon_sessions,
+                )
+                summary = self._evaluate_predictions(
+                    predictions=frame,
+                    top_n=top_n,
+                    target_column=target_column,
+                    model_name=model_name,
+                )
+                rows.append(
+                    {
+                        "model": model_name,
+                        "variant": variant,
+                        "spearman": summary.get("spearman"),
+                        "mean_target": summary.get("mean_target"),
+                        "hit_rate": summary.get("hit_rate"),
+                        "beat_universe_rate": summary.get("beat_universe_rate"),
+                    }
+                )
+        return pd.DataFrame(rows)
+
+    def _render_regime_flip_attribution(
+        self,
+        *,
+        attribution: pd.DataFrame,
+    ) -> list[str]:
+        lines = [
+            "## Regime Flip Attribution",
+            "",
+            "- note: diagnostic only; variants are not auto-adopted and do not alter champion selection, OOS artifacts, or live predictions.",
+            "- variants: as_is, disabled, unconditional_reversal",
+            "",
+        ]
+        if attribution.empty:
+            lines.append("No regime flip attribution rows available.")
+            lines.append("")
+            return lines
+        lines.extend(
+            [
+                "| model | variant | full_oos_spearman | mean_target | hit_rate | beat_universe_rate |",
+                "|---|---|---:|---:|---:|---:|",
+            ]
+        )
+        ordered = attribution.copy()
+        ordered["model"] = ordered["model"].astype(str)
+        ordered["variant"] = ordered["variant"].astype(str)
+        ordered = ordered.sort_values(["model", "variant"]).reset_index(drop=True)
+        for row in ordered.itertuples(index=False):
+            lines.append(
+                f"| {row.model} | {row.variant} | "
+                f"{self._fmt(getattr(row, 'spearman', float('nan')))} | "
+                f"{self._fmt(getattr(row, 'mean_target', float('nan')))} | "
+                f"{self._fmt(getattr(row, 'hit_rate', float('nan')))} | "
+                f"{self._fmt(getattr(row, 'beat_universe_rate', float('nan')))} |"
+            )
+        lines.append("")
+        return lines
 
     def _regime_matched_train_dates(
         self,
@@ -3518,6 +3663,8 @@ class ShortlistModelService:
         required_fold_windows: tuple[int, ...] = (1, 3),
         acceptance_summaries: pd.DataFrame,
         oos_predictions: pd.DataFrame,
+        regime_flip_attribution_path=None,
+        regime_flip_attribution: pd.DataFrame | None = None,
         failure_reason: str | None = None,
         days_since_last_champion: int | None = None,
         promotion_top_n: int = PROMOTION_BASKET_SIZE,
@@ -3574,6 +3721,7 @@ class ShortlistModelService:
             f"- champion_model: {selected_model}",
             f"- oos_predictions_csv: {oos_path}",
             f"- live_predictions_csv: {live_path}",
+            f"- regime_flip_attribution: {regime_flip_attribution_path if regime_flip_attribution_path is not None else 'n/a'}",
             f"- generated_at: {generated_at}",
             "",
         ]
@@ -3581,6 +3729,11 @@ class ShortlistModelService:
             self._render_regime_matching(
                 mode=regime_matching_mode,
                 stats=regime_matching_stats,
+            )
+        )
+        lines.extend(
+            self._render_regime_flip_attribution(
+                attribution=regime_flip_attribution if regime_flip_attribution is not None else pd.DataFrame(),
             )
         )
         lines.extend(self._render_regime_feature_survivors(regime_feature_stats))
