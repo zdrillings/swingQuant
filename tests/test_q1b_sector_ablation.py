@@ -8,6 +8,7 @@ import pandas as pd
 
 from scripts.q1b_sector_ablation import (
     _decile_calibration,
+    _experiment_row,
     _mean_per_date_spearman,
     _pooled_spearman,
     _render_report,
@@ -61,7 +62,20 @@ class Q1bSectorAblationTests(unittest.TestCase):
         rows = [
             {
                 "model": "xgboost_model",
-                "path": "sector-specific-20d",
+                "path": "sector-specific-20d-ic-on",
+                "grid": "shared-current",
+                "target": "alpha_vs_sector_20d",
+                "dates": 2,
+                "rows": 6,
+                "pooled_spearman": 0.2,
+                "per_date_spearman": 0.03,
+                "top_n": 10,
+                "top_mean": 0.04,
+            },
+            {
+                "model": "xgboost_model",
+                "path": "sector-specific-20d-ic-off",
+                "grid": "shared-current",
                 "target": "alpha_vs_sector_20d",
                 "dates": 2,
                 "rows": 6,
@@ -71,8 +85,21 @@ class Q1bSectorAblationTests(unittest.TestCase):
                 "top_mean": 0.04,
             },
             {
+                "model": "xgboost_model",
+                "path": "sector-specific-20d-ic-off",
+                "grid": "run65-dates",
+                "target": "alpha_vs_sector_20d",
+                "dates": 2,
+                "rows": 6,
+                "pooled_spearman": 0.19,
+                "per_date_spearman": 0.17,
+                "top_n": 10,
+                "top_mean": 0.04,
+            },
+            {
                 "model": "ridge_model",
                 "path": "current-global-60d",
+                "grid": "shared-current",
                 "target": "alpha_vs_sector_60d",
                 "dates": 2,
                 "rows": 6,
@@ -88,16 +115,40 @@ class Q1bSectorAblationTests(unittest.TestCase):
             text = _render_report(
                 rows=rows,
                 deciles=deciles,
-                sector_dates=2,
+                experiment_dates={"ic_on": 2, "ic_off": 2},
                 shared_dates=2,
+                run65_dates=2,
                 eligible_rows=10,
                 eligible_dates=5,
                 output_path=output_path,
             )
             self.assertTrue(output_path.exists())
 
-        self.assertIn("| xgboost_model | sector-specific-20d |", text)
+        self.assertIn("| shared-current | xgboost_model | sector-specific-20d-ic-off |", text)
+        self.assertIn("| run65-dates | xgboost_model | forensic-run65-stored |", text)
         self.assertIn("edge recovered:", text)
+
+    def test_experiment_row_records_grid_and_spearman(self) -> None:
+        frame = pd.DataFrame(
+            [
+                {"snapshot_date": "2026-01-02", "ticker": "A", "predicted_alpha": 3, "alpha_vs_sector_20d": 0.3},
+                {"snapshot_date": "2026-01-02", "ticker": "B", "predicted_alpha": 2, "alpha_vs_sector_20d": 0.2},
+                {"snapshot_date": "2026-01-02", "ticker": "C", "predicted_alpha": 1, "alpha_vs_sector_20d": 0.1},
+            ]
+        )
+
+        row = _experiment_row(
+            frame,
+            model="xgboost_model",
+            path="sector-specific-20d-ic-off",
+            grid="run65-dates",
+            target_column="alpha_vs_sector_20d",
+            top_n=2,
+        )
+
+        self.assertEqual(row["grid"], "run65-dates")
+        self.assertEqual(row["top_n"], 2)
+        self.assertAlmostEqual(float(row["per_date_spearman"]), 1.0)
 
 
 if __name__ == "__main__":

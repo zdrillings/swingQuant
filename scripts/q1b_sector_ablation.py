@@ -22,7 +22,9 @@ from src.utils.db_manager import DatabaseManager
 
 
 BASELINE_SPEARMAN = 0.4644
+BASELINE_PER_DATE_SPEARMAN = 0.4713
 CURRENT_BASELINE_DATE_BEST = 0.0739
+RUN65_GENERATED_AT = "2026-09-02T00:28:32+00:00"
 
 
 def _fmt(value: object, *, places: int = 4) -> str:
@@ -158,29 +160,101 @@ def _read_universe_snapshots(*, duckdb_path: Path, columns: list[str]) -> pd.Dat
         ).fetchdf()
 
 
+def _read_run65_dates(*, sqlite_path: Path) -> set[pd.Timestamp]:
+    import sqlite3
+
+    uri = f"file:{sqlite_path.resolve()}?mode=ro"
+    with sqlite3.connect(uri, uri=True) as connection:
+        rows = connection.execute(
+            """
+            SELECT DISTINCT snapshot_date
+            FROM Shortlist_Model_Predictions
+            WHERE generated_at = ?
+              AND dataset_split = 'oos'
+            ORDER BY snapshot_date
+            """,
+            (RUN65_GENERATED_AT,),
+        ).fetchall()
+    return set(pd.to_datetime(pd.Series([row[0] for row in rows]), errors="coerce").dropna().dt.normalize())
+
+
+def _experiment_row(
+    frame: pd.DataFrame,
+    *,
+    model: str,
+    path: str,
+    grid: str,
+    target_column: str,
+    top_n: int,
+) -> dict[str, float | int | str]:
+    top_summary = _top_n_summary(frame, target_column=target_column, top_n=top_n)
+    return {
+        "model": model,
+        "path": path,
+        "grid": grid,
+        "target": target_column,
+        "dates": int(frame["snapshot_date"].nunique()),
+        "rows": int(len(frame.index)),
+        "pooled_spearman": _pooled_spearman(frame, target_column=target_column),
+        "per_date_spearman": _mean_per_date_spearman(frame, target_column=target_column),
+        "top_n": int(top_n),
+        "top_mean": top_summary["mean_target"],
+    }
+
+
+def _sector_xgboost_predictions(
+    service: ShortlistModelService,
+    eligible: pd.DataFrame,
+    *,
+    base_features: list[str],
+    ic_screen: str,
+) -> pd.DataFrame:
+    if ic_screen not in {"on", "off"}:
+        raise ValueError(f"Unsupported ic_screen={ic_screen}")
+    predictions = service._walk_forward_predictions(
+        eligible,
+        target_column="alpha_vs_sector_20d",
+        evaluation_target_column="alpha_vs_sector_20d",
+        model_name="xgboost_model",
+        min_train_dates=252,
+        test_window_dates=20,
+        evaluation_stride_dates=20,
+        label_horizon_dates=20,
+        model_scope="sector_specific",
+        xgboost_params={**service._xgboost_params_for_config("balanced_depth4"), "n_jobs": 1},
+        feature_columns_override=base_features,
+        min_feature_ic=service._load_min_feature_ic() if ic_screen == "on" else None,
+        min_feature_ic_observation_fraction=service._load_min_feature_ic_observation_fraction(),
+        regime_matching_mode="off",
+        regime_transition_purge_mode="off",
+    )
+    if predictions is None or predictions.empty:
+        raise SystemExit(f"sector-specific xgboost produced no OOS predictions for ic_screen={ic_screen}")
+    predictions["snapshot_date"] = pd.to_datetime(predictions["snapshot_date"]).dt.normalize()
+    return predictions
+
+
 def _current_global_rows(
     *,
-    oos_csv: Path,
-    shared_dates: set[pd.Timestamp],
+    current: pd.DataFrame,
+    grid_dates: set[pd.Timestamp],
+    grid: str,
+    path: str,
+    target_column: str,
+    top_n: int,
 ) -> list[dict[str, float | int | str]]:
-    current = pd.read_csv(oos_csv, low_memory=False)
-    current["snapshot_date"] = pd.to_datetime(current["snapshot_date"], errors="coerce").dt.normalize()
-    target_column = "alpha_vs_sector_60d"
-    current = current[current["snapshot_date"].isin(shared_dates)].copy()
+    current = current[current["snapshot_date"].isin(grid_dates)].copy()
     rows: list[dict[str, float | int | str]] = []
     for model_name, model_frame in current.groupby("model_name", sort=True):
         rows.append(
-            {
-                "model": str(model_name),
-                "path": "current-global-60d",
-                "target": target_column,
-                "dates": int(model_frame["snapshot_date"].nunique()),
-                "rows": int(len(model_frame.index)),
-                "pooled_spearman": _pooled_spearman(model_frame, target_column=target_column),
-                "per_date_spearman": _mean_per_date_spearman(model_frame, target_column=target_column),
-                "top_n": 2,
-                "top_mean": _top_n_summary(model_frame, target_column=target_column, top_n=2)["mean_target"],
-            }
+            _experiment_row(
+                model_frame,
+                model=str(model_name),
+                path=path,
+                grid=grid,
+                target_column=target_column,
+                top_n=top_n,
+            )
         )
     return rows
 
@@ -189,45 +263,61 @@ def _render_report(
     *,
     rows: list[dict[str, float | int | str]],
     deciles: pd.DataFrame,
-    sector_dates: int,
+    experiment_dates: dict[str, int],
     shared_dates: int,
+    run65_dates: int,
     eligible_rows: int,
     eligible_dates: int,
     output_path: Path,
 ) -> str:
-    sector_row = next(row for row in rows if row["model"] == "xgboost_model" and row["path"] == "sector-specific-20d")
-    current_best = max(
-        (float(row["per_date_spearman"]) for row in rows if row["path"] == "current-global-60d" and math.isfinite(float(row["per_date_spearman"]))),
-        default=float("nan"),
+    sector_row = next(
+        row
+        for row in rows
+        if row["model"] == "xgboost_model" and row["path"] == "sector-specific-20d-ic-off" and row["grid"] == "shared-current"
     )
-    recovered_from_current = float(sector_row["per_date_spearman"]) - current_best
+    screen_on_row = next(
+        row
+        for row in rows
+        if row["model"] == "xgboost_model" and row["path"] == "sector-specific-20d-ic-on" and row["grid"] == "shared-current"
+    )
+    run65_row = next(
+        row
+        for row in rows
+        if row["model"] == "xgboost_model" and row["path"] == "sector-specific-20d-ic-off" and row["grid"] == "run65-dates"
+    )
+    ic_screen_delta = float(sector_row["per_date_spearman"]) - float(screen_on_row["per_date_spearman"])
     recoverable_gap = BASELINE_SPEARMAN - CURRENT_BASELINE_DATE_BEST
-    recovered_share = recovered_from_current / recoverable_gap if recoverable_gap else float("nan")
+    recovered_share = ic_screen_delta / recoverable_gap if recoverable_gap else float("nan")
     verdict = "edge recovered" if float(sector_row["per_date_spearman"]) >= 0.15 else (
-        "partially recovered" if float(sector_row["per_date_spearman"]) > current_best else "flat"
+        "partially recovered" if float(sector_row["per_date_spearman"]) >= 0.05 else "flat"
     )
 
     lines = [
-        "# Q1b Sector-Specific 20d Ablation",
+        "# A1 Run 65 Replication",
         "",
-        "- generated_at: 2026-09-30",
+        "- generated_at: 2026-10-05",
         "- data_access: read-only DuckDB plus existing OOS CSV; no `./sq` writes; no `data/` mutation",
-        "- baseline_reference: run 65 / 00144e4, 20d top-10 sector-specific xgboost, pooled Spearman +0.4644 on 20 OOS dates",
-        "- experiment: 20d endpoint label, top-10 readout, sector-specific xgboost, horizon-strided training labels, current full feature set with fold-local IC screen, regime matching off",
+        "- baseline_reference: run 65 / 00144e4, 20d top-10 sector-specific xgboost, pooled Spearman +0.4644 and per-date Spearman +0.4713 on 20 OOS dates",
+        "- experiment: 20d endpoint label, top-10 readout, sector-specific xgboost balanced_depth4, FULL feature pool, fold-local IC screen OFF, regime matching off",
+        "- control: same sector-specific 20d setup with the current fold-local IC screen ON",
         "- feature_note: the exact 00144e4 fold-local survivor list was not retained in git artifacts; this isolates sector-specific 20d modeling without pretending to recover unavailable survivor state",
         f"- eligible_rows: {eligible_rows}",
         f"- eligible_dates: {eligible_dates}",
-        f"- sector_specific_oos_dates: {sector_dates}",
+        f"- sector_specific_ic_on_oos_dates: {experiment_dates.get('ic_on', 0)}",
+        f"- sector_specific_ic_off_oos_dates: {experiment_dates.get('ic_off', 0)}",
         f"- shared_current_grid_dates: {shared_dates}",
+        f"- run65_grid_dates: {run65_dates}",
         "",
-        "## Shared-Grid Spearman",
+        "## Spearman Comparison",
         "",
-        "| model | path | target | dates | rows | pooled_spearman | per_date_spearman | top_n | top_mean |",
-        "|---|---|---|---:|---:|---:|---:|---:|---:|",
+        "| grid | model | path | target | dates | rows | pooled_spearman | per_date_spearman | top_n | top_mean |",
+        "|---|---|---|---|---:|---:|---:|---:|---:|---:|",
+        f"| run65-dates | xgboost_model | forensic-run65-stored | alpha_vs_sector_20d | 20 | 7412 | {_fmt(BASELINE_SPEARMAN)} | {_fmt(BASELINE_PER_DATE_SPEARMAN)} | 10 | +0.1947 |",
     ]
-    for row in sorted(rows, key=lambda item: (str(item["path"]), str(item["model"]))):
+    for row in sorted(rows, key=lambda item: (str(item["grid"]), str(item["path"]), str(item["model"]))):
         lines.append(
-            "| {model} | {path} | {target} | {dates} | {rows} | {pooled} | {per_date} | {top_n} | {top_mean} |".format(
+            "| {grid} | {model} | {path} | {target} | {dates} | {rows} | {pooled} | {per_date} | {top_n} | {top_mean} |".format(
+                grid=row["grid"],
                 model=row["model"],
                 path=row["path"],
                 target=row["target"],
@@ -242,7 +332,7 @@ def _render_report(
     lines.extend(
         [
             "",
-            "## Sector-Specific Decile Calibration",
+            "## IC-Off Decile Calibration",
             "",
             "| decile | rows | mean_target | hit_rate |",
             "|---:|---:|---:|---:|",
@@ -255,7 +345,7 @@ def _render_report(
             "",
             "## Verdict",
             "",
-            f"{verdict}: sector-specific 20d xgboost per-date Spearman is {_fmt(sector_row['per_date_spearman'])} on the shared grid versus the current global roster best {_fmt(current_best)}, recovering {_fmt(recovered_from_current)} Spearman, or {_fmt(recovered_share * 100.0, places=1)}% of the ~0.39 forensic gap.",
+            f"{verdict}: IC-screen-off sector-specific 20d xgboost per-date Spearman is {_fmt(sector_row['per_date_spearman'])} on the shared grid versus IC-screen-on {_fmt(screen_on_row['per_date_spearman'])}, a delta of {_fmt(ic_screen_delta)} Spearman, or {_fmt(recovered_share * 100.0, places=1)}% of the ~0.39 forensic gap. On run 65's 20-date grid, the IC-screen-off pooled Spearman is {_fmt(run65_row['pooled_spearman'])} versus the stored forensic +0.4644.",
             "",
         ]
     )
@@ -338,71 +428,97 @@ def run(output_path: Path, oos_csv: Path) -> dict[str, float | int | str]:
     frame = service._prepare_snapshot_frame(frame)
     eligible = filter_eligible_universe(frame, eligible_universe_mode="passed_or_trend")
     eligible = eligible.dropna(subset=["alpha_vs_sector_20d"]).sort_values(["snapshot_date", "ticker"]).reset_index(drop=True)
-    predictions = service._walk_forward_predictions(
-        eligible,
-        target_column="alpha_vs_sector_20d",
-        evaluation_target_column="alpha_vs_sector_20d",
-        model_name="xgboost_model",
-        min_train_dates=252,
-        test_window_dates=20,
-        evaluation_stride_dates=20,
-        label_horizon_dates=20,
-        model_scope="sector_specific",
-        xgboost_params={**service._xgboost_params_for_config("balanced_depth4"), "n_jobs": 1},
-        feature_columns_override=base_features,
-        min_feature_ic=service._load_min_feature_ic(),
-        min_feature_ic_observation_fraction=service._load_min_feature_ic_observation_fraction(),
-        regime_matching_mode="off",
-        regime_transition_purge_mode="off",
-    )
-    if predictions is None or predictions.empty:
-        raise SystemExit("sector-specific xgboost produced no OOS predictions")
-    predictions["snapshot_date"] = pd.to_datetime(predictions["snapshot_date"]).dt.normalize()
-    current_dates = set(pd.to_datetime(pd.read_csv(oos_csv, usecols=["snapshot_date"])["snapshot_date"]).dt.normalize())
-    sector_dates = set(predictions["snapshot_date"].dropna().unique().tolist())
+    predictions_on = _sector_xgboost_predictions(service, eligible, base_features=base_features, ic_screen="on")
+    predictions_off = _sector_xgboost_predictions(service, eligible, base_features=base_features, ic_screen="off")
+    current = pd.read_csv(oos_csv, low_memory=False)
+    current["snapshot_date"] = pd.to_datetime(current["snapshot_date"], errors="coerce").dt.normalize()
+    current_dates = set(current["snapshot_date"].dropna().unique().tolist())
+    alpha_20 = frame[["snapshot_date", "ticker", "alpha_vs_sector_20d"]].copy()
+    alpha_20["snapshot_date"] = pd.to_datetime(alpha_20["snapshot_date"], errors="coerce").dt.normalize()
+    current_with_alpha_20 = current.merge(alpha_20, on=["snapshot_date", "ticker"], how="left")
+    sector_dates = set(predictions_off["snapshot_date"].dropna().unique().tolist())
     shared_dates = sector_dates & current_dates
-    shared_predictions = predictions[predictions["snapshot_date"].isin(shared_dates)].copy()
-    sector_top = _top_n_summary(shared_predictions, target_column="alpha_vs_sector_20d", top_n=10)
+    run65_dates = _read_run65_dates(sqlite_path=settings.paths.sqlite_path)
     rows: list[dict[str, float | int | str]] = [
-        {
-            "model": "xgboost_model",
-            "path": "sector-specific-20d",
-            "target": "alpha_vs_sector_20d",
-            "dates": int(shared_predictions["snapshot_date"].nunique()),
-            "rows": int(len(shared_predictions.index)),
-            "pooled_spearman": _pooled_spearman(shared_predictions, target_column="alpha_vs_sector_20d"),
-            "per_date_spearman": _mean_per_date_spearman(shared_predictions, target_column="alpha_vs_sector_20d"),
-            "top_n": 10,
-            "top_mean": sector_top["mean_target"],
-        }
+        _experiment_row(
+            predictions_on[predictions_on["snapshot_date"].isin(shared_dates)].copy(),
+            model="xgboost_model",
+            path="sector-specific-20d-ic-on",
+            grid="shared-current",
+            target_column="alpha_vs_sector_20d",
+            top_n=10,
+        ),
+        _experiment_row(
+            predictions_off[predictions_off["snapshot_date"].isin(shared_dates)].copy(),
+            model="xgboost_model",
+            path="sector-specific-20d-ic-off",
+            grid="shared-current",
+            target_column="alpha_vs_sector_20d",
+            top_n=10,
+        ),
+        _experiment_row(
+            predictions_off[predictions_off["snapshot_date"].isin(run65_dates)].copy(),
+            model="xgboost_model",
+            path="sector-specific-20d-ic-off",
+            grid="run65-dates",
+            target_column="alpha_vs_sector_20d",
+            top_n=10,
+        ),
     ]
-    rows.extend(_current_global_rows(oos_csv=oos_csv, shared_dates=shared_dates))
-    deciles = _decile_calibration(shared_predictions, target_column="alpha_vs_sector_20d")
+    rows.extend(
+        _current_global_rows(
+            current=current,
+            grid_dates=shared_dates,
+            grid="shared-current",
+            path="current-global-60d",
+            target_column="alpha_vs_sector_60d",
+            top_n=2,
+        )
+    )
+    rows.extend(
+        _current_global_rows(
+            current=current_with_alpha_20,
+            grid_dates=run65_dates,
+            grid="run65-dates",
+            path="current-roster-20d",
+            target_column="alpha_vs_sector_20d",
+            top_n=10,
+        )
+    )
+    deciles = _decile_calibration(
+        predictions_off[predictions_off["snapshot_date"].isin(shared_dates)].copy(),
+        target_column="alpha_vs_sector_20d",
+    )
     _render_report(
         rows=rows,
         deciles=deciles,
-        sector_dates=int(predictions["snapshot_date"].nunique()),
+        experiment_dates={
+            "ic_on": int(predictions_on["snapshot_date"].nunique()),
+            "ic_off": int(predictions_off["snapshot_date"].nunique()),
+        },
         shared_dates=len(shared_dates),
+        run65_dates=len(run65_dates),
         eligible_rows=len(eligible.index),
         eligible_dates=int(eligible["snapshot_date"].nunique()),
         output_path=output_path,
     )
-    sector_row = rows[0]
+    sector_row = next(row for row in rows if row["path"] == "sector-specific-20d-ic-off" and row["grid"] == "shared-current")
     return {
         "output_path": str(output_path),
         "shared_dates": len(shared_dates),
-        "sector_per_date_spearman": float(sector_row["per_date_spearman"]),
+        "run65_dates": len(run65_dates),
+        "ic_off_per_date_spearman": float(sector_row["per_date_spearman"]),
     }
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run the Q1b sector-specific 20d shortlist ablation.")
-    parser.add_argument("--output", type=Path, default=Path("reports/q1b_sector_ablation.md"))
+    parser = argparse.ArgumentParser(description="Run the A1 run-65 IC-screen-off replication.")
+    parser.add_argument("--output", type=Path, default=Path("reports/a1_run65_replication.md"))
     parser.add_argument("--oos-csv", type=Path, default=Path("reports/shortlist_model_oos_predictions.csv"))
     args = parser.parse_args()
     result = run(output_path=args.output, oos_csv=args.oos_csv)
     print(
-        "wrote {output_path} shared_dates={shared_dates} sector_per_date_spearman={sector_per_date_spearman:+.4f}".format(
+        "wrote {output_path} shared_dates={shared_dates} run65_dates={run65_dates} ic_off_per_date_spearman={ic_off_per_date_spearman:+.4f}".format(
             **result
         )
     )
