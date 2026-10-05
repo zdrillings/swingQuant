@@ -274,6 +274,9 @@ rm -f "${shortlist_log}"
 echo "[$(date --iso-8601=seconds)] extended-hours-snapshot"
 ./sq extended-hours-snapshot --source all
 
+echo "[$(date --iso-8601=seconds)] persist-ah-history"
+PYTHONPATH=.vendor python3 scripts/persist_ah_history.py --snapshot-date "${run_date}"
+
 if [[ "${shortlist_promotion_failed}" -eq 0 ]]; then
   echo "[$(date --iso-8601=seconds)] scan"
   ./sq scan

@@ -51,6 +51,8 @@ class NightlyPipelineScriptTests(unittest.TestCase):
         self.assertIn("regime-meter report failed; continuing", script)
         self.assertIn("phase2-research", script)
         self.assertIn("phase2-research --horizon 60 --top 2 --trial-count 200", script)
+        self.assertIn("persist-ah-history", script)
+        self.assertIn("PYTHONPATH=.vendor python3 scripts/persist_ah_history.py --snapshot-date \"${run_date}\"", script)
         self.assertIn("--trial-count 200", script)
         self.assertIn("exit \"${shortlist_status}\"", script)
         self.assertNotIn("days_since_last_champion:' \"${shortlist_log}\"", script)
@@ -77,6 +79,17 @@ class NightlyPipelineScriptTests(unittest.TestCase):
         self.assertLess(
             script.index("shortlist_promotion_failed=1"),
             script.index("echo \"[$(date --iso-8601=seconds)] scan skipped"),
+        )
+        self.assertLess(
+            script.index("echo \"[$(date --iso-8601=seconds)] extended-hours-snapshot\""),
+            script.index("echo \"[$(date --iso-8601=seconds)] persist-ah-history\""),
+        )
+        self.assertLess(
+            script.index("echo \"[$(date --iso-8601=seconds)] persist-ah-history\""),
+            script.index(
+                "echo \"[$(date --iso-8601=seconds)] scan\"",
+                script.index("echo \"[$(date --iso-8601=seconds)] persist-ah-history\""),
+            ),
         )
 
 
