@@ -14,6 +14,7 @@ from scripts.check_shortlist_oos_reproducibility import (
     _resolve_target_column,
     _rolling_window_summaries,
 )
+from scripts.q3_label_overlap import summarize_label_overlap
 from src.cli import build_parser
 from src.research.shortlist_bakeoff_service import MODEL_FEATURE_COLUMNS
 from src.research.shortlist_model_service import ShortlistModelService
@@ -1113,6 +1114,54 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertEqual(set(aligned), {"structure_factor_fresh_signal", "ridge_model"})
         for predictions in aligned.values():
             self.assertEqual(set(pd.to_datetime(predictions["snapshot_date"])), set(dates[1:]))
+
+    def test_non_overlapping_oos_predictions_match_q3_greedy_independent_rows(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        calendar_dates = pd.bdate_range("2026-01-02", periods=130)
+        rows = []
+        for snapshot_date in calendar_dates:
+            rows.extend(
+                [
+                    {
+                        "snapshot_date": snapshot_date,
+                        "ticker": "AAA",
+                        "predicted_alpha": 0.2,
+                        "alpha_vs_sector_60d": 0.01,
+                    },
+                    {
+                        "snapshot_date": snapshot_date,
+                        "ticker": "BBB",
+                        "predicted_alpha": 0.1,
+                        "alpha_vs_sector_60d": -0.01,
+                    },
+                ]
+            )
+        dense = pd.DataFrame(rows)
+
+        honest = service._non_overlapping_oos_predictions(
+            dense,
+            horizon_days=60,
+            calendar_dates=calendar_dates,
+        )
+        summary = summarize_label_overlap(
+            dense,
+            label="synthetic_oos",
+            horizon_days=60,
+            calendar_dates=calendar_dates,
+        )
+
+        self.assertEqual(len(honest.index), summary.independent_rows)
+        self.assertEqual(
+            {
+                ("AAA", pd.Timestamp("2026-01-02")),
+                ("AAA", pd.Timestamp("2026-03-27")),
+                ("AAA", pd.Timestamp("2026-06-19")),
+                ("BBB", pd.Timestamp("2026-01-02")),
+                ("BBB", pd.Timestamp("2026-03-27")),
+                ("BBB", pd.Timestamp("2026-06-19")),
+            },
+            set(zip(honest["ticker"], pd.to_datetime(honest["snapshot_date"]))),
+        )
 
     def test_reversal_fold_feature_screen_uses_matched_pool(self) -> None:
         dates = pd.bdate_range("2026-01-02", periods=12)

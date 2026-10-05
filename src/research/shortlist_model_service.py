@@ -341,6 +341,13 @@ class ShortlistModelService:
                 target_column=target_column,
             )
             model_predictions[model_name] = annotated.drop(columns=["model_name"], errors="ignore")
+        evaluation_model_predictions = {
+            model_name: self._non_overlapping_oos_predictions(
+                predictions,
+                horizon_days=max(int(horizon_days), 1),
+            )
+            for model_name, predictions in model_predictions.items()
+        }
         full_summaries = pd.DataFrame(
             [
                 self._evaluate_predictions(
@@ -349,11 +356,11 @@ class ShortlistModelService:
                     target_column=evaluation_target_column,
                     model_name=model_name,
                 )
-                for model_name, predictions in model_predictions.items()
+                for model_name, predictions in evaluation_model_predictions.items()
             ]
         )
         recent_summary_rows: list[dict[str, object]] = []
-        for model_name, predictions in model_predictions.items():
+        for model_name, predictions in evaluation_model_predictions.items():
             recent_prediction_dates = sorted(predictions["snapshot_date"].drop_duplicates().tolist())[-max(int(recent_dates), 1):]
             recent_predictions = predictions[predictions["snapshot_date"].isin(recent_prediction_dates)].copy()
             recent_summary_rows.append(
@@ -371,7 +378,7 @@ class ShortlistModelService:
         acceptance_summaries = pd.DataFrame(
             [
                 row
-                for model_name, predictions in model_predictions.items()
+                for model_name, predictions in evaluation_model_predictions.items()
                 for row in self._rolling_window_summaries(
                     predictions=predictions,
                     target_column=evaluation_target_column,
@@ -423,6 +430,14 @@ class ShortlistModelService:
                 eligible_rows=len(matured.index),
                 eligible_dates=int(matured["snapshot_date"].nunique()),
                 oos_prediction_dates=int(combined_predictions["snapshot_date"].nunique()),
+                oos_evaluation_dates=int(
+                    pd.concat(evaluation_model_predictions.values(), ignore_index=True)["snapshot_date"].nunique()
+                    if evaluation_model_predictions
+                    else 0
+                ),
+                oos_evaluation_rows=int(
+                    sum(len(predictions.index) for predictions in evaluation_model_predictions.values())
+                ),
                 oos_path=oos_path,
                 live_path=live_path,
                 generated_at=generated_at,
@@ -527,6 +542,14 @@ class ShortlistModelService:
             eligible_rows=len(matured.index),
             eligible_dates=int(matured["snapshot_date"].nunique()),
             oos_prediction_dates=int(combined_predictions["snapshot_date"].nunique()),
+            oos_evaluation_dates=int(
+                pd.concat(evaluation_model_predictions.values(), ignore_index=True)["snapshot_date"].nunique()
+                if evaluation_model_predictions
+                else 0
+            ),
+            oos_evaluation_rows=int(
+                sum(len(predictions.index) for predictions in evaluation_model_predictions.values())
+            ),
             oos_path=oos_path,
             live_path=live_path,
             generated_at=generated_at,
@@ -664,6 +687,63 @@ class ShortlistModelService:
             oos_dates=int(combined_predictions["snapshot_date"].nunique()),
             live_candidates=len(live_predictions.index),
         )
+
+    def _non_overlapping_oos_predictions(
+        self,
+        predictions: pd.DataFrame,
+        *,
+        horizon_days: int,
+        calendar_dates: list | pd.Series | None = None,
+    ) -> pd.DataFrame:
+        if predictions.empty or not {"ticker", "snapshot_date"}.issubset(predictions.columns):
+            return predictions.copy()
+        working = predictions.copy()
+        working["ticker"] = working["ticker"].astype(str).str.strip()
+        working["snapshot_date"] = pd.to_datetime(working["snapshot_date"], errors="coerce").dt.normalize()
+        working = working.dropna(subset=["ticker", "snapshot_date"])
+        working = working[working["ticker"].ne("")]
+        if working.empty:
+            return working.drop(columns=["_date_index"], errors="ignore")
+        if calendar_dates is None:
+            calendar_dates = self._oos_evaluation_calendar_dates(fallback_dates=working["snapshot_date"].tolist())
+        normalized_calendar = pd.to_datetime(pd.Series(list(calendar_dates)), errors="coerce").dt.normalize().dropna()
+        calendar_values = sorted(set(normalized_calendar.tolist()) | set(working["snapshot_date"].tolist()))
+        date_index = {date_value: index for index, date_value in enumerate(calendar_values)}
+        working["_date_index"] = working["snapshot_date"].map(date_index)
+        working = working.dropna(subset=["_date_index"]).copy()
+        working["_date_index"] = working["_date_index"].astype(int)
+        horizon = max(int(horizon_days), 1)
+        keep_keys: set[tuple[str, pd.Timestamp]] = set()
+        for ticker, ticker_frame in working.groupby("ticker", sort=True):
+            dated = (
+                ticker_frame[["snapshot_date", "_date_index"]]
+                .drop_duplicates()
+                .sort_values(["_date_index", "snapshot_date"])
+            )
+            last_kept: int | None = None
+            for _, row in dated.iterrows():
+                index_value = int(row["_date_index"])
+                if last_kept is None or index_value - last_kept >= horizon:
+                    keep_keys.add((str(ticker), pd.Timestamp(row["snapshot_date"])))
+                    last_kept = index_value
+        mask = [
+            (str(row.ticker), pd.Timestamp(row.snapshot_date)) in keep_keys
+            for row in working[["ticker", "snapshot_date"]].itertuples(index=False)
+        ]
+        return working.loc[mask].drop(columns=["_date_index"], errors="ignore").reset_index(drop=True)
+
+    def _oos_evaluation_calendar_dates(self, *, fallback_dates: list) -> list[pd.Timestamp]:
+        loader = getattr(self.db_manager, "list_universe_daily_snapshot_dates", None)
+        if callable(loader):
+            try:
+                dates = loader()
+            except Exception as exc:
+                self.logger.warning("Unable to load universe dates for OOS de-overlap: %s", exc)
+                dates = []
+            parsed = pd.to_datetime(pd.Series(list(dates)), errors="coerce").dropna()
+            if not parsed.empty:
+                return sorted(parsed.dt.normalize().drop_duplicates().tolist())
+        return sorted(pd.to_datetime(pd.Series(list(fallback_dates)), errors="coerce").dropna().dt.normalize().drop_duplicates().tolist())
 
     def _align_model_predictions_to_common_oos_grid(
         self,
@@ -3652,6 +3732,8 @@ class ShortlistModelService:
         eligible_rows: int,
         eligible_dates: int,
         oos_prediction_dates: int,
+        oos_evaluation_dates: int,
+        oos_evaluation_rows: int,
         oos_path,
         live_path,
         generated_at: str,
@@ -3718,6 +3800,9 @@ class ShortlistModelService:
             f"- eligible_rows: {int(eligible_rows)}",
             f"- eligible_dates: {int(eligible_dates)}",
             f"- oos_prediction_dates: {int(oos_prediction_dates)}",
+            f"- oos_evaluation_dates: {int(oos_evaluation_dates)}",
+            f"- oos_evaluation_rows: {int(oos_evaluation_rows)}",
+            "- oos_evaluation_policy: greedy non-overlapping rows per ticker using label_horizon_dates; dense OOS CSV is retained for audit and live calibration.",
             f"- champion_model: {selected_model}",
             f"- oos_predictions_csv: {oos_path}",
             f"- live_predictions_csv: {live_path}",
