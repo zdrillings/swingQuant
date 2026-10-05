@@ -8,7 +8,7 @@ import pandas as pd
 from src.research.shortlist_bakeoff_service import MODEL_FEATURE_COLUMNS, expand_model_feature_columns
 from src.research.features import build_feature_frame, chronological_split
 from src.research.universe_snapshot_service import UniverseSnapshotBackfillService
-from src.utils.feature_engineering import add_overnight_rth_return_features
+from src.utils.feature_engineering import add_failed_breakout_features, add_overnight_rth_return_features
 
 
 class ResearchFeatureTests(unittest.TestCase):
@@ -48,6 +48,63 @@ class ResearchFeatureTests(unittest.TestCase):
             float(frame.loc[5, "overnight_minus_rth_5d"]),
             expected_overnight - expected_rth,
         )
+
+    def test_failed_breakout_flags_strict_high_break_and_close_back_inside(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "ticker": ["AAA"] * 6,
+                "date": pd.bdate_range("2026-01-02", periods=6),
+                "open": [10.0, 10.0, 10.0, 10.0, 10.0, 10.0],
+                "high": [10.0, 11.0, 11.0, 11.2, 10.5, 10.4],
+                "low": [9.5, 9.8, 9.8, 9.8, 9.7, 9.7],
+                "close": [9.8, 10.8, 11.0, 10.8, 11.1, 11.1],
+            }
+        )
+
+        add_failed_breakout_features(frame, breakout_windows=(2,), failure_window=2)
+
+        self.assertEqual(float(frame.loc[2, "failed_breakout_2d"]), 0.0)
+        self.assertTrue(pd.isna(frame.loc[2, "days_since_failed_breakout_2d"]))
+        self.assertEqual(float(frame.loc[3, "failed_breakout_2d"]), 1.0)
+        self.assertEqual(float(frame.loc[3, "days_since_failed_breakout_2d"]), 0.0)
+        self.assertEqual(float(frame.loc[5, "failed_breakout_2d"]), 1.0)
+        self.assertEqual(float(frame.loc[5, "days_since_failed_breakout_2d"]), 2.0)
+
+    def test_failed_breakout_window_expires_without_new_failure(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "ticker": ["AAA"] * 7,
+                "date": pd.bdate_range("2026-01-02", periods=7),
+                "open": [10.0] * 7,
+                "high": [10.0, 11.0, 11.0, 11.2, 11.0, 11.0, 11.0],
+                "low": [9.5] * 7,
+                "close": [9.8, 10.8, 11.0, 10.8, 11.1, 11.1, 11.1],
+            }
+        )
+
+        add_failed_breakout_features(frame, breakout_windows=(2,), failure_window=2)
+
+        self.assertEqual(float(frame.loc[3, "failed_breakout_2d"]), 1.0)
+        self.assertEqual(float(frame.loc[5, "failed_breakout_2d"]), 1.0)
+        self.assertEqual(float(frame.loc[6, "failed_breakout_2d"]), 0.0)
+        self.assertTrue(pd.isna(frame.loc[6, "days_since_failed_breakout_2d"]))
+
+    def test_failed_breakout_sparse_history_stays_unflagged(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "ticker": ["AAA"] * 3,
+                "date": pd.bdate_range("2026-01-02", periods=3),
+                "open": [10.0, 10.0, 10.0],
+                "high": [10.0, 11.0, 9.0],
+                "low": [9.5, 9.5, 8.5],
+                "close": [9.8, 9.7, 8.8],
+            }
+        )
+
+        add_failed_breakout_features(frame, breakout_windows=(5,), failure_window=2)
+
+        self.assertEqual(frame["failed_breakout_5d"].tolist(), [0.0, 0.0, 0.0])
+        self.assertTrue(frame["days_since_failed_breakout_5d"].isna().all())
 
     def test_chronological_split_preserves_time_order(self) -> None:
         frame = pd.DataFrame(
@@ -172,6 +229,10 @@ class ResearchFeatureTests(unittest.TestCase):
     def test_revision_acceleration_features_expand_to_rank_variants(self) -> None:
         self.assertIn("analyst_eps_revision_breadth_change_14d", MODEL_FEATURE_COLUMNS)
         self.assertIn("analyst_eps_estimate_dispersion_change_14d", MODEL_FEATURE_COLUMNS)
+        self.assertIn("failed_breakout_20d", MODEL_FEATURE_COLUMNS)
+        self.assertIn("days_since_failed_breakout_52w", MODEL_FEATURE_COLUMNS)
         expanded = expand_model_feature_columns(MODEL_FEATURE_COLUMNS)
         self.assertIn("analyst_eps_revision_breadth_change_14d__rank_all", expanded)
         self.assertIn("analyst_eps_estimate_dispersion_change_14d__rank_sector", expanded)
+        self.assertIn("failed_breakout_20d__rank_all", expanded)
+        self.assertIn("days_since_failed_breakout_52w__rank_sector", expanded)

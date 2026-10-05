@@ -118,6 +118,57 @@ def add_overnight_rth_return_features(frame: pd.DataFrame, *, windows: tuple[int
         frame[spread_feature] = frame[overnight_feature] - frame[rth_feature]
 
 
+def add_failed_breakout_features(
+    frame: pd.DataFrame,
+    *,
+    breakout_windows: tuple[int, ...] = (20, 252),
+    failure_window: int = 10,
+) -> None:
+    label_by_window = {20: "20d", 252: "52w"}
+    if frame.empty:
+        for window in breakout_windows:
+            label = label_by_window.get(int(window), f"{int(window)}d")
+            frame[f"failed_breakout_{label}"] = pd.Series(dtype=float)
+            frame[f"days_since_failed_breakout_{label}"] = pd.Series(dtype=float)
+        return
+
+    for window in breakout_windows:
+        lookback = int(window)
+        label = label_by_window.get(lookback, f"{lookback}d")
+        flag_feature = f"failed_breakout_{label}"
+        days_feature = f"days_since_failed_breakout_{label}"
+        frame[flag_feature] = pd.NA
+        frame[days_feature] = pd.NA
+        for _, group in frame.groupby("ticker", sort=False):
+            ordered = group.sort_values("date") if "date" in group.columns else group
+            prior_high = ordered["high"].shift(1).rolling(window=lookback, min_periods=lookback).max()
+            attempts: list[tuple[int, float]] = []
+            last_failure_pos: int | None = None
+            flags: list[float] = []
+            days_since: list[float] = []
+            highs = pd.to_numeric(ordered["high"], errors="coerce").reset_index(drop=True)
+            closes = pd.to_numeric(ordered["close"], errors="coerce").reset_index(drop=True)
+            levels = pd.to_numeric(prior_high, errors="coerce").reset_index(drop=True)
+            for position, (high_value, close_value, level) in enumerate(zip(highs, closes, levels, strict=False)):
+                attempts = [
+                    (attempt_pos, attempt_level)
+                    for attempt_pos, attempt_level in attempts
+                    if position - attempt_pos <= int(failure_window)
+                ]
+                if pd.notna(level) and pd.notna(high_value) and float(high_value) > float(level):
+                    attempts.append((position, float(level)))
+                if pd.notna(close_value) and any(float(close_value) < attempt_level for _, attempt_level in attempts):
+                    last_failure_pos = position
+                if last_failure_pos is not None and position - last_failure_pos <= int(failure_window):
+                    flags.append(1.0)
+                    days_since.append(float(position - last_failure_pos))
+                else:
+                    flags.append(0.0)
+                    days_since.append(np.nan)
+            frame.loc[ordered.index, flag_feature] = flags
+            frame.loc[ordered.index, days_feature] = days_since
+
+
 def add_atr_feature(frame: pd.DataFrame, *, feature_name: str, window: int) -> None:
     frame[feature_name] = pd.NA
     for _, group in frame.groupby("ticker", sort=False):

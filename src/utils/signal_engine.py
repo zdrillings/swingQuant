@@ -6,6 +6,7 @@ import pandas as pd
 
 from src.settings import load_feature_config
 from src.utils.feature_engineering import (
+    add_failed_breakout_features,
     add_sector_breadth_features,
     add_overnight_rth_return_features,
     apply_feature_definitions,
@@ -108,6 +109,7 @@ def build_analysis_frame(
         earnings_calendar=earnings_calendar,
     )
     add_overnight_rth_return_features(frame, windows=(5, 20))
+    add_failed_breakout_features(frame, breakout_windows=(20, 252), failure_window=10)
 
     spy_regime = _compute_regime_frame(frame, "SPY").set_index("date")
     qqq_regime = _compute_regime_frame(frame, "QQQ").set_index("date")
