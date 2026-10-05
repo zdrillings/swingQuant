@@ -69,6 +69,8 @@ MODEL_FEATURE_COLUMNS = [
     "sector_pct_above_50",
     "sector_pct_above_200",
     "sector_median_roc_63",
+    "ah_breadth_pct_pos",
+    "ah_breadth_zscore_5d",
     "analyst_target_upside",
     "analyst_target_range_pct",
     "analyst_count",

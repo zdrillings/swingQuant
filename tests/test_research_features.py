@@ -8,7 +8,11 @@ import pandas as pd
 from src.research.shortlist_bakeoff_service import MODEL_FEATURE_COLUMNS, expand_model_feature_columns
 from src.research.features import build_feature_frame, chronological_split
 from src.research.universe_snapshot_service import UniverseSnapshotBackfillService
-from src.utils.feature_engineering import add_failed_breakout_features, add_overnight_rth_return_features
+from src.utils.feature_engineering import (
+    add_failed_breakout_features,
+    add_overnight_rth_return_features,
+    compute_ah_breadth_features,
+)
 
 
 class ResearchFeatureTests(unittest.TestCase):
@@ -105,6 +109,38 @@ class ResearchFeatureTests(unittest.TestCase):
 
         self.assertEqual(frame["failed_breakout_5d"].tolist(), [0.0, 0.0, 0.0])
         self.assertTrue(frame["days_since_failed_breakout_5d"].isna().all())
+
+    def test_ah_breadth_zscore_waits_for_five_nights(self) -> None:
+        history = pd.DataFrame(
+            {
+                "snapshot_date": ["2026-07-01", "2026-07-01", "2026-07-02", "2026-07-02", "2026-07-03", "2026-07-03", "2026-07-06", "2026-07-06", "2026-07-07", "2026-07-07"],
+                "ticker": ["AAA", "BBB"] * 5,
+                "ah_price": [101.0, 99.0, 102.0, 103.0, 98.0, 99.0, 101.0, 102.0, 100.0, 99.0],
+                "rth_close": [100.0] * 10,
+            }
+        )
+
+        features = compute_ah_breadth_features(history)
+
+        self.assertEqual(features["ah_breadth_pct_pos"].tolist(), [0.5, 1.0, 0.0, 1.0, 0.0])
+        self.assertTrue(features.loc[:3, "ah_breadth_zscore_5d"].isna().all())
+        self.assertTrue(pd.notna(features.loc[4, "ah_breadth_zscore_5d"]))
+
+    def test_ah_breadth_empty_universe_returns_nan(self) -> None:
+        history = pd.DataFrame(
+            {
+                "snapshot_date": ["2026-07-01", "2026-07-01"],
+                "ticker": ["AAA", "BBB"],
+                "ah_price": [None, None],
+                "rth_close": [100.0, None],
+            }
+        )
+
+        features = compute_ah_breadth_features(history)
+
+        self.assertEqual(features["snapshot_date"].dt.strftime("%Y-%m-%d").tolist(), ["2026-07-01"])
+        self.assertTrue(features["ah_breadth_pct_pos"].isna().all())
+        self.assertTrue(features["ah_breadth_zscore_5d"].isna().all())
 
     def test_chronological_split_preserves_time_order(self) -> None:
         frame = pd.DataFrame(
@@ -231,8 +267,12 @@ class ResearchFeatureTests(unittest.TestCase):
         self.assertIn("analyst_eps_estimate_dispersion_change_14d", MODEL_FEATURE_COLUMNS)
         self.assertIn("failed_breakout_20d", MODEL_FEATURE_COLUMNS)
         self.assertIn("days_since_failed_breakout_52w", MODEL_FEATURE_COLUMNS)
+        self.assertIn("ah_breadth_pct_pos", MODEL_FEATURE_COLUMNS)
+        self.assertIn("ah_breadth_zscore_5d", MODEL_FEATURE_COLUMNS)
         expanded = expand_model_feature_columns(MODEL_FEATURE_COLUMNS)
         self.assertIn("analyst_eps_revision_breadth_change_14d__rank_all", expanded)
         self.assertIn("analyst_eps_estimate_dispersion_change_14d__rank_sector", expanded)
         self.assertIn("failed_breakout_20d__rank_all", expanded)
         self.assertIn("days_since_failed_breakout_52w__rank_sector", expanded)
+        self.assertIn("ah_breadth_pct_pos__rank_all", expanded)
+        self.assertIn("ah_breadth_zscore_5d__rank_sector", expanded)

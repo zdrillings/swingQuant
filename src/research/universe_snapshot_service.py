@@ -19,6 +19,7 @@ from src.utils.strategy import (
     profit_target_price,
     trailing_stop_price,
 )
+from src.utils.feature_engineering import compute_ah_breadth_features
 
 
 OUTCOME_HORIZONS = (1, 3, 5, 10, 20, 60)
@@ -118,6 +119,8 @@ SNAPSHOT_FEATURE_COLUMNS = [
     "spy_roc_5",
     "spy_realized_vol_20",
     "qqq_roc_20",
+    "ah_breadth_pct_pos",
+    "ah_breadth_zscore_5d",
     "analyst_target_upside",
     "analyst_target_range_pct",
     "analyst_count",
@@ -183,6 +186,7 @@ class UniverseSnapshotBackfillService:
             universe_rows,
             earnings_calendar=earnings_calendar,
         )
+        analysis_frame = self._attach_ah_breadth_features(analysis_frame)
         if analysis_frame.empty:
             raise ValueError("No analysis frame could be built for historical universe snapshot backfill.")
 
@@ -431,6 +435,42 @@ class UniverseSnapshotBackfillService:
         working = day_frame.copy()
         working["ticker"] = working["ticker"].astype(str).str.strip().str.upper()
         return working.drop_duplicates(subset=["ticker"], keep="last").reset_index(drop=True)
+
+    def _attach_ah_breadth_features(self, frame: pd.DataFrame) -> pd.DataFrame:
+        working = frame.copy()
+        working["date"] = pd.to_datetime(working["date"], errors="coerce").dt.normalize()
+        history = self._read_ah_history()
+        if history.empty:
+            working["ah_breadth_pct_pos"] = pd.NA
+            working["ah_breadth_zscore_5d"] = pd.NA
+            return working
+        features = compute_ah_breadth_features(history)
+        if features.empty:
+            working["ah_breadth_pct_pos"] = pd.NA
+            working["ah_breadth_zscore_5d"] = pd.NA
+            return working
+        return working.merge(features, left_on="date", right_on="snapshot_date", how="left").drop(columns=["snapshot_date"])
+
+    def _read_ah_history(self) -> pd.DataFrame:
+        import duckdb
+
+        paths = getattr(self.db_manager, "paths", None)
+        if paths is None:
+            return pd.DataFrame(columns=["snapshot_date", "ah_price", "rth_close"])
+        ah_path = paths.data_dir / "ah_history.duckdb"
+        if not ah_path.exists():
+            return pd.DataFrame(columns=["snapshot_date", "ah_price", "rth_close"])
+        try:
+            with duckdb.connect(str(ah_path), read_only=True) as connection:
+                return connection.execute(
+                    """
+                    SELECT snapshot_date, ah_price, rth_close
+                    FROM ah_snapshot_history
+                    ORDER BY snapshot_date, ticker
+                    """
+                ).fetchdf()
+        except duckdb.CatalogException:
+            return pd.DataFrame(columns=["snapshot_date", "ah_price", "rth_close"])
 
     def _snapshot_dates(
         self,

@@ -169,6 +169,43 @@ def add_failed_breakout_features(
             frame.loc[ordered.index, days_feature] = days_since
 
 
+def compute_ah_breadth_features(history: pd.DataFrame, *, zscore_window: int = 5) -> pd.DataFrame:
+    columns = ["snapshot_date", "ah_breadth_pct_pos", "ah_breadth_zscore_5d"]
+    if history.empty:
+        return pd.DataFrame(columns=columns)
+    required = {"snapshot_date", "ah_price", "rth_close"}
+    missing = required.difference(history.columns)
+    if missing:
+        raise ValueError(f"AH history is missing required columns: {', '.join(sorted(missing))}")
+    working = history.copy()
+    working["snapshot_date"] = pd.to_datetime(working["snapshot_date"], errors="coerce").dt.normalize()
+    ah_price = pd.to_numeric(working["ah_price"], errors="coerce")
+    rth_close = pd.to_numeric(working["rth_close"], errors="coerce")
+    valid = working["snapshot_date"].notna() & ah_price.notna() & rth_close.notna() & rth_close.ne(0.0)
+    working = working.loc[valid, ["snapshot_date"]].copy()
+    working["ah_return"] = (ah_price.loc[valid].to_numpy(dtype=float) / rth_close.loc[valid].to_numpy(dtype=float)) - 1.0
+    if working.empty:
+        dates = pd.to_datetime(history["snapshot_date"], errors="coerce").dropna().dt.normalize().drop_duplicates()
+        result = pd.DataFrame({"snapshot_date": sorted(dates.tolist())})
+        result["ah_breadth_pct_pos"] = np.nan
+        result["ah_breadth_zscore_5d"] = np.nan
+        return result[columns]
+    breadth = (
+        working.groupby("snapshot_date", sort=True)["ah_return"]
+        .agg(lambda values: float((pd.to_numeric(values, errors="coerce") > 0.0).mean()) if len(values) else np.nan)
+        .rename("ah_breadth_pct_pos")
+        .reset_index()
+        .sort_values("snapshot_date")
+        .reset_index(drop=True)
+    )
+    window = max(int(zscore_window), 1)
+    rolling = breadth["ah_breadth_pct_pos"].rolling(window=window, min_periods=window)
+    mean = rolling.mean()
+    std = rolling.std(ddof=0)
+    breadth["ah_breadth_zscore_5d"] = (breadth["ah_breadth_pct_pos"] - mean) / std.replace(0.0, np.nan)
+    return breadth[columns]
+
+
 def add_atr_feature(frame: pd.DataFrame, *, feature_name: str, window: int) -> None:
     frame[feature_name] = pd.NA
     for _, group in frame.groupby("ticker", sort=False):
