@@ -7,6 +7,7 @@ import pandas as pd
 from src.settings import load_feature_config
 from src.utils.feature_engineering import (
     add_sector_breadth_features,
+    add_overnight_rth_return_features,
     apply_feature_definitions,
     compute_atr,
     compute_rsi,
@@ -106,6 +107,7 @@ def build_analysis_frame(
         feature_config,
         earnings_calendar=earnings_calendar,
     )
+    add_overnight_rth_return_features(frame, windows=(5, 20))
 
     spy_regime = _compute_regime_frame(frame, "SPY").set_index("date")
     qqq_regime = _compute_regime_frame(frame, "QQQ").set_index("date")

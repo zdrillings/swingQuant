@@ -5,9 +5,47 @@ import unittest
 import pandas as pd
 
 from src.research.features import build_feature_frame, chronological_split
+from src.utils.feature_engineering import add_overnight_rth_return_features
 
 
 class ResearchFeatureTests(unittest.TestCase):
+    def test_overnight_rth_features_use_prior_close_and_current_session(self) -> None:
+        frame = pd.DataFrame(
+            {
+                "ticker": ["AAA"] * 6,
+                "date": pd.bdate_range("2026-01-02", periods=6),
+                "open": [10.0, 11.0, 12.0, 11.0, 13.0, 12.0],
+                "high": [10.5, 11.5, 12.5, 11.5, 13.5, 12.5],
+                "low": [9.5, 10.5, 11.5, 10.5, 12.5, 11.5],
+                "close": [10.0, 12.0, 11.0, 13.0, 12.0, 15.0],
+                "volume": [1000] * 6,
+            }
+        )
+
+        add_overnight_rth_return_features(frame, windows=(5,))
+
+        expected_overnight = (
+            (11.0 / 10.0 - 1.0)
+            + (12.0 / 12.0 - 1.0)
+            + (11.0 / 11.0 - 1.0)
+            + (13.0 / 13.0 - 1.0)
+            + (12.0 / 12.0 - 1.0)
+        )
+        expected_rth = (
+            (12.0 / 11.0 - 1.0)
+            + (11.0 / 12.0 - 1.0)
+            + (13.0 / 11.0 - 1.0)
+            + (12.0 / 13.0 - 1.0)
+            + (15.0 / 12.0 - 1.0)
+        )
+        self.assertTrue(pd.isna(frame.loc[4, "overnight_ret_5d"]))
+        self.assertAlmostEqual(float(frame.loc[5, "overnight_ret_5d"]), expected_overnight)
+        self.assertAlmostEqual(float(frame.loc[5, "rth_ret_5d"]), expected_rth)
+        self.assertAlmostEqual(
+            float(frame.loc[5, "overnight_minus_rth_5d"]),
+            expected_overnight - expected_rth,
+        )
+
     def test_chronological_split_preserves_time_order(self) -> None:
         frame = pd.DataFrame(
             {

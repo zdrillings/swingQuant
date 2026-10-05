@@ -101,6 +101,23 @@ def add_roc_feature(frame: pd.DataFrame, *, feature_name: str, window: int) -> N
     )
 
 
+def add_overnight_rth_return_features(frame: pd.DataFrame, *, windows: tuple[int, ...] = (5, 20)) -> None:
+    prior_close = frame.groupby("ticker", group_keys=False)["close"].shift(1)
+    overnight_return = (frame["open"] / prior_close) - 1.0
+    rth_return = (frame["close"] / frame["open"]) - 1.0
+    for window in windows:
+        overnight_feature = f"overnight_ret_{int(window)}d"
+        rth_feature = f"rth_ret_{int(window)}d"
+        spread_feature = f"overnight_minus_rth_{int(window)}d"
+        frame[overnight_feature] = overnight_return.groupby(frame["ticker"]).transform(
+            lambda series: series.rolling(window=int(window), min_periods=int(window)).sum()
+        )
+        frame[rth_feature] = rth_return.groupby(frame["ticker"]).transform(
+            lambda series: series.rolling(window=int(window), min_periods=int(window)).sum()
+        )
+        frame[spread_feature] = frame[overnight_feature] - frame[rth_feature]
+
+
 def add_atr_feature(frame: pd.DataFrame, *, feature_name: str, window: int) -> None:
     frame[feature_name] = pd.NA
     for _, group in frame.groupby("ticker", sort=False):
