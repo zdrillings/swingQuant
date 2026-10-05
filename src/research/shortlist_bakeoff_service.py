@@ -70,6 +70,8 @@ MODEL_FEATURE_COLUMNS = [
     "analyst_count",
     "analyst_recommendation_score",
     "analyst_eps_revision_breadth",
+    "analyst_eps_revision_breadth_change_14d",
+    "analyst_eps_estimate_dispersion_change_14d",
     "analyst_upgrade_downgrade_score",
     "analyst_snapshot_age_days",
     "analyst_revision_snapshot_age_days",

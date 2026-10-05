@@ -60,6 +60,8 @@ EVENT_DRIVEN_FEATURES = (
     "analyst_count",
     "analyst_recommendation_score",
     "analyst_eps_revision_breadth",
+    "analyst_eps_revision_breadth_change_14d",
+    "analyst_eps_estimate_dispersion_change_14d",
     "analyst_upgrade_downgrade_score",
     "days_since_last_earnings",
     "days_to_next_earnings",
@@ -80,6 +82,8 @@ EVENT_ANALYST_FEATURES = (
     "analyst_count",
     "analyst_recommendation_score",
     "analyst_eps_revision_breadth",
+    "analyst_eps_revision_breadth_change_14d",
+    "analyst_eps_estimate_dispersion_change_14d",
     "analyst_upgrade_downgrade_score",
 )
 STRUCTURE_FACTOR_COMPONENTS = (

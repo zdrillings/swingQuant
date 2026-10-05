@@ -119,6 +119,9 @@ SNAPSHOT_FEATURE_COLUMNS = [
     "analyst_count",
     "analyst_recommendation_score",
     "analyst_eps_revision_breadth",
+    "analyst_eps_revision_breadth_change_14d",
+    "analyst_eps_estimate_dispersion",
+    "analyst_eps_estimate_dispersion_change_14d",
     "analyst_upgrade_downgrade_score",
     "analyst_snapshot_age_days",
     "analyst_revision_snapshot_age_days",
@@ -601,6 +604,9 @@ class UniverseSnapshotBackfillService:
             "analyst_count": None,
             "analyst_recommendation_score": None,
             "analyst_eps_revision_breadth": None,
+            "analyst_eps_revision_breadth_change_14d": None,
+            "analyst_eps_estimate_dispersion": None,
+            "analyst_eps_estimate_dispersion_change_14d": None,
             "analyst_upgrade_downgrade_score": None,
             "analyst_snapshot_age_days": None,
             "analyst_revision_snapshot_age_days": None,
@@ -622,13 +628,36 @@ class UniverseSnapshotBackfillService:
 
         revision_row = self._latest_point_in_time_row(analyst_revision_context.get(str(ticker).upper()), snapshot_ts)
         if revision_row is not None:
-            payload["analyst_eps_revision_breadth"] = self._eps_revision_breadth(
-                self._json_records(revision_row.get("eps_revisions_json"))
+            revision_breadth = self._eps_revision_breadth(self._json_records(revision_row.get("eps_revisions_json")))
+            estimate_dispersion = self._eps_estimate_dispersion(
+                self._json_records(revision_row.get("earnings_estimate_json"))
             )
+            payload["analyst_eps_revision_breadth"] = revision_breadth
+            payload["analyst_eps_estimate_dispersion"] = estimate_dispersion
             payload["analyst_upgrade_downgrade_score"] = self._upgrade_downgrade_score(
                 self._json_records(revision_row.get("upgrades_downgrades_json"))
             )
             payload["analyst_revision_snapshot_age_days"] = float((snapshot_ts - pd.Timestamp(revision_row["snapshot_date"]).normalize()).days)
+            lagged_row = self._lagged_point_in_time_row(
+                analyst_revision_context.get(str(ticker).upper()),
+                snapshot_ts,
+                sessions=14,
+            )
+            if lagged_row is not None:
+                lagged_revision_breadth = self._eps_revision_breadth(
+                    self._json_records(lagged_row.get("eps_revisions_json"))
+                )
+                lagged_estimate_dispersion = self._eps_estimate_dispersion(
+                    self._json_records(lagged_row.get("earnings_estimate_json"))
+                )
+                payload["analyst_eps_revision_breadth_change_14d"] = self._delta_or_none(
+                    revision_breadth,
+                    lagged_revision_breadth,
+                )
+                payload["analyst_eps_estimate_dispersion_change_14d"] = self._delta_or_none(
+                    estimate_dispersion,
+                    lagged_estimate_dispersion,
+                )
         return payload
 
     def _latest_point_in_time_row(self, frame: pd.DataFrame | None, snapshot_ts: pd.Timestamp):
@@ -638,6 +667,16 @@ class UniverseSnapshotBackfillService:
         if eligible.empty:
             return None
         return eligible.sort_values("snapshot_date").iloc[-1]
+
+    def _lagged_point_in_time_row(
+        self,
+        frame: pd.DataFrame | None,
+        snapshot_ts: pd.Timestamp,
+        *,
+        sessions: int,
+    ):
+        lagged_ts = pd.Timestamp(snapshot_ts).normalize() - pd.tseries.offsets.BDay(int(sessions))
+        return self._latest_point_in_time_row(frame, lagged_ts)
 
     def _recommendation_score(self, recommendation: object) -> float | None:
         if recommendation in (None, "") or pd.isna(recommendation):
@@ -690,6 +729,31 @@ class UniverseSnapshotBackfillService:
         total = up_total + down_total
         return (up_total - down_total) / total if total > 0 else None
 
+    def _eps_estimate_dispersion(self, records: list[dict]) -> float | None:
+        if not records:
+            return None
+        period_priority = {"0q": 0, "+1q": 1, "0y": 2, "+1y": 3}
+        candidates = sorted(
+            records,
+            key=lambda record: period_priority.get(str(record.get("period", "")).strip().lower(), 99),
+        )
+        for record in candidates:
+            estimate_avg = self._optional_float(record.get("avg"))
+            estimate_high = self._optional_float(record.get("high"))
+            estimate_low = self._optional_float(record.get("low"))
+            if estimate_avg is None or estimate_high is None or estimate_low is None:
+                continue
+            denominator = abs(float(estimate_avg))
+            if denominator <= 0:
+                continue
+            return (float(estimate_high) - float(estimate_low)) / denominator
+        return None
+
+    def _delta_or_none(self, current: float | None, lagged: float | None) -> float | None:
+        if current is None or lagged is None:
+            return None
+        return float(current) - float(lagged)
+
     def _upgrade_downgrade_score(self, records: list[dict]) -> float | None:
         if not records:
             return None
@@ -729,6 +793,9 @@ class UniverseSnapshotBackfillService:
             required.extend(
                 [
                     "analyst_eps_revision_breadth",
+                    "analyst_eps_revision_breadth_change_14d",
+                    "analyst_eps_estimate_dispersion",
+                    "analyst_eps_estimate_dispersion_change_14d",
                     "analyst_upgrade_downgrade_score",
                     "analyst_revision_snapshot_age_days",
                 ]

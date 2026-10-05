@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import unittest
+import json
 
 import pandas as pd
 
+from src.research.shortlist_bakeoff_service import MODEL_FEATURE_COLUMNS, expand_model_feature_columns
 from src.research.features import build_feature_frame, chronological_split
+from src.research.universe_snapshot_service import UniverseSnapshotBackfillService
 from src.utils.feature_engineering import add_overnight_rth_return_features
 
 
@@ -99,3 +102,76 @@ class ResearchFeatureTests(unittest.TestCase):
         unlabeled_tail = set(base_dates[-20:])
         aaa_dates = set(feature_frame.loc[feature_frame["ticker"] == "AAA", "date"])
         self.assertTrue(aaa_dates.isdisjoint(unlabeled_tail))
+
+    def test_analyst_revision_acceleration_uses_14_session_point_in_time_lag(self) -> None:
+        service = UniverseSnapshotBackfillService(db_manager=None)
+        revisions = pd.DataFrame(
+            [
+                {
+                    "snapshot_date": "2026-01-02",
+                    "eps_revisions_json": json.dumps(
+                        [{"period": "0q", "upLast30days": 2, "downLast30days": 2}]
+                    ),
+                    "earnings_estimate_json": json.dumps(
+                        [{"period": "0q", "avg": 2.0, "high": 2.4, "low": 1.8}]
+                    ),
+                    "upgrades_downgrades_json": "[]",
+                },
+                {
+                    "snapshot_date": "2026-01-26",
+                    "eps_revisions_json": json.dumps(
+                        [{"period": "0q", "upLast30days": 6, "downLast30days": 2}]
+                    ),
+                    "earnings_estimate_json": json.dumps(
+                        [{"period": "0q", "avg": 2.0, "high": 2.2, "low": 1.9}]
+                    ),
+                    "upgrades_downgrades_json": "[]",
+                },
+            ]
+        )
+        revisions["snapshot_date"] = pd.to_datetime(revisions["snapshot_date"]).dt.normalize()
+
+        early = service._analyst_feature_payload(
+            snapshot_date="2026-01-16",
+            ticker="AAA",
+            adj_close=10.0,
+            analyst_context={},
+            analyst_revision_context={"AAA": revisions},
+        )
+        mature = service._analyst_feature_payload(
+            snapshot_date="2026-01-26",
+            ticker="AAA",
+            adj_close=10.0,
+            analyst_context={},
+            analyst_revision_context={"AAA": revisions},
+        )
+
+        self.assertIsNone(early["analyst_eps_revision_breadth_change_14d"])
+        self.assertIsNone(early["analyst_eps_estimate_dispersion_change_14d"])
+        self.assertAlmostEqual(mature["analyst_eps_revision_breadth"], 0.5)
+        self.assertAlmostEqual(mature["analyst_eps_estimate_dispersion"], 0.15)
+        self.assertAlmostEqual(mature["analyst_eps_revision_breadth_change_14d"], 0.5)
+        self.assertAlmostEqual(mature["analyst_eps_estimate_dispersion_change_14d"], -0.15)
+
+    def test_analyst_revision_acceleration_missing_history_stays_null(self) -> None:
+        service = UniverseSnapshotBackfillService(db_manager=None)
+
+        payload = service._analyst_feature_payload(
+            snapshot_date="2026-01-16",
+            ticker="AAA",
+            adj_close=10.0,
+            analyst_context={},
+            analyst_revision_context={},
+        )
+
+        self.assertIsNone(payload["analyst_eps_revision_breadth"])
+        self.assertIsNone(payload["analyst_eps_revision_breadth_change_14d"])
+        self.assertIsNone(payload["analyst_eps_estimate_dispersion"])
+        self.assertIsNone(payload["analyst_eps_estimate_dispersion_change_14d"])
+
+    def test_revision_acceleration_features_expand_to_rank_variants(self) -> None:
+        self.assertIn("analyst_eps_revision_breadth_change_14d", MODEL_FEATURE_COLUMNS)
+        self.assertIn("analyst_eps_estimate_dispersion_change_14d", MODEL_FEATURE_COLUMNS)
+        expanded = expand_model_feature_columns(MODEL_FEATURE_COLUMNS)
+        self.assertIn("analyst_eps_revision_breadth_change_14d__rank_all", expanded)
+        self.assertIn("analyst_eps_estimate_dispersion_change_14d__rank_sector", expanded)
