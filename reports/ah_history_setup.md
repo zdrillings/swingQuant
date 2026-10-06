@@ -10,14 +10,14 @@
 ## Ingestion
 
 - source_snapshot_db: /home/zdrillings/code/SwingQuant/data/market_data.duckdb (read-only)
-- db_rows_read: 14854
+- db_rows_read: 255
 - markdown_reports_recoverable: 1
 - markdown_rows_recoverable: 20
-- rows_upserted_this_run: 14854
-- history_total_rows: 14854
-- history_total_nights: 58
+- rows_upserted_this_run: 255
+- history_total_rows: 15109
+- history_total_nights: 59
 - history_first_snapshot_date: 2026-07-03
-- history_latest_snapshot_date: 2026-10-02
+- history_latest_snapshot_date: 2026-10-05
 
 ## Coverage Query
 

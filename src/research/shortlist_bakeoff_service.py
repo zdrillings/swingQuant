@@ -83,6 +83,42 @@ MODEL_FEATURE_COLUMNS = [
     "analyst_revision_snapshot_age_days",
 ]
 
+A4_REGIME_INTERACTION_SOURCE_FEATURES = (
+    "sector_median_roc_63",
+    "sector_pct_above_50",
+    "sector_median_roc_63__rank_all",
+    "sector_pct_above_200",
+    "relative_strength_index_vs_subindustry",
+    "max_gap_down_pct_60__rank_all",
+    "avg_abs_gap_pct_20__rank_all",
+    "sector_pct_above_50__rank_sector",
+    "sma_200_dist__rank_all",
+    "relative_strength_index_vs_subindustry__rank_all",
+    "roc_126__rank_all",
+    "base_range_pct_20__rank_all",
+    "max_gap_down_pct_60__rank_sector",
+    "atr_pct_14__rank_all",
+    "close_vs_20d_low__rank_all",
+)
+
+
+def _a4_regime_feature_name(feature: str, regime: str) -> str:
+    sanitized = "".join(character if character.isalnum() or character == "_" else "_" for character in str(feature)).strip("_")
+    return f"a4_{sanitized}_x_regime_{regime}"
+
+
+A4_REGIME_INTERACTION_FEATURES = (
+    "a4_regime_trending",
+    "a4_regime_reversal",
+    *(
+        _a4_regime_feature_name(feature, regime)
+        for feature in A4_REGIME_INTERACTION_SOURCE_FEATURES
+        for regime in ("trending", "reversal")
+    ),
+)
+
+MODEL_FEATURE_COLUMNS.extend(A4_REGIME_INTERACTION_FEATURES)
+
 
 SHORTLIST_FEATURE_GROUPS = {
     "gap_risk": {

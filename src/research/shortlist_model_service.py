@@ -10,6 +10,9 @@ import numpy as np
 import pandas as pd
 
 from src.research.shortlist_bakeoff_service import (
+    A4_REGIME_INTERACTION_FEATURES,
+    A4_REGIME_INTERACTION_SOURCE_FEATURES,
+    _a4_regime_feature_name,
     MODEL_FEATURE_COLUMNS,
     build_rank_augmented_feature_frame,
     expand_model_feature_columns,
@@ -215,6 +218,10 @@ class ShortlistModelService:
             evaluation_target_column = target_column
 
         all_snapshots = self._prepare_snapshot_frame(frame)
+        all_snapshots = self._add_a4_regime_interaction_features(
+            all_snapshots,
+            horizon_sessions=max(int(horizon_days), 1),
+        )
         matured = self._build_matured_eligible_universe(
             all_snapshots,
             target_column=target_column,
@@ -886,6 +893,45 @@ class ShortlistModelService:
         working["adj_close"] = pd.to_numeric(working["adj_close"], errors="coerce")
         working["passed_any_strategy"] = working["passed_any_strategy"].astype(bool)
         return working.sort_values(["snapshot_date", "ticker"]).reset_index(drop=True)
+
+    def _add_a4_regime_interaction_features(
+        self,
+        frame: pd.DataFrame,
+        *,
+        horizon_sessions: int,
+    ) -> pd.DataFrame:
+        if frame.empty or "snapshot_date" not in frame.columns:
+            return frame.copy()
+        working = frame.copy()
+        dates = working["snapshot_date"].dropna().drop_duplicates().tolist()
+        regime_by_date = self._regime_classifications_by_prediction_date(
+            dates,
+            horizon_sessions=horizon_sessions,
+        )
+        if not regime_by_date:
+            for feature in A4_REGIME_INTERACTION_FEATURES:
+                if feature not in working.columns:
+                    working[feature] = np.nan
+            return working
+        ranked, _ = build_rank_augmented_feature_frame(working)
+        normalized_dates = pd.to_datetime(working["snapshot_date"], errors="coerce").dt.normalize()
+        regime = normalized_dates.map(regime_by_date).fillna("unknown").astype(str)
+        a4_columns: dict[str, pd.Series] = {
+            "a4_regime_trending": regime.eq("trending").astype(float),
+            "a4_regime_reversal": regime.eq("reversal").astype(float),
+        }
+        for source_feature in A4_REGIME_INTERACTION_SOURCE_FEATURES:
+            if source_feature not in ranked.columns:
+                continue
+            values = pd.to_numeric(ranked[source_feature], errors="coerce")
+            for regime_name in ("trending", "reversal"):
+                a4_columns[_a4_regime_feature_name(source_feature, regime_name)] = (
+                    values * regime.eq(regime_name).astype(float)
+                )
+        for feature in A4_REGIME_INTERACTION_FEATURES:
+            if feature not in a4_columns:
+                a4_columns[feature] = pd.Series(np.nan, index=working.index, dtype=float)
+        return pd.concat([working, pd.DataFrame(a4_columns, index=working.index)], axis=1)
 
     def _normalize_xgboost_config(self, xgboost_config: str) -> str:
         normalized = str(xgboost_config or "baseline").strip().lower()
