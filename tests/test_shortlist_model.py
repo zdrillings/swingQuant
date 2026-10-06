@@ -1115,7 +1115,7 @@ class ShortlistModelServiceTests(unittest.TestCase):
         for predictions in aligned.values():
             self.assertEqual(set(pd.to_datetime(predictions["snapshot_date"])), set(dates[1:]))
 
-    def test_e1_niche_models_do_not_shrink_legacy_common_grid(self) -> None:
+    def test_e1_niche_models_join_common_oos_grid_for_promotion_evaluation(self) -> None:
         service = ShortlistModelService(db_manager=object())
         dates = pd.bdate_range("2026-01-02", periods=3)
         broad = pd.DataFrame(
@@ -1125,18 +1125,52 @@ class ShortlistModelServiceTests(unittest.TestCase):
             [{"snapshot_date": dates[-1], "ticker": "AAA", "predicted_alpha": 0.2}]
         )
 
-        legacy = service._legacy_grid_model_predictions(
+        aligned = service._align_model_predictions_to_common_oos_grid(
             {
                 "signal_proxy": broad,
                 "ridge_model": broad,
                 "overnight_session_specialist": sparse_niche,
             }
         )
-        aligned = service._align_model_predictions_to_common_oos_grid(legacy)
 
-        self.assertEqual(set(aligned), {"signal_proxy", "ridge_model"})
+        self.assertEqual(set(aligned), {"signal_proxy", "ridge_model", "overnight_session_specialist"})
         for predictions in aligned.values():
-            self.assertEqual(set(pd.to_datetime(predictions["snapshot_date"])), set(dates))
+            self.assertEqual(set(pd.to_datetime(predictions["snapshot_date"])), {dates[-1]})
+
+    def test_promotion_gate_can_select_e1_niche_candidate(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        full_summaries = pd.DataFrame(
+            [
+                {"model": "signal_proxy", "mean_target": 0.02, "beat_universe_rate": 0.55, "positive_date_rate": 0.55},
+                {
+                    "model": "overnight_session_specialist",
+                    "mean_target": 0.08,
+                    "beat_universe_rate": 0.80,
+                    "positive_date_rate": 0.80,
+                },
+            ]
+        )
+        acceptance_summaries = pd.DataFrame(
+            [
+                self._gate_row("signal_proxy_last_fold", hit_rate=0.60, universe_hit_rate=0.57, beat_universe_rate=0.60, mean_target=0.01, universe_mean_target=0.0, spearman=0.01),
+                self._gate_row("signal_proxy_trailing_3folds", hit_rate=0.60, universe_hit_rate=0.57, beat_universe_rate=0.60, mean_target=0.01, universe_mean_target=0.0, spearman=0.01),
+                self._gate_row("signal_proxy_full_oos", hit_rate=0.60, universe_hit_rate=0.57, beat_universe_rate=0.60, mean_target=0.01, universe_mean_target=0.0, spearman=0.01),
+                self._gate_row("overnight_session_specialist_last_fold", hit_rate=0.65, universe_hit_rate=0.57, beat_universe_rate=0.65, mean_target=0.02, universe_mean_target=0.0, spearman=0.03),
+                self._gate_row("overnight_session_specialist_trailing_3folds", hit_rate=0.70, universe_hit_rate=0.57, beat_universe_rate=0.70, mean_target=0.04, universe_mean_target=0.0, spearman=0.04),
+                self._gate_row("overnight_session_specialist_full_oos", hit_rate=0.70, universe_hit_rate=0.57, beat_universe_rate=0.70, mean_target=0.04, universe_mean_target=0.0, spearman=0.04),
+            ]
+        )
+
+        champion, passed = service._choose_champion_model(
+            full_summaries=full_summaries,
+            acceptance_summaries=acceptance_summaries,
+            promotion_gate=service._load_promotion_gate(),
+            required_recent_windows=service._promotion_recent_windows(horizon_days=60),
+            required_fold_windows=service._promotion_fold_windows(horizon_days=60),
+        )
+
+        self.assertEqual(champion, "overnight_session_specialist")
+        self.assertTrue(passed)
 
     def test_non_overlapping_oos_predictions_match_q3_greedy_independent_rows(self) -> None:
         service = ShortlistModelService(db_manager=object())

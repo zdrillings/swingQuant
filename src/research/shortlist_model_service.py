@@ -332,15 +332,10 @@ class ShortlistModelService:
                         fallback_only=True,
                     )
                 model_predictions[model_name] = predicted
-        legacy_model_predictions = self._legacy_grid_model_predictions(model_predictions)
-        niche_model_predictions = {
-            model_name: predictions
-            for model_name, predictions in model_predictions.items()
-            if model_name in E1_NICHE_MODELS
-        }
-        legacy_model_predictions = self._align_model_predictions_to_common_oos_grid(legacy_model_predictions)
-        model_predictions = {**legacy_model_predictions, **niche_model_predictions}
-        ensemble_predictions = self._build_ensemble_predictions(legacy_model_predictions)
+        model_predictions = self._align_model_predictions_to_common_oos_grid(model_predictions)
+        ensemble_predictions = self._build_ensemble_predictions(
+            self._legacy_grid_model_predictions(model_predictions)
+        )
         if ensemble_predictions is not None:
             model_predictions["ensemble_model"] = ensemble_predictions
 
@@ -3546,7 +3541,7 @@ class ShortlistModelService:
         lines = [
             "# E1 Niche Split",
             "",
-            "- note: research report only; niche candidates do not change promotion gate policy or scan caps.",
+            "- note: niche candidates are included in the promotion gate roster; this report audits their feature profiles and orthogonality.",
             f"- target_column: {target_column}",
             f"- promotion_top_n: {int(top_n)}",
             f"- oos_evaluation_stride_dates: {int(evaluation_stride_dates)}",
