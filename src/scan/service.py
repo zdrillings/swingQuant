@@ -74,6 +74,7 @@ class ShortlistModelPolicy:
     production_model_name: str | None
     production_xgboost_config: str
     production_feature_profile: str
+    fallback_strategy_slot: str | None
 
 
 @dataclass(frozen=True)
@@ -259,6 +260,11 @@ class ScanPolicy:
                 ),
                 production_xgboost_config=str(shortlist_model.get("production_xgboost_config", "baseline") or "baseline"),
                 production_feature_profile=str(shortlist_model.get("production_feature_profile", "full") or "full"),
+                fallback_strategy_slot=(
+                    str(shortlist_model.get("fallback_strategy_slot")).strip()
+                    if shortlist_model.get("fallback_strategy_slot") not in (None, "")
+                    else None
+                ),
             ),
             sizing=HeuristicSizingPolicy(
                 vol_target_daily_pct=float(sizing.get("vol_target_daily_pct", 0.025)),
@@ -397,6 +403,7 @@ class ScanService:
                 strategies=scan_strategies,
                 shortlist_model_context=shortlist_model_context,
                 scan_mode=scan_mode,
+                fallback_strategy_slot=scan_policy.shortlist_model.fallback_strategy_slot,
             )
             if candidates.empty:
                 if callable(scan_candidate_writer) and not unmapped_model_predictions.empty:
@@ -709,7 +716,11 @@ class ScanService:
     ) -> pd.DataFrame:
         if snapshot.empty:
             return snapshot.iloc[0:0].copy()
-        strategy_map = self._build_model_strategy_map(strategies)
+        fallback_strategy_slot = getattr(getattr(scan_policy, "shortlist_model", None), "fallback_strategy_slot", None)
+        strategy_map = self._build_model_strategy_map(
+            strategies,
+            fallback_strategy_slot=fallback_strategy_slot,
+        )
         if not strategy_map:
             return snapshot.iloc[0:0].copy()
         predictions = shortlist_model_context.live_predictions.copy()
@@ -744,11 +755,30 @@ class ScanService:
         if "signal_score" not in merged.columns:
             merged["signal_score"] = 0.0
         fallback_strategy = strategy_map.get("__fallback__")
+        exact_strategy_sectors = {sector for sector in strategy_map if sector != "__fallback__"}
         strategy_keys = merged["sector"].map(lambda sector: strategy_map.get(str(sector), fallback_strategy))
         merged = merged.assign(_strategy_key=strategy_keys)
         merged = merged[merged["_strategy_key"].notna()].copy()
         if merged.empty:
             return merged
+        if fallback_strategy is not None:
+            fallback_mask = ~merged["sector"].astype(str).isin(exact_strategy_sectors)
+            merged.loc[fallback_mask, "diagnostic_reason"] = "sector_fallback"
+            merged.loc[fallback_mask, "fallback_source_sector"] = merged.loc[fallback_mask, "sector"].astype(str)
+            preview = ", ".join(
+                merged.loc[fallback_mask]
+                .sort_values(["model_rank", "ticker"], ascending=[True, True])["ticker"]
+                .astype(str)
+                .head(10)
+                .tolist()
+            )
+            if preview:
+                self.logger.warning(
+                    "Shortlist model routed %d live predictions through fallback strategy %s: %s",
+                    int(fallback_mask.sum()),
+                    fallback_strategy[0],
+                    preview,
+                )
         merged["strategy_slot"] = merged["_strategy_key"].map(lambda key: key[0])
         merged["strategy_sector"] = merged["_strategy_key"].map(lambda key: key[1])
         merged["indicator_details"] = [{} for _ in range(len(merged.index))]
@@ -789,8 +819,12 @@ class ScanService:
         strategies: dict[str, ProductionStrategy],
         shortlist_model_context,
         scan_mode: ScanModeState,
+        fallback_strategy_slot: str | None = None,
     ) -> pd.DataFrame:
-        strategy_map = self._build_model_strategy_map(strategies)
+        strategy_map = self._build_model_strategy_map(
+            strategies,
+            fallback_strategy_slot=fallback_strategy_slot,
+        )
         fallback_strategy = strategy_map.get("__fallback__")
         if snapshot.empty or fallback_strategy is not None or shortlist_model_context is None:
             return pd.DataFrame()
@@ -863,9 +897,16 @@ class ScanService:
     def _build_model_strategy_map(
         self,
         strategies: dict[str, ProductionStrategy],
+        *,
+        fallback_strategy_slot: str | None = None,
     ) -> dict[str, tuple[str, str]]:
         exact: dict[str, tuple[str, str]] = {}
         fallback_slot: tuple[str, str] | None = None
+        if fallback_strategy_slot not in (None, ""):
+            configured_slot = str(fallback_strategy_slot)
+            configured_strategy = strategies.get(configured_slot)
+            if configured_strategy is not None:
+                fallback_slot = (configured_slot, str(configured_strategy.sector))
         ordered = sorted(
             ((str(slot), strategy) for slot, strategy in strategies.items()),
             key=lambda item: item[0],

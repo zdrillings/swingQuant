@@ -387,6 +387,115 @@ class ScanServiceTests(unittest.TestCase):
 
         self.assertTrue(diagnostics.empty)
 
+    def test_configured_fallback_strategy_routes_unmapped_model_prediction(self) -> None:
+        service = ScanService(db_manager=None)
+        fallback = ProductionStrategy(
+            strategy_id=2,
+            promoted_at="2026-06-29T10:00:00",
+            indicators={},
+            exit_rules=ExitRules(0.05, 0.12, 20),
+            slot="healthcare",
+            sector="Health Care",
+        )
+        snapshot = pd.DataFrame(
+            [
+                {
+                    "ticker": "BBB",
+                    "sector": "Consumer Staples",
+                    "regime_etf": "XLP",
+                    "adj_close": 50.0,
+                    "atr_14": 2.0,
+                    "md_volume_30d": 2_000_000.0,
+                    "relative_strength_index_vs_spy": 82.0,
+                    "roc_63": 0.12,
+                    "vol_alpha": 1.2,
+                    "sma_200_dist": 0.12,
+                    "sector_pct_above_50": 0.8,
+                    "sector_pct_above_200": 0.7,
+                    "sector_median_roc_63": 0.08,
+                    "rsi_14": 50.0,
+                },
+            ]
+        )
+        context = SimpleNamespace(
+            live_predictions=pd.DataFrame([{"ticker": "BBB", "predicted_alpha": 0.19, "model_rank": 1}]),
+            generated_at="2026-09-25T23:57:14+00:00",
+            champion_model="structure_factor_signal",
+            target_column="alpha_vs_sector_60d",
+        )
+        policy = ScanPolicy.from_config(
+            {
+                "scan_policy": {
+                    "max_candidates_total": 1,
+                    "max_candidates_per_slot": 1,
+                    "max_candidates_per_sector": 1,
+                    "shortlist_model": {"fallback_strategy_slot": "healthcare"},
+                }
+            }
+        )
+        settings = RuntimeSettings(
+            paths=AppPaths(
+                root_dir=Path("."),
+                data_dir=Path("data"),
+                duckdb_path=Path("data/market_data.duckdb"),
+                sqlite_path=Path("data/ledger.sqlite"),
+                reports_dir=Path("reports"),
+                logs_dir=Path("logs"),
+                config_path=Path("config.yaml"),
+                env_path=Path(".env"),
+                production_strategy_path=Path("production_strategy.json"),
+            ),
+            env={},
+            total_capital=50_000.0,
+            risk_per_trade=0.02,
+        )
+
+        candidates = service._build_shortlist_model_candidates(
+            snapshot=snapshot,
+            strategies={"healthcare": fallback},
+            shortlist_model_context=context,
+            scan_policy=policy,
+            overlap_context={"tickers": set(), "slots": set(), "sectors": set(), "regimes": set()},
+            settings=settings,
+        )
+        selected = service._apply_portfolio_caps(candidates, policy)
+        rows = service._build_persisted_scan_rows(candidates, selected=selected)
+
+        self.assertEqual(candidates["ticker"].tolist(), ["BBB"])
+        self.assertEqual(candidates.iloc[0]["strategy_slot"], "healthcare")
+        self.assertEqual(candidates.iloc[0]["diagnostic_reason"], "sector_fallback")
+        self.assertEqual(candidates.iloc[0]["fallback_source_sector"], "Consumer Staples")
+        self.assertEqual(selected["ticker"].tolist(), ["BBB"])
+        self.assertTrue(rows[0]["selected"])
+        self.assertEqual(rows[0]["details"]["diagnostic_reason"], "sector_fallback")
+
+    def test_configured_fallback_does_not_override_exact_sector_strategy(self) -> None:
+        service = ScanService(db_manager=None)
+        energy = ProductionStrategy(
+            strategy_id=1,
+            promoted_at="2026-05-01T00:00:00",
+            indicators={},
+            exit_rules=ExitRules(0.05, 0.12, 20),
+            slot="energy",
+            sector="Energy",
+        )
+        fallback = ProductionStrategy(
+            strategy_id=2,
+            promoted_at="2026-06-29T10:00:00",
+            indicators={},
+            exit_rules=ExitRules(0.05, 0.12, 20),
+            slot="healthcare",
+            sector="Health Care",
+        )
+
+        strategy_map = service._build_model_strategy_map(
+            {"energy": energy, "healthcare": fallback},
+            fallback_strategy_slot="healthcare",
+        )
+
+        self.assertEqual(strategy_map["Energy"], ("energy", "Energy"))
+        self.assertEqual(strategy_map["__fallback__"], ("healthcare", "Health Care"))
+
     def test_scan_filters_out_in_progress_daily_bar_before_close(self) -> None:
         service = ScanService(db_manager=None)
         frame = pd.DataFrame(
