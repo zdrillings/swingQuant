@@ -36,6 +36,35 @@ SHORTLIST_HEURISTIC_MODELS = {
     "event_signal",
     "structure_factor_signal",
 }
+E1_NICHE_MODEL_FEATURES = {
+    "overnight_session_specialist": (
+        "overnight_ret_5d",
+        "rth_ret_5d",
+        "overnight_minus_rth_5d",
+        "overnight_ret_20d",
+        "rth_ret_20d",
+        "overnight_minus_rth_20d",
+        "avg_abs_gap_pct_20",
+        "max_gap_down_pct_60",
+    ),
+    "base_pattern_specialist": (
+        "distance_above_20d_high",
+        "failed_breakout_20d",
+        "days_since_failed_breakout_20d",
+        "failed_breakout_52w",
+        "days_since_failed_breakout_52w",
+        "base_range_pct_20",
+        "base_atr_contraction_20",
+        "base_volume_dryup_ratio_20",
+        "breakout_volume_ratio_50",
+        "dollar_volume_ratio_20_60",
+        "volume_percentile_60",
+        "distance_from_52w_high",
+        "days_since_52w_high",
+        "close_vs_20d_low",
+    ),
+}
+E1_NICHE_MODELS = frozenset(E1_NICHE_MODEL_FEATURES)
 SHORTLIST_MODEL_EXCLUDED_BASE_FEATURES = {
     "analyst_snapshot_age_days",
     "analyst_revision_snapshot_age_days",
@@ -220,6 +249,8 @@ class ShortlistModelService:
             "lasso_model",
             "elastic_net_model",
             "ic_sign_model",
+            "overnight_session_specialist",
+            "base_pattern_specialist",
             "xgboost_model",
         )
         min_feature_ic = self._load_min_feature_ic()
@@ -261,6 +292,10 @@ class ShortlistModelService:
 
         model_predictions: dict[str, pd.DataFrame] = {}
         for model_name in candidate_models:
+            model_feature_columns = self._feature_columns_for_candidate(
+                model_name=model_name,
+                default_feature_columns=expanded_feature_columns,
+            )
             predicted = self._walk_forward_predictions(
                 matured,
                 target_column=target_column,
@@ -273,7 +308,7 @@ class ShortlistModelService:
                 label_horizon_dates=max(int(horizon_days), 1),
                 model_scope=model_scope,
                 xgboost_params=xgboost_params if model_name == "xgboost_model" else None,
-                feature_columns_override=expanded_feature_columns,
+                feature_columns_override=model_feature_columns,
                 min_feature_ic=min_feature_ic,
                 min_feature_ic_observation_fraction=min_feature_ic_observation_fraction,
                 regime_matching_mode=regime_matching_mode,
@@ -290,8 +325,15 @@ class ShortlistModelService:
                         fallback_only=True,
                     )
                 model_predictions[model_name] = predicted
-        model_predictions = self._align_model_predictions_to_common_oos_grid(model_predictions)
-        ensemble_predictions = self._build_ensemble_predictions(model_predictions)
+        legacy_model_predictions = self._legacy_grid_model_predictions(model_predictions)
+        niche_model_predictions = {
+            model_name: predictions
+            for model_name, predictions in model_predictions.items()
+            if model_name in E1_NICHE_MODELS
+        }
+        legacy_model_predictions = self._align_model_predictions_to_common_oos_grid(legacy_model_predictions)
+        model_predictions = {**legacy_model_predictions, **niche_model_predictions}
+        ensemble_predictions = self._build_ensemble_predictions(legacy_model_predictions)
         if ensemble_predictions is not None:
             model_predictions["ensemble_model"] = ensemble_predictions
 
@@ -352,6 +394,26 @@ class ShortlistModelService:
             )
             for model_name, predictions in model_predictions.items()
         }
+        e1_niche_report_path = self.db_manager.paths.reports_dir / "e1_niche_split.md"
+        e1_niche_report_path.write_text(
+            "\n".join(
+                self._render_e1_niche_split_report(
+                    matured_frame=matured,
+                    evaluation_model_predictions=evaluation_model_predictions,
+                    target_column=evaluation_target_column,
+                    top_n=promotion_top_n,
+                    fold_size=int(test_window_dates),
+                    min_train_dates=int(min_train_dates),
+                    test_window_dates=int(test_window_dates),
+                    evaluation_stride_dates=resolved_oos_stride_dates,
+                    label_horizon_dates=max(int(horizon_days), 1),
+                    min_feature_ic=min_feature_ic,
+                    min_observation_fraction=min_feature_ic_observation_fraction,
+                    baseline_model="signal_proxy",
+                )
+            ),
+            encoding="utf-8",
+        )
         full_summaries = pd.DataFrame(
             [
                 self._evaluate_predictions(
@@ -468,6 +530,10 @@ class ShortlistModelService:
         for model_name in candidate_models:
             if model_name not in model_predictions:
                 continue
+            model_feature_columns = self._feature_columns_for_candidate(
+                model_name=model_name,
+                default_feature_columns=expanded_feature_columns,
+            )
             scored = self._score_live_snapshot(
                 all_snapshots=all_snapshots,
                 matured=matured,
@@ -477,7 +543,7 @@ class ShortlistModelService:
                 eligible_universe_mode=eligible_universe_mode,
                 model_scope=model_scope,
                 xgboost_params=xgboost_params if model_name == "xgboost_model" else None,
-                feature_columns_override=expanded_feature_columns,
+                feature_columns_override=model_feature_columns,
                 min_feature_ic=min_feature_ic,
                 min_feature_ic_observation_fraction=min_feature_ic_observation_fraction,
                 max_train_dates=resolved_max_train_dates,
@@ -499,7 +565,9 @@ class ShortlistModelService:
                     target_column=target_column,
                 )
                 live_base_predictions[model_name] = scored
-        live_ensemble_predictions = self._build_ensemble_predictions(live_base_predictions)
+        live_ensemble_predictions = self._build_ensemble_predictions(
+            self._legacy_grid_model_predictions(live_base_predictions)
+        )
         if live_ensemble_predictions is not None:
             live_ensemble_predictions = self._apply_calibration_from_oos(
                 live_ensemble_predictions,
@@ -785,6 +853,16 @@ class ShortlistModelService:
                 aligned[model_name] = working
         return aligned
 
+    def _legacy_grid_model_predictions(
+        self,
+        predictions_by_model: dict[str, pd.DataFrame],
+    ) -> dict[str, pd.DataFrame]:
+        return {
+            model_name: predictions
+            for model_name, predictions in predictions_by_model.items()
+            if model_name not in E1_NICHE_MODELS
+        }
+
     def _stamp_oos_artifact_metadata(
         self,
         frame: pd.DataFrame,
@@ -1007,6 +1085,23 @@ class ShortlistModelService:
                     target_column=evaluation_target_column,
                     min_feature_ic=float(min_feature_ic),
                     min_observation_fraction=float(min_feature_ic_observation_fraction),
+                    feature_columns_override=feature_columns_override if model_name in E1_NICHE_MODELS else None,
+                    min_observation_base_count=(
+                        self._family_observation_base_count(
+                            feature_screen_frame,
+                            feature_columns=feature_columns_override,
+                        )
+                        if model_name in E1_NICHE_MODELS
+                        else None
+                    ),
+                    feature_observation_base_counts=(
+                        self._feature_observation_base_counts(
+                            feature_screen_frame,
+                            feature_columns=feature_columns_override,
+                        )
+                        if model_name in E1_NICHE_MODELS
+                        else None
+                    ),
                 )
                 self._record_regime_feature_survivors(
                     regime_feature_stats,
@@ -1161,6 +1256,23 @@ class ShortlistModelService:
                 target_column=feature_ic_target_column,
                 min_feature_ic=float(min_feature_ic),
                 min_observation_fraction=float(min_feature_ic_observation_fraction),
+                feature_columns_override=feature_columns_override if model_name in E1_NICHE_MODELS else None,
+                min_observation_base_count=(
+                    self._family_observation_base_count(
+                        feature_screen_frame,
+                        feature_columns=feature_columns_override,
+                    )
+                    if model_name in E1_NICHE_MODELS
+                    else None
+                ),
+                feature_observation_base_counts=(
+                    self._feature_observation_base_counts(
+                        feature_screen_frame,
+                        feature_columns=feature_columns_override,
+                    )
+                    if model_name in E1_NICHE_MODELS
+                    else None
+                ),
             )
             self._record_regime_feature_survivors(
                 regime_feature_stats,
@@ -1172,6 +1284,8 @@ class ShortlistModelService:
             else:
                 allowed_features = set(feature_columns_override)
                 live_feature_columns = [feature for feature in ic_survivors if feature in allowed_features]
+            if model_name in E1_NICHE_MODELS and not live_feature_columns:
+                return live_snapshot.assign(predicted_alpha=pd.Series(dtype=float))
         scored = self._score_model(
             model_name=model_name,
             train_frame=safe_train,
@@ -1678,6 +1792,13 @@ class ShortlistModelService:
                 test_frame,
                 target_column=target_column,
                 xgboost_params=xgboost_params,
+                feature_columns_override=feature_columns_override,
+            )
+        if model_name in E1_NICHE_MODELS:
+            return self._score_ridge_closed_form(
+                train_frame,
+                test_frame,
+                target_column=target_column,
                 feature_columns_override=feature_columns_override,
             )
         raise ValueError(f"Unsupported model_name={model_name}")
@@ -2327,6 +2448,49 @@ class ShortlistModelService:
             if self._base_feature_name(str(feature_name)) not in SHORTLIST_MODEL_EXCLUDED_BASE_FEATURES
         ]
 
+    def _feature_columns_for_candidate(
+        self,
+        *,
+        model_name: str,
+        default_feature_columns: list[str],
+    ) -> list[str]:
+        if model_name not in E1_NICHE_MODEL_FEATURES:
+            return list(default_feature_columns)
+        return self._filter_model_feature_columns(
+            expand_model_feature_columns(E1_NICHE_MODEL_FEATURES[model_name])
+        )
+
+    def _family_observation_base_count(self, frame: pd.DataFrame, *, feature_columns: list[str] | None) -> int | None:
+        if frame.empty or not feature_columns:
+            return None
+        base_features = [
+            self._base_feature_name(feature)
+            for feature in feature_columns
+            if self._base_feature_name(feature) in frame.columns
+        ]
+        base_features = list(dict.fromkeys(base_features))
+        if not base_features:
+            return None
+        feature_values = frame[base_features].apply(lambda column: pd.to_numeric(column, errors="coerce"))
+        return int(feature_values.notna().any(axis=1).sum())
+
+    def _feature_observation_base_counts(
+        self,
+        frame: pd.DataFrame,
+        *,
+        feature_columns: list[str] | None,
+    ) -> dict[str, int]:
+        if frame.empty or not feature_columns:
+            return {}
+        counts: dict[str, int] = {}
+        for feature in feature_columns:
+            base_feature = self._base_feature_name(feature)
+            if base_feature in counts or base_feature not in frame.columns:
+                continue
+            values = pd.to_numeric(frame[base_feature], errors="coerce")
+            counts[base_feature] = int(values.notna().sum())
+        return counts
+
     def _prepare_model_matrices(
         self,
         train_frame: pd.DataFrame,
@@ -2483,6 +2647,9 @@ class ShortlistModelService:
         target_column: str,
         min_feature_ic: float,
         min_observation_fraction: float = 0.20,
+        feature_columns_override: list[str] | None = None,
+        min_observation_base_count: int | None = None,
+        feature_observation_base_counts: dict[str, int] | None = None,
     ) -> list[str]:
         if frame.empty or target_column not in frame.columns:
             return []
@@ -2497,19 +2664,27 @@ class ShortlistModelService:
                 feature_frame[col] = np.nan
         feature_frame, feature_columns = build_rank_augmented_feature_frame(feature_frame)
         feature_columns = self._filter_model_feature_columns(feature_columns)
+        if feature_columns_override is not None:
+            allowed_features = set(self._filter_model_feature_columns(feature_columns_override))
+            feature_columns = [feature for feature in feature_columns if feature in allowed_features]
         target = pd.to_numeric(frame[target_column], errors="coerce")
         survivors: list[str] = []
         survivor_signatures: set[tuple[tuple[int, float | None], ...]] = set()
         min_observations = self._feature_ic_min_observations(
-            len(frame.index),
+            int(min_observation_base_count) if min_observation_base_count is not None else len(frame.index),
             min_observation_fraction=min_observation_fraction,
         )
+        base_counts = feature_observation_base_counts or {}
         for feature_name in feature_columns:
+            base_feature_name = self._base_feature_name(feature_name)
+            feature_min_observations = self._feature_ic_min_observations(
+                int(base_counts.get(base_feature_name, min_observation_base_count if min_observation_base_count is not None else len(frame.index))),
+                min_observation_fraction=min_observation_fraction,
+            )
             values = pd.to_numeric(feature_frame[feature_name], errors="coerce")
             valid = values.notna() & target.notna()
-            if int(valid.sum()) < min_observations:
+            if int(valid.sum()) < feature_min_observations:
                 continue
-            base_feature_name = self._base_feature_name(feature_name)
             if not self._has_cross_sectional_variation(
                 feature_frame=feature_frame,
                 feature_name=base_feature_name,
@@ -3075,6 +3250,323 @@ class ShortlistModelService:
                 )
             )
         return pd.DataFrame(rows)
+
+    def _e1_niche_feature_ic_diagnostics(
+        self,
+        frame: pd.DataFrame,
+        *,
+        target_column: str,
+        min_train_dates: int,
+        test_window_dates: int,
+        evaluation_stride_dates: int,
+        label_horizon_dates: int,
+        min_feature_ic: float,
+        min_observation_fraction: float,
+    ) -> pd.DataFrame:
+        if frame.empty or target_column not in frame.columns:
+            return pd.DataFrame()
+        dates = sorted(frame["snapshot_date"].drop_duplicates().tolist())
+        oos_dates: list = []
+        start_index = int(min_train_dates)
+        stride = max(int(evaluation_stride_dates or test_window_dates), 1)
+        label_embargo = max(int(label_horizon_dates or 0), 0)
+        while start_index < len(dates):
+            test_dates = dates[start_index : start_index + max(int(test_window_dates), 1)]
+            train_end_index = max(0, start_index - label_embargo)
+            if len(dates[:train_end_index]) >= int(min_train_dates):
+                oos_dates.extend(test_dates)
+            start_index += stride
+        if not oos_dates:
+            return pd.DataFrame()
+        oos_frame = frame[frame["snapshot_date"].isin(oos_dates)].copy()
+        target = pd.to_numeric(oos_frame[target_column], errors="coerce")
+        rows: list[dict[str, object]] = []
+        for model_name, base_features in E1_NICHE_MODEL_FEATURES.items():
+            feature_columns_override = self._feature_columns_for_candidate(
+                model_name=model_name,
+                default_feature_columns=[],
+            )
+            available_columns = ["snapshot_date", "sector"] + [
+                col
+                for col in MODEL_FEATURE_COLUMNS
+                if col in oos_frame.columns and col not in SHORTLIST_MODEL_EXCLUDED_BASE_FEATURES
+            ]
+            feature_frame = oos_frame[available_columns].copy()
+            for col in MODEL_FEATURE_COLUMNS:
+                if col not in feature_frame.columns:
+                    feature_frame[col] = np.nan
+            feature_frame, feature_columns = build_rank_augmented_feature_frame(feature_frame)
+            allowed_features = set(self._filter_model_feature_columns(feature_columns_override))
+            feature_columns = [feature for feature in self._filter_model_feature_columns(feature_columns) if feature in allowed_features]
+            family_rows = self._family_observation_base_count(
+                oos_frame,
+                feature_columns=feature_columns_override,
+            )
+            feature_base_counts = self._feature_observation_base_counts(
+                oos_frame,
+                feature_columns=feature_columns_override,
+            )
+            for feature_name in feature_columns:
+                base_feature_name = self._base_feature_name(feature_name)
+                feature_rows = int(feature_base_counts.get(base_feature_name, family_rows or 0))
+                min_observations = self._feature_ic_min_observations(
+                    feature_rows,
+                    min_observation_fraction=min_observation_fraction,
+                )
+                values = pd.to_numeric(feature_frame[feature_name], errors="coerce")
+                valid = values.notna() & target.notna()
+                has_variation = self._has_cross_sectional_variation(
+                    feature_frame=feature_frame,
+                    feature_name=base_feature_name,
+                    valid=valid,
+                )
+                ic = float("nan")
+                if (
+                    int(valid.sum()) >= min_observations
+                    and has_variation
+                    and values[valid].nunique(dropna=True) >= 2
+                    and target[valid].nunique(dropna=True) >= 2
+                ):
+                    corr = values[valid].corr(target[valid], method="spearman")
+                    if pd.notna(corr) and math.isfinite(float(corr)):
+                        ic = float(corr)
+                rows.append(
+                    {
+                        "model": model_name,
+                        "feature": feature_name,
+                        "rank_ic": ic,
+                        "abs_rank_ic": abs(ic) if math.isfinite(ic) else float("nan"),
+                        "observations": int(valid.sum()),
+                        "family_rows": int(feature_rows),
+                        "min_observations": int(min_observations),
+                        "survives": bool(math.isfinite(ic) and abs(ic) >= float(min_feature_ic)),
+                    }
+                )
+        if not rows:
+            return pd.DataFrame()
+        return pd.DataFrame(rows).sort_values(
+            ["model", "abs_rank_ic", "feature"],
+            ascending=[True, False, True],
+            na_position="last",
+        ).reset_index(drop=True)
+
+    def _prediction_spearman_correlation_matrix(self, predictions_by_model: dict[str, pd.DataFrame]) -> pd.DataFrame:
+        series_by_model: dict[str, pd.Series] = {}
+        for model_name, predictions in predictions_by_model.items():
+            if predictions.empty or "predicted_alpha" not in predictions.columns:
+                continue
+            key_columns = ["snapshot_date", "ticker"]
+            if not set(key_columns).issubset(predictions.columns):
+                continue
+            working = predictions[key_columns + ["predicted_alpha"]].copy()
+            working["snapshot_date"] = pd.to_datetime(working["snapshot_date"], errors="coerce").dt.normalize()
+            working["ticker"] = working["ticker"].astype(str)
+            working = working.dropna(subset=["snapshot_date"])
+            if working.empty:
+                continue
+            series_by_model[str(model_name)] = working.set_index(key_columns)["predicted_alpha"]
+        if not series_by_model:
+            return pd.DataFrame()
+        aligned = pd.DataFrame(series_by_model)
+        return aligned.corr(method="spearman")
+
+    def _prediction_decile_table(
+        self,
+        predictions: pd.DataFrame,
+        *,
+        target_column: str,
+        model_name: str,
+    ) -> pd.DataFrame:
+        if predictions.empty or target_column not in predictions.columns or "predicted_alpha" not in predictions.columns:
+            return pd.DataFrame()
+        working = predictions.copy()
+        rows: list[dict[str, object]] = []
+        for snapshot_date, day_frame in working.groupby("snapshot_date", sort=True):
+            valid = day_frame[["predicted_alpha", target_column]].copy()
+            valid["ticker"] = day_frame["ticker"].astype(str)
+            valid["predicted_alpha"] = pd.to_numeric(valid["predicted_alpha"], errors="coerce")
+            valid[target_column] = pd.to_numeric(valid[target_column], errors="coerce")
+            valid = valid.dropna(subset=["predicted_alpha", target_column])
+            if len(valid.index) < 10 or valid["predicted_alpha"].nunique(dropna=True) < 2:
+                continue
+            ranked = valid.sort_values(["predicted_alpha", "ticker"], ascending=[False, True]).reset_index(drop=True)
+            decile_count = min(10, len(ranked.index))
+            ranked["decile"] = pd.qcut(ranked.index, q=decile_count, labels=False, duplicates="drop")
+            for decile, decile_frame in ranked.groupby("decile", sort=True):
+                target = pd.to_numeric(decile_frame[target_column], errors="coerce").dropna()
+                if target.empty:
+                    continue
+                rows.append(
+                    {
+                        "model": model_name,
+                        "decile": int(decile),
+                        "snapshot_date": pd.Timestamp(snapshot_date),
+                        "rows": len(target.index),
+                        "mean_target": float(target.mean()),
+                        "hit_rate": float((target > 0.0).mean()),
+                    }
+                )
+        if not rows:
+            return pd.DataFrame()
+        frame = pd.DataFrame(rows)
+        return (
+            frame.groupby(["model", "decile"], as_index=False)
+            .agg(
+                avg_rows=("rows", "mean"),
+                mean_target=("mean_target", "mean"),
+                hit_rate=("hit_rate", "mean"),
+                dates=("snapshot_date", "nunique"),
+            )
+            .sort_values(["model", "decile"])
+            .reset_index(drop=True)
+        )
+
+    def _render_e1_niche_split_report(
+        self,
+        *,
+        matured_frame: pd.DataFrame,
+        evaluation_model_predictions: dict[str, pd.DataFrame],
+        target_column: str,
+        top_n: int,
+        fold_size: int,
+        min_train_dates: int,
+        test_window_dates: int,
+        evaluation_stride_dates: int,
+        label_horizon_dates: int,
+        min_feature_ic: float,
+        min_observation_fraction: float,
+        baseline_model: str,
+    ) -> list[str]:
+        niche_models = [model for model in E1_NICHE_MODEL_FEATURES if model in evaluation_model_predictions]
+        comparison_models = [
+            model
+            for model in (baseline_model, "structure_factor_signal", *niche_models)
+            if model in evaluation_model_predictions
+        ]
+        scoped_predictions = {
+            model: evaluation_model_predictions[model]
+            for model in comparison_models
+            if model in evaluation_model_predictions
+        }
+        summaries = pd.DataFrame(
+            [
+                self._evaluate_predictions(
+                    predictions=predictions,
+                    top_n=top_n,
+                    target_column=target_column,
+                    model_name=model,
+                )
+                for model, predictions in scoped_predictions.items()
+            ]
+        )
+        window_summaries = pd.DataFrame(
+            [
+                row
+                for model, predictions in scoped_predictions.items()
+                for row in self._rolling_window_summaries(
+                    predictions=predictions,
+                    target_column=target_column,
+                    model_name=model,
+                    top_n=top_n,
+                    windows=(),
+                    fold_windows=(1, 3),
+                    fold_size=fold_size,
+                    include_full_oos=True,
+                ).to_dict(orient="records")
+            ]
+        )
+        deciles = pd.concat(
+            [
+                self._prediction_decile_table(
+                    predictions=predictions,
+                    target_column=target_column,
+                    model_name=model,
+                )
+                for model, predictions in scoped_predictions.items()
+            ],
+            ignore_index=True,
+        ) if scoped_predictions else pd.DataFrame()
+        correlations = self._prediction_spearman_correlation_matrix(scoped_predictions)
+        feature_ic = self._e1_niche_feature_ic_diagnostics(
+            matured_frame,
+            target_column=target_column,
+            min_train_dates=min_train_dates,
+            test_window_dates=test_window_dates,
+            evaluation_stride_dates=evaluation_stride_dates,
+            label_horizon_dates=label_horizon_dates,
+            min_feature_ic=min_feature_ic,
+            min_observation_fraction=min_observation_fraction,
+        )
+        lines = [
+            "# E1 Niche Split",
+            "",
+            "- note: research report only; niche candidates do not change promotion gate policy or scan caps.",
+            f"- target_column: {target_column}",
+            f"- promotion_top_n: {int(top_n)}",
+            f"- oos_evaluation_stride_dates: {int(evaluation_stride_dates)}",
+            f"- label_horizon_dates: {int(label_horizon_dates)}",
+            f"- min_feature_ic: {float(min_feature_ic):.4f}",
+            f"- niche_min_observation_policy: {float(min_observation_fraction):.4f} of rows with any feature in that niche family, not global OOS rows",
+            f"- baseline_model: {baseline_model}",
+            "",
+            "## Feature Profiles",
+            "",
+        ]
+        for model_name, features in E1_NICHE_MODEL_FEATURES.items():
+            lines.append(f"### {model_name}")
+            lines.append(f"- base_features: {', '.join(features)}")
+            lines.append("")
+        lines.extend(self._render_summary_table(summaries, heading="## Full OOS Summary"))
+        lines.extend(self._render_summary_table(window_summaries, heading="## Acceptance Windows"))
+        lines.extend(["## Niche Feature IC Diagnostics", ""])
+        if feature_ic.empty:
+            lines.append("No niche feature IC diagnostics available.")
+            lines.append("")
+        else:
+            lines.extend(
+                [
+                    "| model | feature | rank_ic | abs_rank_ic | observations | family_rows | min_observations | survives |",
+                    "|---|---|---:|---:|---:|---:|---:|---|",
+                ]
+            )
+            for row in feature_ic.itertuples(index=False):
+                lines.append(
+                    f"| {row.model} | {row.feature} | {self._fmt(row.rank_ic)} | "
+                    f"{self._fmt(row.abs_rank_ic)} | {int(row.observations)} | "
+                    f"{int(row.family_rows)} | {int(row.min_observations)} | "
+                    f"{str(bool(row.survives)).lower()} |"
+                )
+            lines.append("")
+        lines.extend(["## Prediction Spearman Correlation", ""])
+        if correlations.empty:
+            lines.append("No prediction correlation matrix available.")
+            lines.append("")
+        else:
+            models = [str(column) for column in correlations.columns]
+            lines.append("| model | " + " | ".join(models) + " |")
+            lines.append("|---|" + "|".join("---:" for _ in models) + "|")
+            for model in models:
+                values = [self._fmt(correlations.loc[model, column]) for column in models]
+                lines.append(f"| {model} | " + " | ".join(values) + " |")
+            lines.append("")
+        lines.extend(["## Decile Tables", ""])
+        if deciles.empty:
+            lines.append("No decile tables available.")
+            lines.append("")
+        else:
+            lines.extend(
+                [
+                    "| model | decile | dates | avg_rows | mean_target | hit_rate |",
+                    "|---|---:|---:|---:|---:|---:|",
+                ]
+            )
+            for row in deciles.itertuples(index=False):
+                lines.append(
+                    f"| {row.model} | {int(row.decile)} | {int(row.dates)} | "
+                    f"{self._fmt(row.avg_rows)} | {self._fmt(row.mean_target)} | {self._fmt(row.hit_rate)} |"
+                )
+            lines.append("")
+        return lines
 
     def _fold_window_label(self, fold_count: int) -> str:
         folds = max(int(fold_count), 1)

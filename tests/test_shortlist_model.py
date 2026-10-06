@@ -1115,6 +1115,29 @@ class ShortlistModelServiceTests(unittest.TestCase):
         for predictions in aligned.values():
             self.assertEqual(set(pd.to_datetime(predictions["snapshot_date"])), set(dates[1:]))
 
+    def test_e1_niche_models_do_not_shrink_legacy_common_grid(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        dates = pd.bdate_range("2026-01-02", periods=3)
+        broad = pd.DataFrame(
+            [{"snapshot_date": date, "ticker": "AAA", "predicted_alpha": 0.1} for date in dates]
+        )
+        sparse_niche = pd.DataFrame(
+            [{"snapshot_date": dates[-1], "ticker": "AAA", "predicted_alpha": 0.2}]
+        )
+
+        legacy = service._legacy_grid_model_predictions(
+            {
+                "signal_proxy": broad,
+                "ridge_model": broad,
+                "overnight_session_specialist": sparse_niche,
+            }
+        )
+        aligned = service._align_model_predictions_to_common_oos_grid(legacy)
+
+        self.assertEqual(set(aligned), {"signal_proxy", "ridge_model"})
+        for predictions in aligned.values():
+            self.assertEqual(set(pd.to_datetime(predictions["snapshot_date"])), set(dates))
+
     def test_non_overlapping_oos_predictions_match_q3_greedy_independent_rows(self) -> None:
         service = ShortlistModelService(db_manager=object())
         calendar_dates = pd.bdate_range("2026-01-02", periods=130)
@@ -2271,6 +2294,99 @@ class ShortlistModelServiceTests(unittest.TestCase):
 
         self.assertIn("rsi_2", survivors)
         self.assertNotIn("analyst_target_upside", survivors)
+
+    def test_feature_ic_screen_supports_family_relative_observation_floor(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        rows = []
+        for date_index, snapshot_date in enumerate(pd.bdate_range("2026-01-02", periods=40)):
+            for ticker_index, ticker in enumerate(("AAA", "BBB", "CCC", "DDD", "EEE")):
+                sparse_signal = float(ticker_index) if date_index < 4 else None
+                rows.append(
+                    {
+                        "snapshot_date": snapshot_date,
+                        "ticker": ticker,
+                        "sector": "Energy",
+                        "rsi_2": float(ticker_index),
+                        "overnight_ret_20d": sparse_signal,
+                        "alpha_vs_sector_20d": float(ticker_index),
+                    }
+                )
+        frame = pd.DataFrame(rows)
+        global_floor_survivors = service._feature_ic_survivors_from_frame(
+            frame,
+            target_column="alpha_vs_sector_20d",
+            min_feature_ic=0.50,
+            min_observation_fraction=0.20,
+            feature_columns_override=["overnight_ret_20d"],
+        )
+        family_floor_survivors = service._feature_ic_survivors_from_frame(
+            frame,
+            target_column="alpha_vs_sector_20d",
+            min_feature_ic=0.50,
+            min_observation_fraction=0.20,
+            feature_columns_override=["overnight_ret_20d"],
+            min_observation_base_count=service._family_observation_base_count(
+                frame,
+                feature_columns=["overnight_ret_20d"],
+            ),
+        )
+
+        self.assertNotIn("overnight_ret_20d", global_floor_survivors)
+        self.assertIn("overnight_ret_20d", family_floor_survivors)
+        self.assertNotIn("rsi_2", family_floor_survivors)
+
+    def test_e1_niche_split_report_renders_diagnostics(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        rows = []
+        for date_index, snapshot_date in enumerate(pd.bdate_range("2026-01-02", periods=70)):
+            for ticker_index, ticker in enumerate(("AAA", "BBB", "CCC", "DDD", "EEE")):
+                signal = float(ticker_index)
+                rows.append(
+                    {
+                        "snapshot_date": snapshot_date,
+                        "ticker": ticker,
+                        "sector": "Energy",
+                        "md_volume_30d": 1_000_000.0,
+                        "overnight_ret_20d": signal,
+                        "rth_ret_20d": -signal,
+                        "max_gap_down_pct_60": signal,
+                        "distance_above_20d_high": signal,
+                        "base_range_pct_20": signal,
+                        "alpha_vs_sector_20d": signal / 100.0,
+                    }
+                )
+        predictions = pd.DataFrame(rows).assign(
+            predicted_alpha=lambda frame: frame["overnight_ret_20d"],
+            model_top_reasons="overnight",
+            model_reason_summary="overnight",
+        )
+        baseline = predictions.assign(predicted_alpha=lambda frame: frame["distance_above_20d_high"])
+        with patch("src.research.shortlist_model_service.load_feature_config", return_value={"backtest_costs": {}}):
+            lines = service._render_e1_niche_split_report(
+                matured_frame=pd.DataFrame(rows),
+                evaluation_model_predictions={
+                    "signal_proxy": baseline,
+                    "overnight_session_specialist": predictions,
+                },
+                target_column="alpha_vs_sector_20d",
+                top_n=2,
+                fold_size=20,
+                min_train_dates=10,
+                test_window_dates=20,
+                evaluation_stride_dates=20,
+                label_horizon_dates=20,
+                min_feature_ic=0.30,
+                min_observation_fraction=0.20,
+                baseline_model="signal_proxy",
+            )
+
+        report = "\n".join(lines)
+        self.assertIn("# E1 Niche Split", report)
+        self.assertIn("overnight_session_specialist", report)
+        self.assertIn("## Niche Feature IC Diagnostics", report)
+        self.assertIn("overnight_ret_20d", report)
+        self.assertIn("## Prediction Spearman Correlation", report)
+        self.assertIn("## Decile Tables", report)
 
     def test_feature_ic_report_marks_duplicate_survivors(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
