@@ -50,6 +50,54 @@ class ShortlistModelServiceTests(unittest.TestCase):
             "top_ticker_date_rate": top_ticker_date_rate,
         }
 
+    def test_candidate_roster_includes_ridge_adaptive_with_short_train_window(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+
+        roster = service._candidate_model_roster()
+
+        self.assertIn("ridge_model", roster)
+        self.assertIn("ridge_adaptive", roster)
+        self.assertLess(roster.index("ridge_model"), roster.index("ridge_adaptive"))
+        self.assertEqual(
+            service._candidate_max_train_dates(
+                model_name="ridge_adaptive",
+                default_max_train_dates=252,
+            ),
+            126,
+        )
+        self.assertEqual(
+            service._candidate_max_train_dates(
+                model_name="ridge_model",
+                default_max_train_dates=252,
+            ),
+            252,
+        )
+
+    def test_ridge_adaptive_uses_ridge_estimator_but_stays_out_of_legacy_ensemble(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        train_frame = pd.DataFrame({"snapshot_date": ["2026-01-02"], "sector": ["Energy"], "alpha_vs_sector_20d": [0.01]})
+        test_frame = pd.DataFrame({"snapshot_date": ["2026-01-05"], "sector": ["Energy"], "alpha_vs_sector_20d": [0.02]})
+        expected = test_frame.assign(predicted_alpha=0.0)
+
+        with patch.object(service, "_score_ridge_closed_form", return_value=expected) as ridge_score:
+            observed = service._score_model(
+                model_name="ridge_adaptive",
+                train_frame=train_frame,
+                test_frame=test_frame,
+                target_column="alpha_vs_sector_20d",
+            )
+
+        self.assertIs(observed, expected)
+        ridge_score.assert_called_once()
+        legacy_grid = service._legacy_grid_model_predictions(
+            {
+                "ridge_model": expected,
+                "ridge_adaptive": expected,
+                "overnight_session_specialist": expected,
+            }
+        )
+        self.assertEqual(set(legacy_grid), {"ridge_model"})
+
     def test_oos_reproducibility_helpers_apply_costs_and_acceptance_windows(self) -> None:
         rows = []
         for date_index, snapshot_date in enumerate(pd.bdate_range("2026-01-02", periods=65)):

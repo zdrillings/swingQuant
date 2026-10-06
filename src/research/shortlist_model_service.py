@@ -31,6 +31,8 @@ from src.utils.logging import get_logger
 from src.utils.performance_metrics import annualized_sharpe, newey_west_t_stat, years_required_for_tstat
 
 PROMOTION_BASKET_SIZE = 2
+RIDGE_MODEL_ALIASES = {"ridge_model", "ridge_adaptive"}
+RIDGE_ADAPTIVE_MAX_TRAIN_DATES = 126
 REGIME_MATCHING_MODES = {"off", "train_only", "train_and_flip"}
 REGIME_TRANSITION_PURGE_MODES = {"off", "majority", "strict"}
 SHORTLIST_HEURISTIC_MODELS = {
@@ -131,7 +133,7 @@ STRUCTURE_FACTOR_COMPONENTS = (
 )
 STRUCTURE_FACTOR_FRESH_MODEL = "structure_factor_fresh_signal"
 STRUCTURE_FACTOR_BASE_MODEL = "structure_factor_signal"
-SHORTLIST_ENSEMBLE_EXCLUDED_MODELS: set[str] = set()
+SHORTLIST_ENSEMBLE_EXCLUDED_MODELS = {"ridge_adaptive"}
 
 
 @dataclass(frozen=True)
@@ -246,20 +248,7 @@ class ShortlistModelService:
         )
         base_feature_columns = model_feature_columns_for_profile(feature_profile)
         expanded_feature_columns = self._filter_model_feature_columns(expand_model_feature_columns(base_feature_columns))
-        candidate_models = (
-            "signal_proxy",
-            "reversal_rules",
-            "event_signal",
-            "event_ic_model",
-            "structure_factor_signal",
-            "ridge_model",
-            "lasso_model",
-            "elastic_net_model",
-            "ic_sign_model",
-            "overnight_session_specialist",
-            "base_pattern_specialist",
-            "xgboost_model",
-        )
+        candidate_models = self._candidate_model_roster()
         min_feature_ic = self._load_min_feature_ic()
         min_feature_ic_observation_fraction = self._load_min_feature_ic_observation_fraction()
         regime_matching_mode = self._load_regime_matching_mode()
@@ -309,7 +298,10 @@ class ShortlistModelService:
                 evaluation_target_column=evaluation_target_column,
                 model_name=model_name,
                 min_train_dates=int(min_train_dates),
-                max_train_dates=resolved_max_train_dates,
+                max_train_dates=self._candidate_max_train_dates(
+                    model_name=model_name,
+                    default_max_train_dates=resolved_max_train_dates,
+                ),
                 test_window_dates=int(test_window_dates),
                 evaluation_stride_dates=resolved_oos_stride_dates,
                 label_horizon_dates=max(int(horizon_days), 1),
@@ -548,7 +540,10 @@ class ShortlistModelService:
                 feature_columns_override=model_feature_columns,
                 min_feature_ic=min_feature_ic,
                 min_feature_ic_observation_fraction=min_feature_ic_observation_fraction,
-                max_train_dates=resolved_max_train_dates,
+                max_train_dates=self._candidate_max_train_dates(
+                    model_name=model_name,
+                    default_max_train_dates=resolved_max_train_dates,
+                ),
                 regime_matching_mode=regime_matching_mode,
                 min_regime_train_dates=min_regime_train_dates,
                 regime_matching_stats=regime_matching_stats,
@@ -862,7 +857,7 @@ class ShortlistModelService:
         return {
             model_name: predictions
             for model_name, predictions in predictions_by_model.items()
-            if model_name not in E1_NICHE_MODELS
+            if model_name not in E1_NICHE_MODELS and model_name not in SHORTLIST_ENSEMBLE_EXCLUDED_MODELS
         }
 
     def _stamp_oos_artifact_metadata(
@@ -1799,7 +1794,7 @@ class ShortlistModelService:
             return self._score_structure_factor_signal(test_frame)
         if model_name == "structure_factor_fresh_signal":
             return self._score_structure_factor_fresh_signal(test_frame)
-        if model_name == "ridge_model":
+        if model_name in RIDGE_MODEL_ALIASES:
             return self._score_ridge_closed_form(
                 train_frame,
                 test_frame,
@@ -2500,6 +2495,33 @@ class ShortlistModelService:
         return self._filter_model_feature_columns(
             expand_model_feature_columns(E1_NICHE_MODEL_FEATURES[model_name])
         )
+
+    def _candidate_model_roster(self) -> tuple[str, ...]:
+        return (
+            "signal_proxy",
+            "reversal_rules",
+            "event_signal",
+            "event_ic_model",
+            "structure_factor_signal",
+            "ridge_model",
+            "ridge_adaptive",
+            "lasso_model",
+            "elastic_net_model",
+            "ic_sign_model",
+            "overnight_session_specialist",
+            "base_pattern_specialist",
+            "xgboost_model",
+        )
+
+    def _candidate_max_train_dates(
+        self,
+        *,
+        model_name: str,
+        default_max_train_dates: int | None,
+    ) -> int | None:
+        if model_name == "ridge_adaptive":
+            return RIDGE_ADAPTIVE_MAX_TRAIN_DATES
+        return default_max_train_dates
 
     def _family_observation_base_count(self, frame: pd.DataFrame, *, feature_columns: list[str] | None) -> int | None:
         if frame.empty or not feature_columns:
@@ -4304,6 +4326,11 @@ class ShortlistModelService:
             f"- feature_profile: {feature_profile}",
             f"- min_train_dates: {int(min_train_dates)}",
             f"- max_train_dates: {int(max_train_dates) if max_train_dates is not None else 'none'}",
+            (
+                "- candidate_train_windows: "
+                f"default={int(max_train_dates) if max_train_dates is not None else 'none'}, "
+                f"ridge_adaptive={RIDGE_ADAPTIVE_MAX_TRAIN_DATES}"
+            ),
             f"- test_window_dates: {int(test_window_dates)}",
             f"- oos_evaluation_stride_dates: {int(evaluation_stride_dates)}",
             f"- label_horizon_dates: {int(label_horizon_dates)}",
