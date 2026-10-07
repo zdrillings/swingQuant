@@ -337,7 +337,12 @@ class ShortlistModelService:
                         fallback_only=True,
                     )
                 model_predictions[model_name] = predicted
-        model_predictions = self._align_model_predictions_to_common_oos_grid(model_predictions)
+        fixed_oos_evaluation_keys = self._fixed_oos_evaluation_keys(
+            matured,
+            min_train_dates=int(min_train_dates),
+            label_horizon_dates=max(int(horizon_days), 1),
+            evaluation_stride_dates=resolved_oos_stride_dates,
+        )
         ensemble_predictions = self._build_ensemble_predictions(
             self._legacy_grid_model_predictions(model_predictions)
         )
@@ -394,13 +399,10 @@ class ShortlistModelService:
                 target_column=target_column,
             )
             model_predictions[model_name] = annotated.drop(columns=["model_name"], errors="ignore")
-        evaluation_model_predictions = {
-            model_name: self._non_overlapping_oos_predictions(
-                predictions,
-                horizon_days=max(int(horizon_days), 1),
-            )
-            for model_name, predictions in model_predictions.items()
-        }
+        evaluation_model_predictions = self._filter_predictions_to_fixed_oos_grid(
+            model_predictions,
+            evaluation_keys=fixed_oos_evaluation_keys,
+        )
         e1_niche_report_path = self.db_manager.paths.reports_dir / "e1_niche_split.md"
         e1_niche_report_path.write_text(
             "\n".join(
@@ -649,7 +651,7 @@ class ShortlistModelService:
         lines.extend(
             self._render_summary_table(
                 self._rolling_window_summaries(
-                    predictions=model_predictions[champion_model],
+                    predictions=evaluation_model_predictions[champion_model],
                     target_column=evaluation_target_column,
                     model_name=champion_model,
                     top_n=promotion_top_n,
@@ -826,6 +828,103 @@ class ShortlistModelService:
             if not parsed.empty:
                 return sorted(parsed.dt.normalize().drop_duplicates().tolist())
         return sorted(pd.to_datetime(pd.Series(list(fallback_dates)), errors="coerce").dropna().dt.normalize().drop_duplicates().tolist())
+
+    def _fixed_oos_evaluation_dates(
+        self,
+        frame: pd.DataFrame,
+        *,
+        min_train_dates: int,
+        label_horizon_dates: int,
+        evaluation_stride_dates: int,
+    ) -> list[pd.Timestamp]:
+        if frame.empty or "snapshot_date" not in frame.columns:
+            return []
+        dates = sorted(
+            pd.to_datetime(frame["snapshot_date"], errors="coerce")
+            .dropna()
+            .dt.normalize()
+            .drop_duplicates()
+            .tolist()
+        )
+        fixed_dates: list[pd.Timestamp] = []
+        start_index = max(int(min_train_dates), 0)
+        stride = max(int(evaluation_stride_dates), int(label_horizon_dates), 1)
+        label_embargo = max(int(label_horizon_dates), 0)
+        while start_index < len(dates):
+            train_end_index = max(0, start_index - label_embargo)
+            if train_end_index >= int(min_train_dates):
+                fixed_dates.append(pd.Timestamp(dates[start_index]))
+            start_index += stride
+        return fixed_dates
+
+    def _fixed_oos_evaluation_keys(
+        self,
+        frame: pd.DataFrame,
+        *,
+        min_train_dates: int,
+        label_horizon_dates: int,
+        evaluation_stride_dates: int,
+    ) -> set[tuple[str, pd.Timestamp]]:
+        if frame.empty or not {"ticker", "snapshot_date"}.issubset(frame.columns):
+            return set()
+        fixed_start_dates = self._fixed_oos_evaluation_dates(
+            frame,
+            min_train_dates=min_train_dates,
+            label_horizon_dates=label_horizon_dates,
+            evaluation_stride_dates=evaluation_stride_dates,
+        )
+        if not fixed_start_dates:
+            return set()
+        first_oos_date = min(fixed_start_dates)
+        label_frame = frame.copy()
+        label_frame["snapshot_date"] = pd.to_datetime(label_frame["snapshot_date"], errors="coerce").dt.normalize()
+        label_frame = label_frame[label_frame["snapshot_date"].ge(first_oos_date)].copy()
+        if label_frame.empty:
+            return set()
+        fixed_rows = self._non_overlapping_oos_predictions(
+            label_frame[["ticker", "snapshot_date"]].drop_duplicates(),
+            horizon_days=max(int(label_horizon_dates), 1),
+            calendar_dates=self._oos_evaluation_calendar_dates(
+                fallback_dates=label_frame["snapshot_date"].tolist()
+            ),
+        )
+        return {
+            (str(row.ticker), pd.Timestamp(row.snapshot_date).normalize())
+            for row in fixed_rows[["ticker", "snapshot_date"]].itertuples(index=False)
+        }
+
+    def _filter_predictions_to_fixed_oos_grid(
+        self,
+        predictions_by_model: dict[str, pd.DataFrame],
+        *,
+        evaluation_keys: set[tuple[str, pd.Timestamp]],
+    ) -> dict[str, pd.DataFrame]:
+        fixed_keys = {
+            (str(ticker), pd.Timestamp(snapshot_date).normalize())
+            for ticker, snapshot_date in evaluation_keys
+        }
+        if not fixed_keys:
+            return {}
+        filtered: dict[str, pd.DataFrame] = {}
+        for model_name, predictions in predictions_by_model.items():
+            if predictions is None or predictions.empty or not {"ticker", "snapshot_date"}.issubset(predictions.columns):
+                continue
+            working = predictions.copy()
+            normalized_dates = pd.to_datetime(working["snapshot_date"], errors="coerce").dt.normalize()
+            before_dates = int(normalized_dates.nunique())
+            row_keys = list(zip(working["ticker"].astype(str), normalized_dates))
+            working = working.loc[[key in fixed_keys for key in row_keys]].copy()
+            after_dates = int(pd.to_datetime(working["snapshot_date"], errors="coerce").dt.normalize().nunique())
+            if after_dates < before_dates:
+                self.logger.info(
+                    "Pinned %s OOS evaluation grid from %d dates to %d fixed label-calendar dates.",
+                    model_name,
+                    before_dates,
+                    after_dates,
+                )
+            if not working.empty:
+                filtered[model_name] = working.reset_index(drop=True)
+        return filtered
 
     def _align_model_predictions_to_common_oos_grid(
         self,
@@ -4393,7 +4492,7 @@ class ShortlistModelService:
             f"- oos_prediction_dates: {int(oos_prediction_dates)}",
             f"- oos_evaluation_dates: {int(oos_evaluation_dates)}",
             f"- oos_evaluation_rows: {int(oos_evaluation_rows)}",
-            "- oos_evaluation_policy: greedy non-overlapping rows per ticker using label_horizon_dates; dense OOS CSV is retained for audit and live calibration.",
+            "- oos_evaluation_policy: fixed greedy label-calendar grid using label_horizon_dates; candidate intersections are diagnostic only.",
             f"- champion_model: {selected_model}",
             f"- oos_predictions_csv: {oos_path}",
             f"- live_predictions_csv: {live_path}",

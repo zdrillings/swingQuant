@@ -1223,6 +1223,82 @@ class ShortlistModelServiceTests(unittest.TestCase):
         for predictions in aligned.values():
             self.assertEqual(set(pd.to_datetime(predictions["snapshot_date"])), {dates[-1]})
 
+    def test_fixed_oos_gate_grid_is_independent_of_candidate_subset(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        dates = pd.bdate_range("2026-01-02", periods=10)
+        rows = []
+        for snapshot_date in dates:
+            rows.extend(
+                [
+                    {
+                        "snapshot_date": snapshot_date,
+                        "ticker": "AAA",
+                        "predicted_alpha": 0.2,
+                        "alpha_vs_sector_20d": 0.03,
+                    },
+                    {
+                        "snapshot_date": snapshot_date,
+                        "ticker": "BBB",
+                        "predicted_alpha": 0.1,
+                        "alpha_vs_sector_20d": -0.01,
+                    },
+                ]
+            )
+        shared = pd.DataFrame(rows)
+        sparse_extra = shared[shared["snapshot_date"].isin([dates[-1]])].copy()
+        fixed_dates = service._fixed_oos_evaluation_dates(
+            shared,
+            min_train_dates=2,
+            label_horizon_dates=2,
+            evaluation_stride_dates=1,
+        )
+        fixed_keys = service._fixed_oos_evaluation_keys(
+            shared,
+            min_train_dates=2,
+            label_horizon_dates=2,
+            evaluation_stride_dates=1,
+        )
+
+        first_subset = service._filter_predictions_to_fixed_oos_grid(
+            {"ridge_model": shared, "signal_proxy": shared},
+            evaluation_keys=fixed_keys,
+        )
+        second_subset = service._filter_predictions_to_fixed_oos_grid(
+            {"ridge_model": shared, "overnight_session_specialist": sparse_extra},
+            evaluation_keys=fixed_keys,
+        )
+        first_windows = service._rolling_window_summaries(
+            predictions=first_subset["ridge_model"],
+            target_column="alpha_vs_sector_20d",
+            model_name="ridge_model",
+            top_n=1,
+            windows=(),
+            fold_windows=(1, 3),
+            fold_size=1,
+            include_full_oos=True,
+        )
+        second_windows = service._rolling_window_summaries(
+            predictions=second_subset["ridge_model"],
+            target_column="alpha_vs_sector_20d",
+            model_name="ridge_model",
+            top_n=1,
+            windows=(),
+            fold_windows=(1, 3),
+            fold_size=1,
+            include_full_oos=True,
+        )
+
+        self.assertEqual([pd.Timestamp(dates[4]), pd.Timestamp(dates[6]), pd.Timestamp(dates[8])], fixed_dates)
+        self.assertEqual(
+            set(pd.to_datetime(first_subset["ridge_model"]["snapshot_date"])),
+            set(fixed_dates),
+        )
+        self.assertEqual(
+            set(pd.to_datetime(second_subset["ridge_model"]["snapshot_date"])),
+            set(fixed_dates),
+        )
+        pd.testing.assert_frame_equal(first_windows.reset_index(drop=True), second_windows.reset_index(drop=True))
+
     def test_promotion_gate_can_select_e1_niche_candidate(self) -> None:
         service = ShortlistModelService(db_manager=object())
         full_summaries = pd.DataFrame(

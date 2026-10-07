@@ -1,6 +1,6 @@
 # E1 Niche Split
 
-- note: research report only; niche candidates do not change promotion gate policy or scan caps.
+- note: niche candidates are included in the promotion gate roster; this report audits their feature profiles and orthogonality.
 - target_column: alpha_vs_sector_60d
 - promotion_top_n: 2
 - oos_evaluation_stride_dates: 20
@@ -19,116 +19,116 @@
 
 ## Full OOS Summary
 
-### signal_proxy
-- dates: 514
-- avg_pick_count: 1.976654
-- gross_mean_target: 0.022357
-- net_mean_target: 0.021357
-- universe_mean_target: -0.002391
-- mean_target_excess: 0.023748
-- round_trip_cost: 0.001000
-- hit_rate: 0.490272
-- universe_hit_rate: 0.451583
-- hit_rate_excess: 0.038689
-- beat_universe_rate: 0.496109
-- spearman: 0.021444
-- net_sharpe_ann: 0.247464
-- newey_west_t_lag_horizon: 1.195877
-- years_for_t_1_96: 62.732033
-- positive_date_rate: 0.482490
-- ge_2pct_rate: 0.445525
-- ge_5pct_rate: 0.385214
-- top_ticker: LITE
-- top_ticker_date_rate: 0.013619
-- top_ticker_pick_share: 0.006890
-
 ### overnight_session_specialist
-- dates: 407
-- avg_pick_count: 1.955774
-- gross_mean_target: 0.018009
-- net_mean_target: 0.017009
-- universe_mean_target: -0.004265
-- mean_target_excess: 0.021274
+- dates: 408
+- avg_pick_count: 1.955882
+- gross_mean_target: 0.018633
+- net_mean_target: 0.017633
+- universe_mean_target: -0.004237
+- mean_target_excess: 0.021869
 - round_trip_cost: 0.001000
-- hit_rate: 0.474201
-- universe_hit_rate: 0.444036
-- hit_rate_excess: 0.030166
-- beat_universe_rate: 0.474201
-- spearman: 0.018231
-- net_sharpe_ann: 0.208245
-- newey_west_t_lag_horizon: 1.037937
-- years_for_t_1_96: 88.585226
-- positive_date_rate: 0.471744
-- ge_2pct_rate: 0.405405
-- ge_5pct_rate: 0.348894
+- hit_rate: 0.475490
+- universe_hit_rate: 0.444185
+- hit_rate_excess: 0.031305
+- beat_universe_rate: 0.475490
+- spearman: 0.018104
+- net_sharpe_ann: 0.215532
+- newey_west_t_lag_horizon: 1.085500
+- years_for_t_1_96: 82.696765
+- positive_date_rate: 0.473039
+- ge_2pct_rate: 0.406863
+- ge_5pct_rate: 0.350490
 - top_ticker: RMBS
-- top_ticker_date_rate: 0.014742
-- top_ticker_pick_share: 0.007538
+- top_ticker_date_rate: 0.014706
+- top_ticker_pick_share: 0.007519
+
+### signal_proxy
+- dates: 408
+- avg_pick_count: 1.955882
+- gross_mean_target: 0.017249
+- net_mean_target: 0.016249
+- universe_mean_target: -0.004237
+- mean_target_excess: 0.020486
+- round_trip_cost: 0.001000
+- hit_rate: 0.470588
+- universe_hit_rate: 0.444185
+- hit_rate_excess: 0.026403
+- beat_universe_rate: 0.492647
+- spearman: 0.008635
+- net_sharpe_ann: 0.185678
+- newey_west_t_lag_horizon: 0.770969
+- years_for_t_1_96: 111.427022
+- positive_date_rate: 0.492647
+- ge_2pct_rate: 0.448529
+- ge_5pct_rate: 0.375000
+- top_ticker: CNR
+- top_ticker_date_rate: 0.012255
+- top_ticker_pick_share: 0.006266
 
 ### base_pattern_specialist
-- dates: 514
-- avg_pick_count: 1.976654
-- gross_mean_target: 0.014914
-- net_mean_target: 0.013914
-- universe_mean_target: -0.002391
-- mean_target_excess: 0.016305
+- dates: 408
+- avg_pick_count: 1.955882
+- gross_mean_target: 0.012003
+- net_mean_target: 0.011003
+- universe_mean_target: -0.004237
+- mean_target_excess: 0.015240
 - round_trip_cost: 0.001000
-- hit_rate: 0.458171
-- universe_hit_rate: 0.451583
-- hit_rate_excess: 0.006588
-- beat_universe_rate: 0.478599
-- spearman: -0.009893
-- net_sharpe_ann: 0.167314
-- newey_west_t_lag_horizon: 0.928368
-- years_for_t_1_96: 137.230276
-- positive_date_rate: 0.474708
-- ge_2pct_rate: 0.410506
-- ge_5pct_rate: 0.336576
-- top_ticker: LITE
-- top_ticker_date_rate: 0.011673
-- top_ticker_pick_share: 0.005906
+- hit_rate: 0.450980
+- universe_hit_rate: 0.444185
+- hit_rate_excess: 0.006796
+- beat_universe_rate: 0.460784
+- spearman: -0.009326
+- net_sharpe_ann: 0.132989
+- newey_west_t_lag_horizon: 0.615026
+- years_for_t_1_96: 217.210452
+- positive_date_rate: 0.470588
+- ge_2pct_rate: 0.424020
+- ge_5pct_rate: 0.328431
+- top_ticker: TLN
+- top_ticker_date_rate: 0.012255
+- top_ticker_pick_share: 0.006266
 
 ### structure_factor_signal
-- dates: 514
-- avg_pick_count: 1.976654
-- gross_mean_target: -0.010974
-- net_mean_target: -0.011974
-- universe_mean_target: -0.002391
-- mean_target_excess: -0.009583
+- dates: 408
+- avg_pick_count: 1.955882
+- gross_mean_target: -0.008142
+- net_mean_target: -0.009142
+- universe_mean_target: -0.004237
+- mean_target_excess: -0.004905
 - round_trip_cost: 0.001000
-- hit_rate: 0.447471
-- universe_hit_rate: 0.451583
-- hit_rate_excess: -0.004112
-- beat_universe_rate: 0.447471
-- spearman: -0.016232
-- net_sharpe_ann: -0.224335
-- newey_west_t_lag_horizon: -1.152286
-- years_for_t_1_96: 76.333730
-- positive_date_rate: 0.441634
-- ge_2pct_rate: 0.369650
-- ge_5pct_rate: 0.254864
+- hit_rate: 0.444853
+- universe_hit_rate: 0.444185
+- hit_rate_excess: 0.000668
+- beat_universe_rate: 0.441176
+- spearman: -0.008227
+- net_sharpe_ann: -0.177941
+- newey_west_t_lag_horizon: -1.041762
+- years_for_t_1_96: 121.327404
+- positive_date_rate: 0.460784
+- ge_2pct_rate: 0.357843
+- ge_5pct_rate: 0.242647
 - top_ticker: L
-- top_ticker_date_rate: 0.011673
-- top_ticker_pick_share: 0.005906
+- top_ticker_date_rate: 0.014706
+- top_ticker_pick_share: 0.007519
 
 ## Acceptance Windows
 
 ### overnight_session_specialist_trailing_3folds
 - dates: 60
 - avg_pick_count: 1.983333
-- gross_mean_target: 0.032237
-- net_mean_target: 0.031237
-- universe_mean_target: -0.000737
-- mean_target_excess: 0.031974
+- gross_mean_target: 0.030627
+- net_mean_target: 0.029627
+- universe_mean_target: -0.000213
+- mean_target_excess: 0.029840
 - round_trip_cost: 0.001000
-- hit_rate: 0.458333
-- universe_hit_rate: 0.456815
-- hit_rate_excess: 0.001519
+- hit_rate: 0.466667
+- universe_hit_rate: 0.460469
+- hit_rate_excess: 0.006198
 - beat_universe_rate: 0.500000
-- spearman: -0.021250
-- net_sharpe_ann: 0.304324
-- newey_west_t_lag_horizon: 0.800638
-- years_for_t_1_96: 41.479997
+- spearman: -0.029678
+- net_sharpe_ann: 0.291775
+- newey_west_t_lag_horizon: 0.907418
+- years_for_t_1_96: 45.124758
 - positive_date_rate: 0.450000
 - ge_2pct_rate: 0.383333
 - ge_5pct_rate: 0.366667
@@ -136,256 +136,256 @@
 - top_ticker_date_rate: 0.033333
 - top_ticker_pick_share: 0.016807
 
-### signal_proxy_full_oos
-- dates: 514
-- avg_pick_count: 1.976654
-- gross_mean_target: 0.022357
-- net_mean_target: 0.021357
-- universe_mean_target: -0.002391
-- mean_target_excess: 0.023748
-- round_trip_cost: 0.001000
-- hit_rate: 0.490272
-- universe_hit_rate: 0.451583
-- hit_rate_excess: 0.038689
-- beat_universe_rate: 0.496109
-- spearman: 0.021444
-- net_sharpe_ann: 0.247464
-- newey_west_t_lag_horizon: 1.195877
-- years_for_t_1_96: 62.732033
-- positive_date_rate: 0.482490
-- ge_2pct_rate: 0.445525
-- ge_5pct_rate: 0.385214
-- top_ticker: LITE
-- top_ticker_date_rate: 0.013619
-- top_ticker_pick_share: 0.006890
-
-### overnight_session_specialist_full_oos
-- dates: 407
-- avg_pick_count: 1.955774
-- gross_mean_target: 0.018009
-- net_mean_target: 0.017009
-- universe_mean_target: -0.004265
-- mean_target_excess: 0.021274
-- round_trip_cost: 0.001000
-- hit_rate: 0.474201
-- universe_hit_rate: 0.444036
-- hit_rate_excess: 0.030166
-- beat_universe_rate: 0.474201
-- spearman: 0.018231
-- net_sharpe_ann: 0.208245
-- newey_west_t_lag_horizon: 1.037937
-- years_for_t_1_96: 88.585226
-- positive_date_rate: 0.471744
-- ge_2pct_rate: 0.405405
-- ge_5pct_rate: 0.348894
-- top_ticker: RMBS
-- top_ticker_date_rate: 0.014742
-- top_ticker_pick_share: 0.007538
-
-### base_pattern_specialist_full_oos
-- dates: 514
-- avg_pick_count: 1.976654
-- gross_mean_target: 0.014914
-- net_mean_target: 0.013914
-- universe_mean_target: -0.002391
-- mean_target_excess: 0.016305
-- round_trip_cost: 0.001000
-- hit_rate: 0.458171
-- universe_hit_rate: 0.451583
-- hit_rate_excess: 0.006588
-- beat_universe_rate: 0.478599
-- spearman: -0.009893
-- net_sharpe_ann: 0.167314
-- newey_west_t_lag_horizon: 0.928368
-- years_for_t_1_96: 137.230276
-- positive_date_rate: 0.474708
-- ge_2pct_rate: 0.410506
-- ge_5pct_rate: 0.336576
-- top_ticker: LITE
-- top_ticker_date_rate: 0.011673
-- top_ticker_pick_share: 0.005906
-
-### structure_factor_signal_trailing_3folds
-- dates: 60
-- avg_pick_count: 1.983333
-- gross_mean_target: 0.001105
-- net_mean_target: 0.000105
-- universe_mean_target: 0.000871
-- mean_target_excess: -0.000766
-- round_trip_cost: 0.001000
-- hit_rate: 0.466667
-- universe_hit_rate: 0.468610
-- hit_rate_excess: -0.001944
-- beat_universe_rate: 0.366667
-- spearman: 0.133004
-- net_sharpe_ann: 0.001762
-- newey_west_t_lag_horizon: 0.005847
-- years_for_t_1_96: 1237391.626685
-- positive_date_rate: 0.433333
-- ge_2pct_rate: 0.366667
-- ge_5pct_rate: 0.233333
-- top_ticker: USFD
-- top_ticker_date_rate: 0.016667
-- top_ticker_pick_share: 0.008403
-
 ### base_pattern_specialist_trailing_3folds
 - dates: 60
 - avg_pick_count: 1.983333
-- gross_mean_target: -0.005123
-- net_mean_target: -0.006123
-- universe_mean_target: 0.000871
-- mean_target_excess: -0.006994
+- gross_mean_target: 0.026098
+- net_mean_target: 0.025098
+- universe_mean_target: -0.000213
+- mean_target_excess: 0.025311
 - round_trip_cost: 0.001000
-- hit_rate: 0.408333
-- universe_hit_rate: 0.468610
-- hit_rate_excess: -0.060277
-- beat_universe_rate: 0.366667
-- spearman: -0.141077
-- net_sharpe_ann: -0.066649
-- newey_west_t_lag_horizon: -0.245983
-- years_for_t_1_96: 864.825009
-- positive_date_rate: 0.416667
-- ge_2pct_rate: 0.366667
-- ge_5pct_rate: 0.300000
-- top_ticker: JBLU
+- hit_rate: 0.425000
+- universe_hit_rate: 0.460469
+- hit_rate_excess: -0.035469
+- beat_universe_rate: 0.516667
+- spearman: -0.051711
+- net_sharpe_ann: 0.216181
+- newey_west_t_lag_horizon: 1.005213
+- years_for_t_1_96: 82.200953
+- positive_date_rate: 0.450000
+- ge_2pct_rate: 0.450000
+- ge_5pct_rate: 0.366667
+- top_ticker: VAL
 - top_ticker_date_rate: 0.033333
 - top_ticker_pick_share: 0.016807
 
-### signal_proxy_last_fold
-- dates: 20
-- avg_pick_count: 2.000000
-- gross_mean_target: -0.007807
-- net_mean_target: -0.008807
-- universe_mean_target: -0.028917
-- mean_target_excess: 0.020111
+### overnight_session_specialist_full_oos
+- dates: 408
+- avg_pick_count: 1.955882
+- gross_mean_target: 0.018633
+- net_mean_target: 0.017633
+- universe_mean_target: -0.004237
+- mean_target_excess: 0.021869
 - round_trip_cost: 0.001000
-- hit_rate: 0.475000
-- universe_hit_rate: 0.409124
-- hit_rate_excess: 0.065876
-- beat_universe_rate: 0.450000
-- spearman: -0.046240
-- net_sharpe_ann: -0.128412
-- newey_west_t_lag_horizon: -0.246001
-- years_for_t_1_96: 232.971362
-- positive_date_rate: 0.300000
-- ge_2pct_rate: 0.300000
-- ge_5pct_rate: 0.250000
-- top_ticker: CVLT
-- top_ticker_date_rate: 0.050000
-- top_ticker_pick_share: 0.025000
+- hit_rate: 0.475490
+- universe_hit_rate: 0.444185
+- hit_rate_excess: 0.031305
+- beat_universe_rate: 0.475490
+- spearman: 0.018104
+- net_sharpe_ann: 0.215532
+- newey_west_t_lag_horizon: 1.085500
+- years_for_t_1_96: 82.696765
+- positive_date_rate: 0.473039
+- ge_2pct_rate: 0.406863
+- ge_5pct_rate: 0.350490
+- top_ticker: RMBS
+- top_ticker_date_rate: 0.014706
+- top_ticker_pick_share: 0.007519
+
+### signal_proxy_full_oos
+- dates: 408
+- avg_pick_count: 1.955882
+- gross_mean_target: 0.017249
+- net_mean_target: 0.016249
+- universe_mean_target: -0.004237
+- mean_target_excess: 0.020486
+- round_trip_cost: 0.001000
+- hit_rate: 0.470588
+- universe_hit_rate: 0.444185
+- hit_rate_excess: 0.026403
+- beat_universe_rate: 0.492647
+- spearman: 0.008635
+- net_sharpe_ann: 0.185678
+- newey_west_t_lag_horizon: 0.770969
+- years_for_t_1_96: 111.427022
+- positive_date_rate: 0.492647
+- ge_2pct_rate: 0.448529
+- ge_5pct_rate: 0.375000
+- top_ticker: CNR
+- top_ticker_date_rate: 0.012255
+- top_ticker_pick_share: 0.006266
+
+### base_pattern_specialist_full_oos
+- dates: 408
+- avg_pick_count: 1.955882
+- gross_mean_target: 0.012003
+- net_mean_target: 0.011003
+- universe_mean_target: -0.004237
+- mean_target_excess: 0.015240
+- round_trip_cost: 0.001000
+- hit_rate: 0.450980
+- universe_hit_rate: 0.444185
+- hit_rate_excess: 0.006796
+- beat_universe_rate: 0.460784
+- spearman: -0.009326
+- net_sharpe_ann: 0.132989
+- newey_west_t_lag_horizon: 0.615026
+- years_for_t_1_96: 217.210452
+- positive_date_rate: 0.470588
+- ge_2pct_rate: 0.424020
+- ge_5pct_rate: 0.328431
+- top_ticker: TLN
+- top_ticker_date_rate: 0.012255
+- top_ticker_pick_share: 0.006266
+
+### structure_factor_signal_full_oos
+- dates: 408
+- avg_pick_count: 1.955882
+- gross_mean_target: -0.008142
+- net_mean_target: -0.009142
+- universe_mean_target: -0.004237
+- mean_target_excess: -0.004905
+- round_trip_cost: 0.001000
+- hit_rate: 0.444853
+- universe_hit_rate: 0.444185
+- hit_rate_excess: 0.000668
+- beat_universe_rate: 0.441176
+- spearman: -0.008227
+- net_sharpe_ann: -0.177941
+- newey_west_t_lag_horizon: -1.041762
+- years_for_t_1_96: 121.327404
+- positive_date_rate: 0.460784
+- ge_2pct_rate: 0.357843
+- ge_5pct_rate: 0.242647
+- top_ticker: L
+- top_ticker_date_rate: 0.014706
+- top_ticker_pick_share: 0.007519
 
 ### signal_proxy_trailing_3folds
 - dates: 60
 - avg_pick_count: 1.983333
-- gross_mean_target: -0.009168
-- net_mean_target: -0.010168
-- universe_mean_target: 0.000871
-- mean_target_excess: -0.011040
+- gross_mean_target: -0.013967
+- net_mean_target: -0.014967
+- universe_mean_target: -0.000213
+- mean_target_excess: -0.014754
 - round_trip_cost: 0.001000
-- hit_rate: 0.433333
-- universe_hit_rate: 0.468610
-- hit_rate_excess: -0.035277
-- beat_universe_rate: 0.366667
-- spearman: -0.089275
-- net_sharpe_ann: -0.106422
-- newey_west_t_lag_horizon: -0.436585
-- years_for_t_1_96: 339.192493
-- positive_date_rate: 0.333333
-- ge_2pct_rate: 0.300000
-- ge_5pct_rate: 0.266667
-- top_ticker: WT
+- hit_rate: 0.408333
+- universe_hit_rate: 0.460469
+- hit_rate_excess: -0.052135
+- beat_universe_rate: 0.433333
+- spearman: -0.009712
+- net_sharpe_ann: -0.141801
+- newey_west_t_lag_horizon: -0.738058
+- years_for_t_1_96: 191.051705
+- positive_date_rate: 0.383333
+- ge_2pct_rate: 0.366667
+- ge_5pct_rate: 0.300000
+- top_ticker: MATX
 - top_ticker_date_rate: 0.033333
 - top_ticker_pick_share: 0.016807
-
-### structure_factor_signal_full_oos
-- dates: 514
-- avg_pick_count: 1.976654
-- gross_mean_target: -0.010974
-- net_mean_target: -0.011974
-- universe_mean_target: -0.002391
-- mean_target_excess: -0.009583
-- round_trip_cost: 0.001000
-- hit_rate: 0.447471
-- universe_hit_rate: 0.451583
-- hit_rate_excess: -0.004112
-- beat_universe_rate: 0.447471
-- spearman: -0.016232
-- net_sharpe_ann: -0.224335
-- newey_west_t_lag_horizon: -1.152286
-- years_for_t_1_96: 76.333730
-- positive_date_rate: 0.441634
-- ge_2pct_rate: 0.369650
-- ge_5pct_rate: 0.254864
-- top_ticker: L
-- top_ticker_date_rate: 0.011673
-- top_ticker_pick_share: 0.005906
 
 ### structure_factor_signal_last_fold
 - dates: 20
 - avg_pick_count: 2.000000
-- gross_mean_target: -0.043192
-- net_mean_target: -0.044192
-- universe_mean_target: -0.028917
-- mean_target_excess: -0.015275
+- gross_mean_target: -0.014618
+- net_mean_target: -0.015618
+- universe_mean_target: 0.005931
+- mean_target_excess: -0.021549
 - round_trip_cost: 0.001000
 - hit_rate: 0.350000
-- universe_hit_rate: 0.409124
-- hit_rate_excess: -0.059124
-- beat_universe_rate: 0.250000
-- spearman: 0.084314
-- net_sharpe_ann: -0.980781
-- newey_west_t_lag_horizon: -3.619883
-- years_for_t_1_96: 3.993634
-- positive_date_rate: 0.250000
-- ge_2pct_rate: 0.250000
-- ge_5pct_rate: 0.100000
-- top_ticker: IBOC
+- universe_hit_rate: 0.476201
+- hit_rate_excess: -0.126201
+- beat_universe_rate: 0.350000
+- spearman: 0.068152
+- net_sharpe_ann: -0.252808
+- newey_west_t_lag_horizon: -0.679100
+- years_for_t_1_96: 60.107951
+- positive_date_rate: 0.300000
+- ge_2pct_rate: 0.200000
+- ge_5pct_rate: 0.150000
+- top_ticker: FOX
 - top_ticker_date_rate: 0.050000
 - top_ticker_pick_share: 0.025000
+
+### structure_factor_signal_trailing_3folds
+- dates: 60
+- avg_pick_count: 1.983333
+- gross_mean_target: -0.026767
+- net_mean_target: -0.027767
+- universe_mean_target: -0.000213
+- mean_target_excess: -0.027554
+- round_trip_cost: 0.001000
+- hit_rate: 0.416667
+- universe_hit_rate: 0.460469
+- hit_rate_excess: -0.043802
+- beat_universe_rate: 0.333333
+- spearman: -0.009813
+- net_sharpe_ann: -0.478578
+- newey_west_t_lag_horizon: -1.799197
+- years_for_t_1_96: 16.772847
+- positive_date_rate: 0.416667
+- ge_2pct_rate: 0.283333
+- ge_5pct_rate: 0.200000
+- top_ticker: HR
+- top_ticker_date_rate: 0.033333
+- top_ticker_pick_share: 0.016807
 
 ### base_pattern_specialist_last_fold
 - dates: 20
 - avg_pick_count: 2.000000
-- gross_mean_target: -0.050137
-- net_mean_target: -0.051137
-- universe_mean_target: -0.028917
-- mean_target_excess: -0.022220
+- gross_mean_target: -0.028548
+- net_mean_target: -0.029548
+- universe_mean_target: 0.005931
+- mean_target_excess: -0.035479
 - round_trip_cost: 0.001000
-- hit_rate: 0.425000
-- universe_hit_rate: 0.409124
-- hit_rate_excess: 0.015876
-- beat_universe_rate: 0.300000
-- spearman: -0.119388
-- net_sharpe_ann: -0.922385
-- newey_west_t_lag_horizon: -4.321644
-- years_for_t_1_96: 4.515308
-- positive_date_rate: 0.250000
-- ge_2pct_rate: 0.150000
-- ge_5pct_rate: 0.150000
-- top_ticker: MUR
+- hit_rate: 0.375000
+- universe_hit_rate: 0.476201
+- hit_rate_excess: -0.101201
+- beat_universe_rate: 0.400000
+- spearman: -0.131451
+- net_sharpe_ann: -0.300996
+- newey_west_t_lag_horizon: -1.522308
+- years_for_t_1_96: 42.402421
+- positive_date_rate: 0.400000
+- ge_2pct_rate: 0.400000
+- ge_5pct_rate: 0.300000
+- top_ticker: SM
 - top_ticker_date_rate: 0.050000
 - top_ticker_pick_share: 0.025000
 
 ### overnight_session_specialist_last_fold
 - dates: 20
 - avg_pick_count: 2.000000
-- gross_mean_target: -0.056508
-- net_mean_target: -0.057508
-- universe_mean_target: 0.005671
-- mean_target_excess: -0.063180
+- gross_mean_target: -0.028933
+- net_mean_target: -0.029933
+- universe_mean_target: 0.005931
+- mean_target_excess: -0.035865
+- round_trip_cost: 0.001000
+- hit_rate: 0.450000
+- universe_hit_rate: 0.476201
+- hit_rate_excess: -0.026201
+- beat_universe_rate: 0.400000
+- spearman: -0.146794
+- net_sharpe_ann: -0.384377
+- newey_west_t_lag_horizon: -1.866841
+- years_for_t_1_96: 26.001377
+- positive_date_rate: 0.350000
+- ge_2pct_rate: 0.300000
+- ge_5pct_rate: 0.300000
+- top_ticker: RMBS
+- top_ticker_date_rate: 0.050000
+- top_ticker_pick_share: 0.025000
+
+### signal_proxy_last_fold
+- dates: 20
+- avg_pick_count: 2.000000
+- gross_mean_target: -0.067976
+- net_mean_target: -0.068976
+- universe_mean_target: 0.005931
+- mean_target_excess: -0.074908
 - round_trip_cost: 0.001000
 - hit_rate: 0.400000
-- universe_hit_rate: 0.475954
-- hit_rate_excess: -0.075954
-- beat_universe_rate: 0.350000
-- spearman: -0.175100
-- net_sharpe_ann: -0.773943
-- newey_west_t_lag_horizon: -2.831019
-- years_for_t_1_96: 6.413494
-- positive_date_rate: 0.300000
-- ge_2pct_rate: 0.250000
-- ge_5pct_rate: 0.250000
-- top_ticker: AAON
+- universe_hit_rate: 0.476201
+- hit_rate_excess: -0.076201
+- beat_universe_rate: 0.400000
+- spearman: -0.176172
+- net_sharpe_ann: -0.856583
+- newey_west_t_lag_horizon: -3.864372
+- years_for_t_1_96: 5.235680
+- positive_date_rate: 0.350000
+- ge_2pct_rate: 0.300000
+- ge_5pct_rate: 0.200000
+- top_ticker: SM
 - top_ticker_date_rate: 0.050000
 - top_ticker_pick_share: 0.025000
 
@@ -393,123 +393,123 @@
 
 | model | feature | rank_ic | abs_rank_ic | observations | family_rows | min_observations | survives |
 |---|---|---:|---:|---:|---:|---:|---|
-| base_pattern_specialist | failed_breakout_20d__rank_all | 0.107521 | 0.107521 | 5311 | 5311 | 1063 | true |
-| base_pattern_specialist | failed_breakout_52w__rank_all | -0.074079 | 0.074079 | 5311 | 5311 | 1063 | true |
-| base_pattern_specialist | failed_breakout_20d__rank_sector | -0.062572 | 0.062572 | 5311 | 5311 | 1063 | true |
-| base_pattern_specialist | failed_breakout_52w | -0.061754 | 0.061754 | 5311 | 5311 | 1063 | true |
-| base_pattern_specialist | days_since_failed_breakout_52w__rank_sector | 0.055428 | 0.055428 | 3304 | 3304 | 661 | true |
-| base_pattern_specialist | days_since_failed_breakout_20d__rank_sector | 0.051756 | 0.051756 | 4869 | 4869 | 974 | true |
-| base_pattern_specialist | days_since_failed_breakout_20d__rank_all | 0.049074 | 0.049074 | 4869 | 4869 | 974 | true |
-| base_pattern_specialist | base_range_pct_20__rank_all | 0.041795 | 0.041795 | 220373 | 220373 | 44075 | true |
-| base_pattern_specialist | close_vs_20d_low__rank_all | 0.039372 | 0.039372 | 220373 | 220373 | 44075 | true |
-| base_pattern_specialist | close_vs_20d_low__rank_sector | 0.031306 | 0.031306 | 220373 | 220373 | 44075 | true |
-| base_pattern_specialist | base_range_pct_20__rank_sector | 0.028764 | 0.028764 | 220373 | 220373 | 44075 | false |
-| base_pattern_specialist | days_since_failed_breakout_52w | -0.026716 | 0.026716 | 3304 | 3304 | 661 | false |
-| base_pattern_specialist | days_since_failed_breakout_52w__rank_all | 0.024421 | 0.024421 | 3304 | 3304 | 661 | false |
-| base_pattern_specialist | days_since_52w_high__rank_sector | -0.024003 | 0.024003 | 219829 | 219829 | 43966 | false |
-| base_pattern_specialist | distance_from_52w_high__rank_sector | 0.020510 | 0.020510 | 219829 | 219829 | 43966 | false |
-| base_pattern_specialist | days_since_52w_high__rank_all | -0.018451 | 0.018451 | 219829 | 219829 | 43966 | false |
-| base_pattern_specialist | base_range_pct_20 | 0.018282 | 0.018282 | 220373 | 220373 | 44075 | false |
-| base_pattern_specialist | close_vs_20d_low | 0.014298 | 0.014298 | 220373 | 220373 | 44075 | false |
-| base_pattern_specialist | failed_breakout_52w__rank_sector | -0.013787 | 0.013787 | 5311 | 5311 | 1063 | false |
-| base_pattern_specialist | dollar_volume_ratio_20_60__rank_all | 0.012525 | 0.012525 | 220373 | 220373 | 44075 | false |
-| base_pattern_specialist | dollar_volume_ratio_20_60__rank_sector | 0.011926 | 0.011926 | 220373 | 220373 | 44075 | false |
-| base_pattern_specialist | days_since_52w_high | -0.011256 | 0.011256 | 219829 | 219829 | 43966 | false |
-| base_pattern_specialist | breakout_volume_ratio_50 | -0.010916 | 0.010916 | 220373 | 220373 | 44075 | false |
-| base_pattern_specialist | distance_from_52w_high__rank_all | 0.010505 | 0.010505 | 219829 | 219829 | 43966 | false |
-| base_pattern_specialist | dollar_volume_ratio_20_60 | -0.008882 | 0.008882 | 220373 | 220373 | 44075 | false |
-| base_pattern_specialist | base_volume_dryup_ratio_20 | 0.007259 | 0.007259 | 220373 | 220373 | 44075 | false |
-| base_pattern_specialist | base_volume_dryup_ratio_20__rank_all | 0.007075 | 0.007075 | 220373 | 220373 | 44075 | false |
-| base_pattern_specialist | volume_percentile_60 | -0.007025 | 0.007025 | 220373 | 220373 | 44075 | false |
-| base_pattern_specialist | base_volume_dryup_ratio_20__rank_sector | 0.006744 | 0.006744 | 220373 | 220373 | 44075 | false |
-| base_pattern_specialist | base_atr_contraction_20 | -0.005517 | 0.005517 | 220373 | 220373 | 44075 | false |
-| base_pattern_specialist | distance_above_20d_high | -0.004462 | 0.004462 | 220373 | 220373 | 44075 | false |
-| base_pattern_specialist | base_atr_contraction_20__rank_sector | 0.003645 | 0.003645 | 220373 | 220373 | 44075 | false |
-| base_pattern_specialist | distance_above_20d_high__rank_sector | 0.003602 | 0.003602 | 220373 | 220373 | 44075 | false |
-| base_pattern_specialist | volume_percentile_60__rank_all | 0.003564 | 0.003564 | 220373 | 220373 | 44075 | false |
-| base_pattern_specialist | volume_percentile_60__rank_sector | 0.002846 | 0.002846 | 220373 | 220373 | 44075 | false |
-| base_pattern_specialist | distance_above_20d_high__rank_all | -0.002628 | 0.002628 | 220373 | 220373 | 44075 | false |
-| base_pattern_specialist | distance_from_52w_high | 0.002575 | 0.002575 | 219829 | 219829 | 43966 | false |
-| base_pattern_specialist | breakout_volume_ratio_50__rank_sector | 0.001933 | 0.001933 | 220373 | 220373 | 44075 | false |
-| base_pattern_specialist | base_atr_contraction_20__rank_all | 0.001739 | 0.001739 | 220373 | 220373 | 44075 | false |
-| base_pattern_specialist | days_since_failed_breakout_20d | -0.001605 | 0.001605 | 4869 | 4869 | 974 | false |
-| base_pattern_specialist | failed_breakout_20d | 0.001365 | 0.001365 | 5311 | 5311 | 1063 | false |
-| base_pattern_specialist | breakout_volume_ratio_50__rank_all | 0.000796 | 0.000796 | 220373 | 220373 | 44075 | false |
-| overnight_session_specialist | overnight_ret_20d | -0.224482 | 0.224482 | 5311 | 5311 | 1063 | true |
-| overnight_session_specialist | overnight_ret_20d__rank_all | -0.219959 | 0.219959 | 5311 | 5311 | 1063 | true |
-| overnight_session_specialist | overnight_ret_20d__rank_sector | -0.168823 | 0.168823 | 5311 | 5311 | 1063 | true |
-| overnight_session_specialist | overnight_minus_rth_20d__rank_all | -0.126466 | 0.126466 | 5311 | 5311 | 1063 | true |
-| overnight_session_specialist | overnight_minus_rth_20d | -0.117171 | 0.117171 | 5311 | 5311 | 1063 | true |
-| overnight_session_specialist | overnight_minus_rth_20d__rank_sector | -0.071386 | 0.071386 | 5311 | 5311 | 1063 | true |
-| overnight_session_specialist | max_gap_down_pct_60__rank_all | 0.051075 | 0.051075 | 220373 | 220373 | 44075 | true |
-| overnight_session_specialist | avg_abs_gap_pct_20__rank_all | 0.050263 | 0.050263 | 220373 | 220373 | 44075 | true |
-| overnight_session_specialist | rth_ret_20d__rank_all | 0.048711 | 0.048711 | 5311 | 5311 | 1063 | true |
-| overnight_session_specialist | overnight_ret_5d__rank_all | 0.043859 | 0.043859 | 5311 | 5311 | 1063 | true |
-| overnight_session_specialist | max_gap_down_pct_60__rank_sector | 0.041733 | 0.041733 | 220373 | 220373 | 44075 | true |
-| overnight_session_specialist | rth_ret_20d | 0.037699 | 0.037699 | 5311 | 5311 | 1063 | true |
-| overnight_session_specialist | max_gap_down_pct_60 | 0.037073 | 0.037073 | 220373 | 220373 | 44075 | true |
-| overnight_session_specialist | overnight_ret_5d | 0.033950 | 0.033950 | 5311 | 5311 | 1063 | true |
-| overnight_session_specialist | avg_abs_gap_pct_20__rank_sector | 0.030038 | 0.030038 | 220373 | 220373 | 44075 | true |
-| overnight_session_specialist | overnight_minus_rth_5d | 0.028640 | 0.028640 | 5311 | 5311 | 1063 | false |
-| overnight_session_specialist | avg_abs_gap_pct_20 | 0.022398 | 0.022398 | 220373 | 220373 | 44075 | false |
-| overnight_session_specialist | rth_ret_5d__rank_all | 0.017724 | 0.017724 | 5311 | 5311 | 1063 | false |
-| overnight_session_specialist | rth_ret_5d | -0.016705 | 0.016705 | 5311 | 5311 | 1063 | false |
-| overnight_session_specialist | overnight_ret_5d__rank_sector | 0.013322 | 0.013322 | 5311 | 5311 | 1063 | false |
-| overnight_session_specialist | rth_ret_20d__rank_sector | 0.012340 | 0.012340 | 5311 | 5311 | 1063 | false |
-| overnight_session_specialist | overnight_minus_rth_5d__rank_sector | 0.007306 | 0.007306 | 5311 | 5311 | 1063 | false |
-| overnight_session_specialist | overnight_minus_rth_5d__rank_all | 0.002912 | 0.002912 | 5311 | 5311 | 1063 | false |
-| overnight_session_specialist | rth_ret_5d__rank_sector | -0.002692 | 0.002692 | 5311 | 5311 | 1063 | false |
+| base_pattern_specialist | failed_breakout_20d__rank_all | 0.116700 | 0.116700 | 5710 | 5710 | 1142 | true |
+| base_pattern_specialist | failed_breakout_52w__rank_all | -0.063212 | 0.063212 | 5710 | 5710 | 1142 | true |
+| base_pattern_specialist | failed_breakout_52w | -0.061301 | 0.061301 | 5710 | 5710 | 1142 | true |
+| base_pattern_specialist | failed_breakout_20d__rank_sector | -0.054884 | 0.054884 | 5710 | 5710 | 1142 | true |
+| base_pattern_specialist | days_since_failed_breakout_52w__rank_sector | 0.051885 | 0.051885 | 3546 | 3546 | 710 | true |
+| base_pattern_specialist | days_since_failed_breakout_20d__rank_all | 0.051674 | 0.051674 | 5228 | 5228 | 1046 | true |
+| base_pattern_specialist | days_since_failed_breakout_20d__rank_sector | 0.048615 | 0.048615 | 5228 | 5228 | 1046 | true |
+| base_pattern_specialist | base_range_pct_20__rank_all | 0.041554 | 0.041554 | 220772 | 220772 | 44155 | true |
+| base_pattern_specialist | close_vs_20d_low__rank_all | 0.039460 | 0.039460 | 220772 | 220772 | 44155 | true |
+| base_pattern_specialist | close_vs_20d_low__rank_sector | 0.031387 | 0.031387 | 220772 | 220772 | 44155 | true |
+| base_pattern_specialist | days_since_failed_breakout_52w__rank_all | 0.030314 | 0.030314 | 3546 | 3546 | 710 | true |
+| base_pattern_specialist | base_range_pct_20__rank_sector | 0.028642 | 0.028642 | 220772 | 220772 | 44155 | false |
+| base_pattern_specialist | days_since_failed_breakout_52w | -0.024929 | 0.024929 | 3546 | 3546 | 710 | false |
+| base_pattern_specialist | days_since_52w_high__rank_sector | -0.023833 | 0.023833 | 220228 | 220228 | 44046 | false |
+| base_pattern_specialist | distance_from_52w_high__rank_sector | 0.020482 | 0.020482 | 220228 | 220228 | 44046 | false |
+| base_pattern_specialist | days_since_52w_high__rank_all | -0.018370 | 0.018370 | 220228 | 220228 | 44046 | false |
+| base_pattern_specialist | base_range_pct_20 | 0.018119 | 0.018119 | 220772 | 220772 | 44155 | false |
+| base_pattern_specialist | failed_breakout_52w__rank_sector | -0.015572 | 0.015572 | 5710 | 5710 | 1142 | false |
+| base_pattern_specialist | close_vs_20d_low | 0.014410 | 0.014410 | 220772 | 220772 | 44155 | false |
+| base_pattern_specialist | dollar_volume_ratio_20_60__rank_all | 0.012471 | 0.012471 | 220772 | 220772 | 44155 | false |
+| base_pattern_specialist | dollar_volume_ratio_20_60__rank_sector | 0.011851 | 0.011851 | 220772 | 220772 | 44155 | false |
+| base_pattern_specialist | days_since_52w_high | -0.011170 | 0.011170 | 220228 | 220228 | 44046 | false |
+| base_pattern_specialist | breakout_volume_ratio_50 | -0.010784 | 0.010784 | 220772 | 220772 | 44155 | false |
+| base_pattern_specialist | distance_from_52w_high__rank_all | 0.010618 | 0.010618 | 220228 | 220228 | 44046 | false |
+| base_pattern_specialist | dollar_volume_ratio_20_60 | -0.008854 | 0.008854 | 220772 | 220772 | 44155 | false |
+| base_pattern_specialist | base_volume_dryup_ratio_20 | 0.007265 | 0.007265 | 220772 | 220772 | 44155 | false |
+| base_pattern_specialist | base_volume_dryup_ratio_20__rank_all | 0.007072 | 0.007072 | 220772 | 220772 | 44155 | false |
+| base_pattern_specialist | volume_percentile_60 | -0.006916 | 0.006916 | 220772 | 220772 | 44155 | false |
+| base_pattern_specialist | base_volume_dryup_ratio_20__rank_sector | 0.006880 | 0.006880 | 220772 | 220772 | 44155 | false |
+| base_pattern_specialist | base_atr_contraction_20 | -0.005649 | 0.005649 | 220772 | 220772 | 44155 | false |
+| base_pattern_specialist | failed_breakout_20d | 0.005592 | 0.005592 | 5710 | 5710 | 1142 | false |
+| base_pattern_specialist | distance_above_20d_high | -0.004133 | 0.004133 | 220772 | 220772 | 44155 | false |
+| base_pattern_specialist | distance_above_20d_high__rank_sector | 0.003821 | 0.003821 | 220772 | 220772 | 44155 | false |
+| base_pattern_specialist | volume_percentile_60__rank_all | 0.003665 | 0.003665 | 220772 | 220772 | 44155 | false |
+| base_pattern_specialist | base_atr_contraction_20__rank_sector | 0.003507 | 0.003507 | 220772 | 220772 | 44155 | false |
+| base_pattern_specialist | volume_percentile_60__rank_sector | 0.002930 | 0.002930 | 220772 | 220772 | 44155 | false |
+| base_pattern_specialist | distance_from_52w_high | 0.002702 | 0.002702 | 220228 | 220228 | 44046 | false |
+| base_pattern_specialist | distance_above_20d_high__rank_all | -0.002308 | 0.002308 | 220772 | 220772 | 44155 | false |
+| base_pattern_specialist | breakout_volume_ratio_50__rank_sector | 0.002020 | 0.002020 | 220772 | 220772 | 44155 | false |
+| base_pattern_specialist | base_atr_contraction_20__rank_all | 0.001588 | 0.001588 | 220772 | 220772 | 44155 | false |
+| base_pattern_specialist | days_since_failed_breakout_20d | -0.001153 | 0.001153 | 5228 | 5228 | 1046 | false |
+| base_pattern_specialist | breakout_volume_ratio_50__rank_all | 0.000921 | 0.000921 | 220772 | 220772 | 44155 | false |
+| overnight_session_specialist | overnight_ret_20d | -0.218771 | 0.218771 | 5710 | 5710 | 1142 | true |
+| overnight_session_specialist | overnight_ret_20d__rank_all | -0.209929 | 0.209929 | 5710 | 5710 | 1142 | true |
+| overnight_session_specialist | overnight_ret_20d__rank_sector | -0.161710 | 0.161710 | 5710 | 5710 | 1142 | true |
+| overnight_session_specialist | overnight_minus_rth_20d__rank_all | -0.125922 | 0.125922 | 5710 | 5710 | 1142 | true |
+| overnight_session_specialist | overnight_minus_rth_20d | -0.115884 | 0.115884 | 5710 | 5710 | 1142 | true |
+| overnight_session_specialist | overnight_minus_rth_20d__rank_sector | -0.074169 | 0.074169 | 5710 | 5710 | 1142 | true |
+| overnight_session_specialist | rth_ret_20d__rank_all | 0.053205 | 0.053205 | 5710 | 5710 | 1142 | true |
+| overnight_session_specialist | max_gap_down_pct_60__rank_all | 0.050826 | 0.050826 | 220772 | 220772 | 44155 | true |
+| overnight_session_specialist | avg_abs_gap_pct_20__rank_all | 0.050023 | 0.050023 | 220772 | 220772 | 44155 | true |
+| overnight_session_specialist | overnight_ret_5d__rank_all | 0.049890 | 0.049890 | 5710 | 5710 | 1142 | true |
+| overnight_session_specialist | max_gap_down_pct_60__rank_sector | 0.041583 | 0.041583 | 220772 | 220772 | 44155 | true |
+| overnight_session_specialist | overnight_ret_5d | 0.039578 | 0.039578 | 5710 | 5710 | 1142 | true |
+| overnight_session_specialist | rth_ret_20d | 0.039139 | 0.039139 | 5710 | 5710 | 1142 | true |
+| overnight_session_specialist | max_gap_down_pct_60 | 0.036844 | 0.036844 | 220772 | 220772 | 44155 | true |
+| overnight_session_specialist | overnight_minus_rth_5d | 0.033512 | 0.033512 | 5710 | 5710 | 1142 | true |
+| overnight_session_specialist | avg_abs_gap_pct_20__rank_sector | 0.029890 | 0.029890 | 220772 | 220772 | 44155 | false |
+| overnight_session_specialist | avg_abs_gap_pct_20 | 0.022223 | 0.022223 | 220772 | 220772 | 44155 | false |
+| overnight_session_specialist | rth_ret_5d__rank_all | 0.019222 | 0.019222 | 5710 | 5710 | 1142 | false |
+| overnight_session_specialist | rth_ret_20d__rank_sector | 0.018444 | 0.018444 | 5710 | 5710 | 1142 | false |
+| overnight_session_specialist | rth_ret_5d | -0.017984 | 0.017984 | 5710 | 5710 | 1142 | false |
+| overnight_session_specialist | overnight_ret_5d__rank_sector | 0.017230 | 0.017230 | 5710 | 5710 | 1142 | false |
+| overnight_session_specialist | overnight_minus_rth_5d__rank_sector | 0.005497 | 0.005497 | 5710 | 5710 | 1142 | false |
+| overnight_session_specialist | rth_ret_5d__rank_sector | 0.005251 | 0.005251 | 5710 | 5710 | 1142 | false |
+| overnight_session_specialist | overnight_minus_rth_5d__rank_all | 0.005239 | 0.005239 | 5710 | 5710 | 1142 | false |
 
 ## Prediction Spearman Correlation
 
 | model | signal_proxy | structure_factor_signal | overnight_session_specialist | base_pattern_specialist |
 |---|---:|---:|---:|---:|
-| signal_proxy | 1.000000 | -0.186821 | 0.099697 | 0.084131 |
-| structure_factor_signal | -0.186821 | 1.000000 | -0.128696 | -0.146046 |
-| overnight_session_specialist | 0.099697 | -0.128696 | 1.000000 | 0.492680 |
-| base_pattern_specialist | 0.084131 | -0.146046 | 0.492680 | 1.000000 |
+| signal_proxy | 1.000000 | -0.222651 | 0.112971 | 0.085679 |
+| structure_factor_signal | -0.222651 | 1.000000 | -0.148598 | -0.122287 |
+| overnight_session_specialist | 0.112971 | -0.148598 | 1.000000 | 0.479370 |
+| base_pattern_specialist | 0.085679 | -0.122287 | 0.479370 | 1.000000 |
 
 ## Decile Tables
 
 | model | decile | dates | avg_rows | mean_target | hit_rate |
 |---|---:|---:|---:|---:|---:|
-| signal_proxy | 0 | 274 | 2.872263 | 0.023639 | 0.486051 |
-| signal_proxy | 1 | 274 | 2.335766 | -0.003828 | 0.438323 |
-| signal_proxy | 2 | 274 | 2.255474 | -0.015044 | 0.410060 |
-| signal_proxy | 3 | 274 | 2.379562 | -0.009553 | 0.391236 |
-| signal_proxy | 4 | 274 | 2.386861 | -0.000258 | 0.486635 |
-| signal_proxy | 5 | 274 | 2.215328 | -0.005819 | 0.482106 |
-| signal_proxy | 6 | 274 | 2.273723 | 0.005215 | 0.460390 |
-| signal_proxy | 7 | 274 | 2.361314 | -0.000546 | 0.472874 |
-| signal_proxy | 8 | 274 | 2.229927 | -0.030987 | 0.398943 |
-| signal_proxy | 9 | 274 | 2.759124 | -0.015396 | 0.425746 |
-| structure_factor_signal | 0 | 274 | 2.872263 | -0.018543 | 0.422285 |
-| structure_factor_signal | 1 | 274 | 2.335766 | -0.016201 | 0.422256 |
-| structure_factor_signal | 2 | 274 | 2.255474 | -0.019711 | 0.392515 |
-| structure_factor_signal | 3 | 274 | 2.379562 | -0.000817 | 0.473191 |
-| structure_factor_signal | 4 | 274 | 2.386861 | -0.001207 | 0.480487 |
-| structure_factor_signal | 5 | 274 | 2.215328 | 0.006782 | 0.447649 |
-| structure_factor_signal | 6 | 274 | 2.273723 | -0.032683 | 0.389288 |
-| structure_factor_signal | 7 | 274 | 2.361314 | 0.001313 | 0.462250 |
-| structure_factor_signal | 8 | 274 | 2.229927 | 0.004900 | 0.462161 |
-| structure_factor_signal | 9 | 274 | 2.759124 | 0.033536 | 0.507663 |
-| overnight_session_specialist | 0 | 228 | 3.250000 | 0.022554 | 0.471866 |
-| overnight_session_specialist | 1 | 228 | 2.723684 | 0.012552 | 0.480154 |
-| overnight_session_specialist | 2 | 228 | 2.618421 | 0.000722 | 0.442814 |
-| overnight_session_specialist | 3 | 228 | 2.758772 | -0.009157 | 0.441414 |
-| overnight_session_specialist | 4 | 228 | 2.807018 | -0.004430 | 0.422725 |
-| overnight_session_specialist | 5 | 228 | 2.561404 | -0.020031 | 0.410643 |
-| overnight_session_specialist | 6 | 228 | 2.657895 | -0.027105 | 0.417994 |
-| overnight_session_specialist | 7 | 228 | 2.719298 | -0.021041 | 0.412357 |
-| overnight_session_specialist | 8 | 228 | 2.622807 | -0.005329 | 0.454212 |
-| overnight_session_specialist | 9 | 228 | 3.153509 | -0.016258 | 0.441885 |
-| base_pattern_specialist | 0 | 274 | 2.872263 | 0.018733 | 0.474210 |
-| base_pattern_specialist | 1 | 274 | 2.335766 | -0.000131 | 0.451962 |
-| base_pattern_specialist | 2 | 274 | 2.255474 | -0.007951 | 0.439758 |
-| base_pattern_specialist | 3 | 274 | 2.379562 | -0.006514 | 0.478230 |
-| base_pattern_specialist | 4 | 274 | 2.386861 | -0.023101 | 0.407913 |
-| base_pattern_specialist | 5 | 274 | 2.215328 | -0.013955 | 0.410769 |
-| base_pattern_specialist | 6 | 274 | 2.273723 | -0.007494 | 0.435825 |
-| base_pattern_specialist | 7 | 274 | 2.361314 | -0.005763 | 0.437827 |
-| base_pattern_specialist | 8 | 274 | 2.229927 | -0.005993 | 0.445839 |
-| base_pattern_specialist | 9 | 274 | 2.759124 | 0.001831 | 0.472962 |
+| signal_proxy | 0 | 229 | 3.283843 | 0.017191 | 0.471808 |
+| signal_proxy | 1 | 229 | 2.755459 | -0.010436 | 0.425301 |
+| signal_proxy | 2 | 229 | 2.650655 | -0.002878 | 0.420695 |
+| signal_proxy | 3 | 229 | 2.790393 | -0.009809 | 0.409680 |
+| signal_proxy | 4 | 229 | 2.838428 | -0.003869 | 0.470927 |
+| signal_proxy | 5 | 229 | 2.593886 | -0.016999 | 0.464286 |
+| signal_proxy | 6 | 229 | 2.689956 | -0.002941 | 0.458672 |
+| signal_proxy | 7 | 229 | 2.751092 | -0.008312 | 0.441245 |
+| signal_proxy | 8 | 229 | 2.655022 | -0.028382 | 0.386179 |
+| signal_proxy | 9 | 229 | 3.183406 | -0.015955 | 0.419137 |
+| structure_factor_signal | 0 | 229 | 3.283843 | -0.016938 | 0.422425 |
+| structure_factor_signal | 1 | 229 | 2.755459 | -0.024572 | 0.414221 |
+| structure_factor_signal | 2 | 229 | 2.650655 | -0.014537 | 0.409972 |
+| structure_factor_signal | 3 | 229 | 2.790393 | -0.007691 | 0.456901 |
+| structure_factor_signal | 4 | 229 | 2.838428 | -0.009454 | 0.457223 |
+| structure_factor_signal | 5 | 229 | 2.593886 | -0.018092 | 0.402645 |
+| structure_factor_signal | 6 | 229 | 2.689956 | -0.010827 | 0.419542 |
+| structure_factor_signal | 7 | 229 | 2.751092 | -0.007322 | 0.451258 |
+| structure_factor_signal | 8 | 229 | 2.655022 | 0.016456 | 0.470627 |
+| structure_factor_signal | 9 | 229 | 3.183406 | 0.023498 | 0.478164 |
+| overnight_session_specialist | 0 | 229 | 3.283843 | 0.022941 | 0.472187 |
+| overnight_session_specialist | 1 | 229 | 2.755459 | 0.012340 | 0.479367 |
+| overnight_session_specialist | 2 | 229 | 2.650655 | 0.000457 | 0.442190 |
+| overnight_session_specialist | 3 | 229 | 2.790393 | -0.009026 | 0.442106 |
+| overnight_session_specialist | 4 | 229 | 2.838428 | -0.004406 | 0.423062 |
+| overnight_session_specialist | 5 | 229 | 2.593886 | -0.020073 | 0.411470 |
+| overnight_session_specialist | 6 | 229 | 2.689956 | -0.026823 | 0.419662 |
+| overnight_session_specialist | 7 | 229 | 2.751092 | -0.020790 | 0.412740 |
+| overnight_session_specialist | 8 | 229 | 2.655022 | -0.005165 | 0.454849 |
+| overnight_session_specialist | 9 | 229 | 3.183406 | -0.016368 | 0.441702 |
+| base_pattern_specialist | 0 | 229 | 3.283843 | 0.017117 | 0.460614 |
+| base_pattern_specialist | 1 | 229 | 2.755459 | -0.003837 | 0.451621 |
+| base_pattern_specialist | 2 | 229 | 2.650655 | -0.008448 | 0.426332 |
+| base_pattern_specialist | 3 | 229 | 2.790393 | -0.013805 | 0.433336 |
+| base_pattern_specialist | 4 | 229 | 2.838428 | -0.010177 | 0.452354 |
+| base_pattern_specialist | 5 | 229 | 2.593886 | -0.010300 | 0.411891 |
+| base_pattern_specialist | 6 | 229 | 2.689956 | -0.011711 | 0.435419 |
+| base_pattern_specialist | 7 | 229 | 2.751092 | -0.018206 | 0.410925 |
+| base_pattern_specialist | 8 | 229 | 2.655022 | -0.016527 | 0.424825 |
+| base_pattern_specialist | 9 | 229 | 3.183406 | -0.004958 | 0.449963 |
