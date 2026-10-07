@@ -21,6 +21,7 @@ from src.research.shortlist_model_service import B1_OVERNIGHT_FEATURES, Shortlis
 from src.research.shortlist_universe import filter_eligible_universe
 from src.settings import AppPaths
 from src.utils.shortlist_runtime import _passes_runtime_promotion_gate, load_live_shortlist_model_context
+from src.utils.shortlist_selection_gate import ShortlistSelectionGate, rolling_score_quantile_thresholds
 from src.utils.performance_metrics import annualized_sharpe
 
 
@@ -333,6 +334,125 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertEqual(windows["ridge_model_last_fold"]["dates"], 20)
         self.assertEqual(windows["ridge_model_trailing_3folds"]["dates"], 60)
         self.assertEqual(windows["ridge_model_full_oos"]["dates"], 65)
+
+    def test_selection_gate_quantile_threshold_adapts_to_recent_scores(self) -> None:
+        rows = []
+        for day, base_score in enumerate((0.10, 0.20, 0.30, 1.10)):
+            snapshot_date = pd.Timestamp("2026-01-02") + pd.Timedelta(days=day)
+            rows.extend(
+                [
+                    {"snapshot_date": snapshot_date, "ticker": f"A{day}", "predicted_alpha": base_score},
+                    {"snapshot_date": snapshot_date, "ticker": f"B{day}", "predicted_alpha": base_score + 0.10},
+                ]
+            )
+        frame = pd.DataFrame(rows)
+
+        thresholds = rolling_score_quantile_thresholds(
+            frame,
+            score_column="predicted_alpha",
+            quantile=0.50,
+            lookback_sessions=2,
+        )
+
+        by_date = frame.assign(threshold=thresholds).groupby("snapshot_date")["threshold"].first()
+        self.assertTrue(pd.isna(by_date.iloc[0]))
+        self.assertAlmostEqual(float(by_date.iloc[2]), 0.20)
+        self.assertAlmostEqual(float(by_date.iloc[3]), 0.30)
+
+    def test_gated_acceptance_windows_exclude_empty_dates_from_floor_denominators(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        rows = []
+        for snapshot_date, scores in (
+            (pd.Timestamp("2026-01-02"), (0.90, 0.80, 0.10)),
+            (pd.Timestamp("2026-01-05"), (0.20, 0.10, 0.00)),
+        ):
+            for ticker, score, target in zip(("AAA", "BBB", "CCC"), scores, (0.04, 0.03, -0.02), strict=True):
+                rows.append(
+                    {
+                        "snapshot_date": snapshot_date,
+                        "ticker": ticker,
+                        "sector": "Energy",
+                        "predicted_alpha": score,
+                        "alpha_vs_sector_20d": target,
+                    }
+                )
+        gate = ShortlistSelectionGate(enabled=True, quantile=0.0, lookback_sessions=1)
+
+        summary = service._evaluate_predictions(
+            predictions=pd.DataFrame(rows),
+            top_n=2,
+            target_column="alpha_vs_sector_20d",
+            model_name="ridge_model",
+            selection_gate=gate,
+        )
+
+        self.assertEqual(summary["total_dates"], 2)
+        self.assertEqual(summary["active_dates"], 1)
+        self.assertEqual(summary["empty_gated_dates"], 1)
+        self.assertEqual(summary["dates"], 1)
+        self.assertEqual(summary["avg_pick_count"], 2.0)
+
+    def test_disabled_selection_gate_preserves_acceptance_summary(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        rows = []
+        for date_index, snapshot_date in enumerate(pd.bdate_range("2026-01-02", periods=4)):
+            for ticker, score in (("AAA", 0.30), ("BBB", 0.20), ("CCC", 0.10)):
+                rows.append(
+                    {
+                        "snapshot_date": snapshot_date,
+                        "ticker": ticker,
+                        "sector": "Energy",
+                        "predicted_alpha": score,
+                        "alpha_vs_sector_20d": 0.01 * (date_index + 1),
+                    }
+                )
+        frame = pd.DataFrame(rows)
+
+        baseline = service._evaluate_predictions(
+            predictions=frame,
+            top_n=2,
+            target_column="alpha_vs_sector_20d",
+            model_name="ridge_model",
+        )
+        disabled = service._evaluate_predictions(
+            predictions=frame,
+            top_n=2,
+            target_column="alpha_vs_sector_20d",
+            model_name="ridge_model",
+            selection_gate=ShortlistSelectionGate(enabled=False),
+        )
+
+        self.assertNotIn("active_dates", baseline)
+        self.assertNotIn("active_dates", disabled)
+        for key in ("dates", "avg_pick_count", "mean_target", "hit_rate", "beat_universe_rate", "spearman"):
+            if pd.isna(baseline[key]) and pd.isna(disabled[key]):
+                continue
+            self.assertEqual(baseline[key], disabled[key])
+
+    def test_promotion_gate_report_logs_enabled_selection_gate_denominator(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        gate = {
+            "enabled": True,
+            "min_recent_1fold_hit_rate_excess": 0.02,
+            "min_recent_1fold_beat_universe_rate": 0.50,
+            "min_recent_1fold_mean_target_excess": 0.0,
+            "min_recent_3fold_hit_rate_excess": 0.02,
+            "min_recent_3fold_beat_universe_rate": 0.50,
+            "min_recent_3fold_mean_target_excess": 0.0,
+            "min_recent_1fold_spearman": 0.0,
+            "min_recent_3fold_spearman": 0.0,
+            "min_full_oos_spearman": 0.0,
+        }
+
+        lines = service._render_promotion_gate(
+            promotion_gate=gate,
+            selection_gate=ShortlistSelectionGate(enabled=True, quantile=0.95, lookback_sessions=126),
+            summaries=pd.DataFrame(),
+        )
+
+        text = "\n".join(lines)
+        self.assertIn("selection_gate: score_quantile", text)
+        self.assertIn("non-empty gated pick dates", text)
 
     def test_regime_matching_enabled_false_disables_matching(self) -> None:
         service = ShortlistModelService(db_manager=object())

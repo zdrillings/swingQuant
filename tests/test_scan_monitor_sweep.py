@@ -632,6 +632,28 @@ class ScanServiceTests(unittest.TestCase):
         self.assertEqual(policy.shortlist_model.production_xgboost_config, "balanced_depth4")
         self.assertEqual(policy.shortlist_model.production_feature_profile, "no_gap_risk")
         self.assertEqual(policy.shortlist_model.min_opportunity_score, 0.31)
+        self.assertFalse(policy.shortlist_model.selection_gate.enabled)
+
+    def test_scan_policy_parses_shortlist_selection_gate(self) -> None:
+        policy = ScanPolicy.from_config(
+            {
+                "scan_policy": {
+                    "shortlist_model": {
+                        "selection_gate": {
+                            "enabled": True,
+                            "method": "score_quantile",
+                            "quantile": 0.90,
+                            "lookback_sessions": 42,
+                        }
+                    }
+                }
+            }
+        )
+
+        self.assertTrue(policy.shortlist_model.selection_gate.active)
+        self.assertEqual(policy.shortlist_model.selection_gate.method, "score_quantile")
+        self.assertAlmostEqual(policy.shortlist_model.selection_gate.quantile, 0.90)
+        self.assertEqual(policy.shortlist_model.selection_gate.lookback_sessions, 42)
 
     def test_scan_policy_supports_candidate_quality_throttle(self) -> None:
         policy = ScanPolicy.from_config(

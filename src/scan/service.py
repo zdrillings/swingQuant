@@ -19,6 +19,7 @@ from src.utils.db_manager import DatabaseManager
 from src.utils.emailer import send_html_email
 from src.utils.logging import get_logger
 from src.utils.shortlist_runtime import load_live_shortlist_model_context
+from src.utils.shortlist_selection_gate import ShortlistSelectionGate
 from src.utils.signal_engine import build_analysis_frame, filter_signal_candidates, latest_snapshot, overlay_price_history
 from src.utils.sizing import (
     HeuristicSizingPolicy,
@@ -75,6 +76,7 @@ class ShortlistModelPolicy:
     production_xgboost_config: str
     production_feature_profile: str
     fallback_strategy_slot: str | None
+    selection_gate: ShortlistSelectionGate
 
 
 @dataclass(frozen=True)
@@ -265,6 +267,7 @@ class ScanPolicy:
                     if shortlist_model.get("fallback_strategy_slot") not in (None, "")
                     else None
                 ),
+                selection_gate=ShortlistSelectionGate.from_config(shortlist_model.get("selection_gate", {})),
             ),
             sizing=HeuristicSizingPolicy(
                 vol_target_daily_pct=float(sizing.get("vol_target_daily_pct", 0.025)),

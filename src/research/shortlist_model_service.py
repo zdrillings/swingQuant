@@ -29,6 +29,7 @@ from src.settings import load_feature_config
 from src.utils.db_manager import DatabaseManager
 from src.utils.logging import get_logger
 from src.utils.performance_metrics import annualized_sharpe, newey_west_t_stat, years_required_for_tstat
+from src.utils.shortlist_selection_gate import ShortlistSelectionGate, rolling_score_quantile_thresholds
 
 PROMOTION_BASKET_SIZE = 2
 RIDGE_MODEL_ALIASES = {"ridge_model", "ridge_adaptive"}
@@ -448,6 +449,7 @@ class ShortlistModelService:
             )
         recent_summaries = pd.DataFrame(recent_summary_rows)
         promotion_gate = self._load_promotion_gate()
+        selection_gate = self._load_selection_gate()
         required_recent_windows = self._promotion_recent_windows(horizon_days=int(horizon_days))
         required_fold_windows = self._promotion_fold_windows(horizon_days=int(horizon_days))
         acceptance_summaries = pd.DataFrame(
@@ -463,6 +465,7 @@ class ShortlistModelService:
                     fold_windows=required_fold_windows,
                     fold_size=int(test_window_dates),
                     include_full_oos=True,
+                    selection_gate=selection_gate,
                 ).to_dict(orient="records")
             ]
         )
@@ -520,6 +523,7 @@ class ShortlistModelService:
                 recent_summaries=recent_summaries,
                 recent_dates=min(int(recent_dates), int(combined_predictions["snapshot_date"].nunique())),
                 promotion_gate=promotion_gate,
+                selection_gate=selection_gate,
                 required_recent_windows=required_recent_windows,
                 required_fold_windows=required_fold_windows,
                 acceptance_summaries=acceptance_summaries,
@@ -641,6 +645,7 @@ class ShortlistModelService:
             recent_summaries=recent_summaries,
             recent_dates=min(int(recent_dates), int(combined_predictions["snapshot_date"].nunique())),
             promotion_gate=promotion_gate,
+            selection_gate=selection_gate,
             required_recent_windows=required_recent_windows,
             required_fold_windows=required_fold_windows,
             acceptance_summaries=acceptance_summaries,
@@ -659,6 +664,7 @@ class ShortlistModelService:
                     fold_windows=required_fold_windows,
                     fold_size=int(test_window_dates),
                     include_full_oos=True,
+                    selection_gate=selection_gate,
                 ),
                 heading="## Champion Rolling Acceptance Windows",
             )
@@ -3284,14 +3290,39 @@ class ShortlistModelService:
         top_n: int,
         target_column: str,
         model_name: str,
+        selection_gate: ShortlistSelectionGate | None = None,
     ) -> dict[str, object]:
         if predictions.empty:
             return self._empty_summary(model_name)
         cost_fraction = self._round_trip_cost_fraction()
+        gate = selection_gate or ShortlistSelectionGate()
+        working_predictions = predictions.copy()
+        if gate.active:
+            working_predictions["_selection_gate_threshold"] = rolling_score_quantile_thresholds(
+                working_predictions,
+                score_column="predicted_alpha",
+                quantile=gate.quantile,
+                lookback_sessions=gate.lookback_sessions,
+            )
         rows: list[dict[str, float | int | pd.Timestamp]] = []
-        for snapshot_date, day_frame in predictions.groupby("snapshot_date", sort=True):
+        total_dates = int(working_predictions["snapshot_date"].nunique()) if "snapshot_date" in working_predictions.columns else 0
+        empty_gated_dates = 0
+        for snapshot_date, day_frame in working_predictions.groupby("snapshot_date", sort=True):
             ordered = day_frame.sort_values(["predicted_alpha", "ticker"], ascending=[False, True]).copy()
-            picks = ordered.head(int(top_n)).copy()
+            if gate.active:
+                threshold = pd.to_numeric(ordered["_selection_gate_threshold"], errors="coerce").dropna()
+                if threshold.empty:
+                    empty_gated_dates += 1
+                    continue
+                ordered_for_picks = ordered.loc[
+                    pd.to_numeric(ordered["predicted_alpha"], errors="coerce") >= float(threshold.iloc[0])
+                ].copy()
+            else:
+                ordered_for_picks = ordered
+            if ordered_for_picks.empty:
+                empty_gated_dates += 1
+                continue
+            picks = ordered_for_picks.head(int(top_n)).copy()
             target = pd.to_numeric(picks[target_column], errors="coerce").clip(lower=-1.0, upper=1.0).dropna()
             universe_target = pd.to_numeric(day_frame[target_column], errors="coerce").clip(lower=-1.0, upper=1.0).dropna()
             if target.empty or universe_target.empty:
@@ -3319,7 +3350,12 @@ class ShortlistModelService:
                 }
             )
         if not rows:
-            return self._empty_summary(model_name)
+            summary = self._empty_summary(model_name)
+            if gate.active:
+                summary["total_dates"] = total_dates
+                summary["active_dates"] = 0
+                summary["empty_gated_dates"] = empty_gated_dates
+            return summary
         frame = pd.DataFrame(rows)
         net_targets = pd.to_numeric(frame["mean_target"], errors="coerce").dropna()
         gross_targets = pd.to_numeric(frame["gross_mean_target"], errors="coerce").dropna()
@@ -3331,7 +3367,7 @@ class ShortlistModelService:
         )
         sharpe = annualized_sharpe(net_targets, periods_per_year=max(252.0 / float(horizon), 1.0))
         nw_t = newey_west_t_stat(net_targets, lag=horizon)
-        return {
+        summary = {
             "model": model_name,
             "dates": len(frame.index),
             "avg_pick_count": float(frame["pick_count"].mean()),
@@ -3355,6 +3391,15 @@ class ShortlistModelService:
             "years_for_t_1_96": years_required_for_tstat(sharpe),
             "round_trip_cost": cost_fraction,
         }
+        if gate.active:
+            summary.update(
+                {
+                    "total_dates": total_dates,
+                    "active_dates": len(frame.index),
+                    "empty_gated_dates": empty_gated_dates,
+                }
+            )
+        return summary
 
     def _top_ticker_concentration(
         self,
@@ -3402,6 +3447,7 @@ class ShortlistModelService:
         fold_windows: tuple[int, ...] = (),
         fold_size: int | None = None,
         include_full_oos: bool = False,
+        selection_gate: ShortlistSelectionGate | None = None,
     ) -> pd.DataFrame:
         rows: list[dict[str, object]] = []
         unique_dates = sorted(predictions["snapshot_date"].drop_duplicates().tolist())
@@ -3413,6 +3459,7 @@ class ShortlistModelService:
                 top_n=top_n,
                 target_column=target_column,
                 model_name=f"{model_name}_{int(window)}d",
+                selection_gate=selection_gate,
             )
             rows.append(summary)
         for fold_count in fold_windows:
@@ -3427,6 +3474,7 @@ class ShortlistModelService:
                     model_name=model_name,
                     fold_count=int(fold_count),
                 ),
+                selection_gate=selection_gate,
             )
             rows.append(summary)
         if include_full_oos:
@@ -3436,6 +3484,7 @@ class ShortlistModelService:
                     top_n=top_n,
                     target_column=target_column,
                     model_name=f"{model_name}_full_oos",
+                    selection_gate=selection_gate,
                 )
             )
         return pd.DataFrame(rows)
@@ -4006,6 +4055,17 @@ class ShortlistModelService:
             "max_recent_3fold_top_ticker_date_rate": float(payload.get("max_recent_3fold_top_ticker_date_rate", 0.40)),
         }
 
+    def _load_selection_gate(self) -> ShortlistSelectionGate:
+        config = load_feature_config()
+        payload = (
+            config.get("scan_policy", {})
+            .get("shortlist_model", {})
+            .get("selection_gate", {})
+            if isinstance(config, dict)
+            else {}
+        )
+        return ShortlistSelectionGate.from_config(payload)
+
     def _promotion_recent_windows(self, *, horizon_days: int) -> tuple[int, ...]:
         return ()
 
@@ -4180,6 +4240,7 @@ class ShortlistModelService:
         self,
         *,
         promotion_gate: dict[str, float | int],
+        selection_gate: ShortlistSelectionGate | None = None,
         summaries: pd.DataFrame,
         required_recent_windows: tuple[int, ...] = (),
         required_fold_windows: tuple[int, ...] = (1, 3),
@@ -4212,9 +4273,19 @@ class ShortlistModelService:
                 f"- max_recent_3fold_top_ticker_date_rate: {float(promotion_gate.get('max_recent_3fold_top_ticker_date_rate', 0.40)):.2f}",
                 "- gate_metric: per-date cross-sectional Spearman over the full OOS slice",
                 "- target_winsorization: acceptance-window basket targets clipped to [-1.0, 1.0] before mean, hit, and beat calculations",
-                "",
             ]
         )
+        gate = selection_gate or ShortlistSelectionGate()
+        if gate.active:
+            lines.extend(
+                [
+                    f"- selection_gate: {gate.method}",
+                    f"- selection_gate_quantile: {gate.quantile:.4f}",
+                    f"- selection_gate_lookback_sessions: {gate.lookback_sessions}",
+                    "- selection_gate_floor_denominator: hit/beat floors use non-empty gated pick dates only; dates with no score above the rolling threshold stay empty.",
+                ]
+            )
+            lines.append("")
         lines.extend(self._render_summary_table(summaries, heading="### Recent Acceptance Windows"))
         return lines
 
@@ -4426,6 +4497,7 @@ class ShortlistModelService:
         recent_summaries: pd.DataFrame,
         recent_dates: int,
         promotion_gate: dict[str, float | int],
+        selection_gate: ShortlistSelectionGate | None = None,
         required_recent_windows: tuple[int, ...] = (),
         required_fold_windows: tuple[int, ...] = (1, 3),
         acceptance_summaries: pd.DataFrame,
@@ -4528,6 +4600,7 @@ class ShortlistModelService:
         lines.extend(
             self._render_promotion_gate(
                 promotion_gate=promotion_gate,
+                selection_gate=selection_gate,
                 summaries=acceptance_summaries,
                 required_recent_windows=required_recent_windows,
                 required_fold_windows=required_fold_windows,

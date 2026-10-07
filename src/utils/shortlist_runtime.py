@@ -8,6 +8,11 @@ import pandas as pd
 
 from src.research.shortlist_model_service import ShortlistModelService
 from src.settings import load_feature_config
+from src.utils.shortlist_selection_gate import (
+    ShortlistSelectionGate,
+    apply_score_quantile_gate,
+    latest_score_quantile_threshold,
+)
 
 CONFIDENCE_BASKET_SIZE = 2
 
@@ -36,6 +41,8 @@ class LiveShortlistModelContext:
     recent_3fold_mean_target: float | None = None
     recent_3fold_hit_rate: float | None = None
     recent_3fold_spearman: float | None = None
+    selection_gate: ShortlistSelectionGate = ShortlistSelectionGate()
+    selection_gate_threshold: float | None = None
 
 
 def load_live_shortlist_model_context(
@@ -146,6 +153,8 @@ def load_live_shortlist_model_context(
         1: _empty_recent_metrics(),
         3: _empty_recent_metrics(),
     }
+    selection_gate = _runtime_selection_gate()
+    selection_gate_threshold = None
     try:
         oos_predictions = db_manager.load_shortlist_model_predictions(
             generated_at=generated_at,
@@ -157,6 +166,20 @@ def load_live_shortlist_model_context(
         )
         if not oos_predictions.empty:
             oos_predictions["snapshot_date"] = pd.to_datetime(oos_predictions["snapshot_date"]).dt.normalize()
+            oos_predictions["predicted_alpha"] = pd.to_numeric(oos_predictions["predicted_alpha"], errors="coerce")
+            if selection_gate.active:
+                selection_gate_threshold = latest_score_quantile_threshold(
+                    oos_predictions,
+                    score_column="predicted_alpha",
+                    quantile=selection_gate.quantile,
+                    lookback_sessions=selection_gate.lookback_sessions,
+                )
+                live_predictions = apply_score_quantile_gate(
+                    live_predictions,
+                    gate=selection_gate,
+                    threshold=selection_gate_threshold,
+                    score_column="predicted_alpha",
+                )
             if "details_json" in oos_predictions.columns:
                 oos_details = oos_predictions["details_json"].apply(_parse_prediction_details)
                 oos_predictions["calibrated_p_beat_sector"] = pd.to_numeric(
@@ -204,6 +227,8 @@ def load_live_shortlist_model_context(
         recent_3fold_mean_target=recent_metrics[3]["mean_target"],
         recent_3fold_hit_rate=recent_metrics[3]["hit_rate"],
         recent_3fold_spearman=recent_metrics[3]["spearman"],
+        selection_gate=selection_gate,
+        selection_gate_threshold=selection_gate_threshold,
     )
 
 
@@ -314,6 +339,18 @@ def _runtime_promotion_gate() -> dict[str, float | bool]:
         "min_recent_1fold_spearman": float(payload.get("min_recent_1fold_spearman", 0.0)),
         "min_recent_3fold_spearman": float(payload.get("min_recent_3fold_spearman", 0.0)),
     }
+
+
+def _runtime_selection_gate() -> ShortlistSelectionGate:
+    config = load_feature_config()
+    payload = (
+        config.get("scan_policy", {})
+        .get("shortlist_model", {})
+        .get("selection_gate", {})
+        if isinstance(config, dict)
+        else {}
+    )
+    return ShortlistSelectionGate.from_config(payload)
 
 
 def _runtime_recent_windows(*, horizon_days: int) -> tuple[int, ...]:
