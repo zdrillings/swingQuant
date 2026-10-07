@@ -17,7 +17,7 @@ from scripts.check_shortlist_oos_reproducibility import (
 from scripts.q3_label_overlap import summarize_label_overlap
 from src.cli import build_parser
 from src.research.shortlist_bakeoff_service import MODEL_FEATURE_COLUMNS
-from src.research.shortlist_model_service import ShortlistModelService
+from src.research.shortlist_model_service import B1_OVERNIGHT_FEATURES, ShortlistModelService
 from src.research.shortlist_universe import filter_eligible_universe
 from src.settings import AppPaths
 from src.utils.shortlist_runtime import _passes_runtime_promotion_gate, load_live_shortlist_model_context
@@ -72,6 +72,44 @@ class ShortlistModelServiceTests(unittest.TestCase):
             ),
             252,
         )
+
+    def test_ridge_adaptive_explicitly_carries_b1_overnight_family(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+
+        columns = service._feature_columns_for_candidate(
+            model_name="ridge_adaptive",
+            default_feature_columns=["roc_63"],
+        )
+
+        self.assertIn("roc_63", columns)
+        for feature in B1_OVERNIGHT_FEATURES:
+            self.assertIn(feature, columns)
+            self.assertIn(f"{feature}__rank_all", columns)
+            self.assertIn(f"{feature}__rank_sector", columns)
+
+    def test_ridge_adaptive_uses_b1_specific_observation_counts(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        frame = pd.DataFrame(
+            {
+                "overnight_ret_5d": [0.01, None, 0.03],
+                "rth_ret_5d": [None, 0.02, None],
+                "roc_63": [0.10, 0.20, 0.30],
+            }
+        )
+
+        ridge_counts = service._candidate_feature_observation_base_counts(
+            model_name="ridge_adaptive",
+            frame=frame,
+        )
+        generic_counts = service._candidate_feature_observation_base_counts(
+            model_name="ridge_model",
+            frame=frame,
+        )
+
+        self.assertEqual(ridge_counts["overnight_ret_5d"], 2)
+        self.assertEqual(ridge_counts["rth_ret_5d"], 1)
+        self.assertNotIn("roc_63", ridge_counts)
+        self.assertEqual(generic_counts, {})
 
     def test_ridge_adaptive_uses_ridge_estimator_but_stays_out_of_legacy_ensemble(self) -> None:
         service = ShortlistModelService(db_manager=object())

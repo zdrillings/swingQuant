@@ -33,6 +33,15 @@ from src.utils.performance_metrics import annualized_sharpe, newey_west_t_stat, 
 PROMOTION_BASKET_SIZE = 2
 RIDGE_MODEL_ALIASES = {"ridge_model", "ridge_adaptive"}
 RIDGE_ADAPTIVE_MAX_TRAIN_DATES = 126
+B1_OVERNIGHT_FEATURES = (
+    "overnight_ret_5d",
+    "rth_ret_5d",
+    "overnight_minus_rth_5d",
+    "overnight_ret_20d",
+    "rth_ret_20d",
+    "overnight_minus_rth_20d",
+    "max_gap_down_pct_60",
+)
 REGIME_MATCHING_MODES = {"off", "train_only", "train_and_flip"}
 REGIME_TRANSITION_PURGE_MODES = {"off", "majority", "strict"}
 SHORTLIST_HEURISTIC_MODELS = {
@@ -70,6 +79,10 @@ E1_NICHE_MODEL_FEATURES = {
     ),
 }
 E1_NICHE_MODELS = frozenset(E1_NICHE_MODEL_FEATURES)
+FAMILY_OBSERVATION_FEATURES = {
+    "ridge_adaptive": B1_OVERNIGHT_FEATURES,
+    **E1_NICHE_MODEL_FEATURES,
+}
 SHORTLIST_MODEL_EXCLUDED_BASE_FEATURES = {
     "analyst_snapshot_age_days",
     "analyst_revision_snapshot_age_days",
@@ -1116,6 +1129,10 @@ class ShortlistModelService:
                             anchor_index=start_index,
                             label_horizon_dates=label_embargo,
                         )
+                family_observation_counts = self._candidate_feature_observation_base_counts(
+                    model_name=model_name,
+                    frame=feature_screen_frame,
+                )
                 ic_survivors = self._feature_ic_survivors_from_frame(
                     feature_screen_frame,
                     target_column=evaluation_target_column,
@@ -1130,14 +1147,7 @@ class ShortlistModelService:
                         if model_name in E1_NICHE_MODELS
                         else None
                     ),
-                    feature_observation_base_counts=(
-                        self._feature_observation_base_counts(
-                            feature_screen_frame,
-                            feature_columns=feature_columns_override,
-                        )
-                        if model_name in E1_NICHE_MODELS
-                        else None
-                    ),
+                    feature_observation_base_counts=family_observation_counts or None,
                 )
                 self._record_regime_feature_survivors(
                     regime_feature_stats,
@@ -1287,6 +1297,10 @@ class ShortlistModelService:
                 scoped = matured[matured["snapshot_date"].isin(set(feature_screen_dates))].copy()
                 if not scoped.empty:
                     feature_screen_frame = scoped
+            family_observation_counts = self._candidate_feature_observation_base_counts(
+                model_name=model_name,
+                frame=feature_screen_frame,
+            )
             ic_survivors = self._feature_ic_survivors_from_frame(
                 feature_screen_frame,
                 target_column=feature_ic_target_column,
@@ -1301,14 +1315,7 @@ class ShortlistModelService:
                     if model_name in E1_NICHE_MODELS
                     else None
                 ),
-                feature_observation_base_counts=(
-                    self._feature_observation_base_counts(
-                        feature_screen_frame,
-                        feature_columns=feature_columns_override,
-                    )
-                    if model_name in E1_NICHE_MODELS
-                    else None
-                ),
+                feature_observation_base_counts=family_observation_counts or None,
             )
             self._record_regime_feature_survivors(
                 regime_feature_stats,
@@ -2490,11 +2497,17 @@ class ShortlistModelService:
         model_name: str,
         default_feature_columns: list[str],
     ) -> list[str]:
-        if model_name not in E1_NICHE_MODEL_FEATURES:
-            return list(default_feature_columns)
-        return self._filter_model_feature_columns(
-            expand_model_feature_columns(E1_NICHE_MODEL_FEATURES[model_name])
-        )
+        if model_name in E1_NICHE_MODEL_FEATURES:
+            return self._filter_model_feature_columns(
+                expand_model_feature_columns(E1_NICHE_MODEL_FEATURES[model_name])
+            )
+        if model_name == "ridge_adaptive":
+            ordered = list(default_feature_columns)
+            for feature in expand_model_feature_columns(B1_OVERNIGHT_FEATURES):
+                if feature not in ordered:
+                    ordered.append(feature)
+            return self._filter_model_feature_columns(ordered)
+        return list(default_feature_columns)
 
     def _candidate_model_roster(self) -> tuple[str, ...]:
         return (
@@ -2553,6 +2566,20 @@ class ShortlistModelService:
             values = pd.to_numeric(frame[base_feature], errors="coerce")
             counts[base_feature] = int(values.notna().sum())
         return counts
+
+    def _candidate_feature_observation_base_counts(
+        self,
+        *,
+        model_name: str,
+        frame: pd.DataFrame,
+    ) -> dict[str, int]:
+        family_features = FAMILY_OBSERVATION_FEATURES.get(str(model_name))
+        if not family_features:
+            return {}
+        return self._feature_observation_base_counts(
+            frame,
+            feature_columns=expand_model_feature_columns(family_features),
+        )
 
     def _prepare_model_matrices(
         self,
