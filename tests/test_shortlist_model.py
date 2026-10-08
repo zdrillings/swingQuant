@@ -359,6 +359,32 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertAlmostEqual(float(by_date.iloc[2]), 0.20)
         self.assertAlmostEqual(float(by_date.iloc[3]), 0.30)
 
+    def test_selection_gate_quantile_passes_about_requested_tail(self) -> None:
+        rows = []
+        for day in range(130):
+            snapshot_date = pd.Timestamp("2026-01-01") + pd.Timedelta(days=day)
+            for score in range(100):
+                rows.append(
+                    {
+                        "snapshot_date": snapshot_date,
+                        "ticker": f"T{score:03d}",
+                        "predicted_alpha": float(score),
+                    }
+                )
+        frame = pd.DataFrame(rows)
+
+        thresholds = rolling_score_quantile_thresholds(
+            frame,
+            score_column="predicted_alpha",
+            quantile=0.95,
+            lookback_sessions=126,
+        )
+        tested = frame.assign(threshold=thresholds).dropna(subset=["threshold"])
+        pass_rate = (tested["predicted_alpha"] >= tested["threshold"]).mean()
+
+        self.assertGreaterEqual(pass_rate, 0.04)
+        self.assertLessEqual(pass_rate, 0.06)
+
     def test_gated_acceptance_windows_exclude_empty_dates_from_floor_denominators(self) -> None:
         service = ShortlistModelService(db_manager=object())
         rows = []

@@ -634,10 +634,10 @@ class ScanServiceTests(unittest.TestCase):
         self.assertEqual(policy.shortlist_model.min_opportunity_score, 0.31)
         self.assertFalse(policy.shortlist_model.selection_gate.enabled)
 
-    def test_committed_config_enables_shortlist_selection_gate(self) -> None:
+    def test_committed_config_disables_shortlist_selection_gate(self) -> None:
         policy = ScanPolicy.from_config(load_feature_config())
 
-        self.assertTrue(policy.shortlist_model.selection_gate.active)
+        self.assertFalse(policy.shortlist_model.selection_gate.active)
         self.assertEqual(policy.shortlist_model.selection_gate.method, "score_quantile")
         self.assertAlmostEqual(policy.shortlist_model.selection_gate.quantile, 0.95)
         self.assertEqual(policy.shortlist_model.selection_gate.lookback_sessions, 126)

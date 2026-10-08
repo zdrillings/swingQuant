@@ -6,6 +6,7 @@ import json
 import numpy as np
 import pandas as pd
 
+from src.research.sector_neutral_selection import deoverlap_oos_predictions
 from src.research.shortlist_model_service import ShortlistModelService
 from src.settings import load_feature_config
 from src.utils.shortlist_selection_gate import (
@@ -168,8 +169,14 @@ def load_live_shortlist_model_context(
             oos_predictions["snapshot_date"] = pd.to_datetime(oos_predictions["snapshot_date"]).dt.normalize()
             oos_predictions["predicted_alpha"] = pd.to_numeric(oos_predictions["predicted_alpha"], errors="coerce")
             if selection_gate.active:
-                selection_gate_threshold = latest_score_quantile_threshold(
+                threshold_history = deoverlap_oos_predictions(
                     oos_predictions,
+                    horizon_days=int(horizon_days),
+                    date_column="snapshot_date",
+                    ticker_column="ticker",
+                )
+                selection_gate_threshold = latest_score_quantile_threshold(
+                    threshold_history,
                     score_column="predicted_alpha",
                     quantile=selection_gate.quantile,
                     lookback_sessions=selection_gate.lookback_sessions,

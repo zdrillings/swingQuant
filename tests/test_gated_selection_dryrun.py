@@ -9,6 +9,7 @@ from scripts.gated_selection_dryrun import (
     TARGET_COLUMN,
     acceptance_windows,
     floor_verdict_rows,
+    prepare_oos_predictions,
     render_report,
 )
 from src.research.shortlist_model_service import ShortlistModelService
@@ -94,7 +95,8 @@ class GatedSelectionDryRunTests(unittest.TestCase):
         self.assertEqual("trailing_3folds", failing[0]["window"])
 
     def test_render_report_lists_top_two_and_gate_qualified_count(self) -> None:
-        gate = ShortlistSelectionGate(enabled=True, quantile=0.95, lookback_sessions=126)
+        gate = ShortlistSelectionGate(enabled=False, quantile=0.95, lookback_sessions=126)
+        fixed_gate = ShortlistSelectionGate(enabled=True, quantile=0.95, lookback_sessions=126)
         oos = pd.DataFrame(
             [
                 {"snapshot_date": pd.Timestamp("2026-01-01"), "ticker": "AAA", "predicted_alpha": 0.1},
@@ -128,6 +130,8 @@ class GatedSelectionDryRunTests(unittest.TestCase):
 
         report = render_report(
             gate=gate,
+            fixed_gate=fixed_gate,
+            raw_oos=oos,
             oos=oos,
             summaries=summaries,
             floor_rows=[],
@@ -135,12 +139,42 @@ class GatedSelectionDryRunTests(unittest.TestCase):
             live=live,
             gated_live=live,
             live_threshold=0.25,
+            before_gated_live=live,
+            before_live_threshold=0.10,
+            calendar_dates=[],
         )
 
-        self.assertIn("- gate_qualified_live_count: 3", report)
+        self.assertIn("- fixed_gate_qualified_live_count: 3", report)
         self.assertIn("| 1 | AAA | Tech | +0.500000 | +0.250000 |", report)
         self.assertIn("| 2 | BBB | Health Care | +0.400000 | +0.250000 |", report)
         self.assertIn("- runtime_top_n_after_gate: 2", report)
+
+    def test_prepare_oos_predictions_deoverlaps_by_label_horizon(self) -> None:
+        raw = pd.DataFrame(
+            [
+                {"snapshot_date": pd.Timestamp("2026-01-01"), "ticker": "AAA", "predicted_alpha": 1.0},
+                {"snapshot_date": pd.Timestamp("2026-01-02"), "ticker": "AAA", "predicted_alpha": 2.0},
+                {"snapshot_date": pd.Timestamp("2026-03-02"), "ticker": "AAA", "predicted_alpha": 3.0},
+                {"snapshot_date": pd.Timestamp("2026-01-02"), "ticker": "BBB", "predicted_alpha": 4.0},
+            ]
+        )
+
+        prepared = prepare_oos_predictions(
+            raw,
+            calendar_dates=pd.date_range("2026-01-01", periods=90, freq="D").tolist(),
+        )
+
+        self.assertEqual(
+            [
+                ("AAA", pd.Timestamp("2026-01-01"), 1.0),
+                ("AAA", pd.Timestamp("2026-03-02"), 3.0),
+                ("BBB", pd.Timestamp("2026-01-02"), 4.0),
+            ],
+            [
+                (row.ticker, row.snapshot_date, row.predicted_alpha)
+                for row in prepared.sort_values(["ticker", "snapshot_date"]).itertuples(index=False)
+            ],
+        )
 
 
 if __name__ == "__main__":

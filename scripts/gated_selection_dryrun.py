@@ -14,8 +14,9 @@ if str(ROOT_DIR) not in sys.path:
 
 import pandas as pd
 
+from src.research.sector_neutral_selection import deoverlap_oos_predictions
 from src.research.shortlist_model_service import PROMOTION_BASKET_SIZE, ShortlistModelService
-from src.settings import load_feature_config
+from src.settings import get_settings, load_feature_config
 from src.utils.shortlist_selection_gate import (
     ShortlistSelectionGate,
     apply_score_quantile_gate,
@@ -24,30 +25,56 @@ from src.utils.shortlist_selection_gate import (
 )
 
 
-REPORT_PATH = Path("reports/gated_selection_dryrun_2026-10-07.md")
+REPORT_PATH = Path("reports/gate_semantics_fix.md")
 OOS_PATH = Path("reports/shortlist_model_oos_predictions.csv")
 LIVE_PATH = Path("reports/shortlist_model_live_predictions.csv")
 AUDIT_MODEL = "ridge_adaptive"
 TARGET_COLUMN = "alpha_vs_sector_60d"
 TEST_WINDOW_DATES = 20
+HORIZON_DAYS = 60
 
 
 def main() -> None:
     config = load_feature_config()
     gate = _load_selection_gate(config)
     promotion_gate = _load_promotion_gate(config)
-    oos = load_oos_predictions(OOS_PATH, model_name=AUDIT_MODEL)
+    raw_oos = load_oos_predictions(OOS_PATH, model_name=AUDIT_MODEL)
+    calendar_dates = load_snapshot_calendar_dates()
+    oos = prepare_oos_predictions(raw_oos, calendar_dates=calendar_dates)
+    fixed_gate = ShortlistSelectionGate(
+        enabled=True,
+        method=gate.method,
+        quantile=gate.quantile,
+        lookback_sessions=gate.lookback_sessions,
+    )
     service = ShortlistModelService(db_manager=object())
     summaries = acceptance_windows(
         oos,
         service=service,
-        gate=gate,
+        gate=fixed_gate,
         promotion_top_n=PROMOTION_BASKET_SIZE,
         target_column=TARGET_COLUMN,
     )
     floor_rows = floor_verdict_rows(summaries, promotion_gate=promotion_gate)
     passes = bool(floor_rows) and all(row["passes"] for row in floor_rows)
     live = load_live_predictions(LIVE_PATH)
+    before_live_threshold = latest_score_quantile_threshold(
+        raw_oos,
+        score_column="predicted_alpha",
+        quantile=gate.quantile,
+        lookback_sessions=gate.lookback_sessions,
+    )
+    before_gated_live = apply_score_quantile_gate(
+        live,
+        gate=ShortlistSelectionGate(
+            enabled=True,
+            method=gate.method,
+            quantile=gate.quantile,
+            lookback_sessions=gate.lookback_sessions,
+        ),
+        threshold=before_live_threshold,
+        score_column="predicted_alpha",
+    ).sort_values(["predicted_alpha", "ticker"], ascending=[False, True])
     live_threshold = latest_score_quantile_threshold(
         oos,
         score_column="predicted_alpha",
@@ -56,13 +83,15 @@ def main() -> None:
     )
     gated_live = apply_score_quantile_gate(
         live,
-        gate=gate,
+        gate=fixed_gate,
         threshold=live_threshold,
         score_column="predicted_alpha",
     ).sort_values(["predicted_alpha", "ticker"], ascending=[False, True])
     REPORT_PATH.write_text(
         render_report(
             gate=gate,
+            fixed_gate=fixed_gate,
+            raw_oos=raw_oos,
             oos=oos,
             summaries=summaries,
             floor_rows=floor_rows,
@@ -70,6 +99,9 @@ def main() -> None:
             live=live,
             gated_live=gated_live,
             live_threshold=live_threshold,
+            before_gated_live=before_gated_live,
+            before_live_threshold=before_live_threshold,
+            calendar_dates=calendar_dates,
         ),
         encoding="utf-8",
     )
@@ -121,6 +153,32 @@ def load_live_predictions(path: Path) -> pd.DataFrame:
     if "sector" not in frame.columns:
         frame["sector"] = ""
     return frame.dropna(subset=["snapshot_date", "ticker", "predicted_alpha"]).copy()
+
+
+def load_snapshot_calendar_dates() -> list[pd.Timestamp]:
+    try:
+        import duckdb
+    except ModuleNotFoundError:
+        return []
+    duckdb_path = get_settings().paths.duckdb_path
+    if not duckdb_path.exists():
+        return []
+    with duckdb.connect(str(duckdb_path), read_only=True) as connection:
+        rows = connection.execute(
+            "SELECT DISTINCT snapshot_date FROM universe_daily_snapshots ORDER BY snapshot_date ASC"
+        ).fetchall()
+    parsed = pd.to_datetime(pd.Series([row[0] for row in rows]), errors="coerce").dt.normalize().dropna()
+    return sorted(parsed.drop_duplicates().tolist())
+
+
+def prepare_oos_predictions(raw: pd.DataFrame, *, calendar_dates: list[pd.Timestamp] | None = None) -> pd.DataFrame:
+    return deoverlap_oos_predictions(
+        raw,
+        horizon_days=HORIZON_DAYS,
+        date_column="snapshot_date",
+        ticker_column="ticker",
+        calendar_dates=calendar_dates,
+    )
 
 
 def acceptance_windows(
@@ -314,6 +372,8 @@ def floor_verdict_rows(
 def render_report(
     *,
     gate: ShortlistSelectionGate,
+    fixed_gate: ShortlistSelectionGate,
+    raw_oos: pd.DataFrame,
     oos: pd.DataFrame,
     summaries: pd.DataFrame,
     floor_rows: list[dict[str, object]],
@@ -321,13 +381,16 @@ def render_report(
     live: pd.DataFrame,
     gated_live: pd.DataFrame,
     live_threshold: float | None,
+    before_gated_live: pd.DataFrame,
+    before_live_threshold: float | None,
+    calendar_dates: list[pd.Timestamp] | None = None,
 ) -> str:
     latest_live_date = None if live.empty else pd.Timestamp(live["snapshot_date"].max()).date().isoformat()
     oos_dates = sorted(oos["snapshot_date"].dropna().drop_duplicates().tolist())
     top_after_gate = gated_live.head(PROMOTION_BASKET_SIZE).copy()
     verdict = "PASS: gate-enabled ridge_adaptive clears tonight's promotion floors" if passes else "FAIL: gate-enabled ridge_adaptive does not clear tonight's promotion floors"
     lines = [
-        "# Gated Selection Dry Run - 2026-10-07",
+        "# Gate Semantics Fix - 2026-10-07",
         "",
         f"- generated_at: {datetime.now(UTC).replace(microsecond=0).isoformat()}",
         "- data_access: read-only CSV artifacts; no `./sq` write command; no `data/` mutation",
@@ -336,20 +399,35 @@ def render_report(
         f"- model: {AUDIT_MODEL}",
         f"- target_column: {TARGET_COLUMN}",
         f"- selection_gate: {gate.method}",
-        f"- selection_gate_enabled: {gate.enabled}",
+        f"- config_selection_gate_enabled_after_revert: {gate.enabled}",
+        f"- dryrun_selection_gate_enabled: {fixed_gate.enabled}",
         f"- selection_gate_quantile: {gate.quantile:.4f}",
         f"- selection_gate_lookback_sessions: {gate.lookback_sessions}",
+        f"- raw_oos_rows_loaded: {len(raw_oos.index)}",
+        f"- raw_oos_dates_loaded: {int(raw_oos['snapshot_date'].nunique()) if not raw_oos.empty else 0}",
         f"- oos_rows_loaded: {len(oos.index)}",
         f"- oos_dates_loaded: {len(oos_dates)}",
+        f"- calendar_dates_loaded: {len(calendar_dates or [])}",
         f"- oos_date_min: {_date_or_na(oos_dates[0] if oos_dates else None)}",
         f"- oos_date_max: {_date_or_na(oos_dates[-1] if oos_dates else None)}",
         f"- latest_live_date: {latest_live_date or 'n/a'}",
         f"- latest_live_rows: {len(live.index)}",
-        f"- live_gate_threshold: {_fmt(live_threshold, places=6)}",
-        f"- gate_qualified_live_count: {len(gated_live.index)}",
+        f"- before_live_gate_threshold: {_fmt(before_live_threshold, places=6)}",
+        f"- before_gate_qualified_live_count: {len(before_gated_live.index)}",
+        f"- before_gate_qualified_live_rate: {_fmt_rate(len(before_gated_live.index), len(live.index))}",
+        f"- fixed_live_gate_threshold: {_fmt(live_threshold, places=6)}",
+        f"- fixed_gate_qualified_live_count: {len(gated_live.index)}",
+        f"- fixed_gate_qualified_live_rate: {_fmt_rate(len(gated_live.index), len(live.index))}",
         f"- runtime_top_n_after_gate: {PROMOTION_BASKET_SIZE}",
         f"- would_be_champion: {AUDIT_MODEL if passes else 'n/a'}",
         f"- numeric_verdict: {verdict}",
+        "",
+        "## Semantics Delta",
+        "",
+        "| implementation | threshold | qualified_live_rows | qualified_live_rate | score_history_rows | score_history_dates |",
+        "|---|---:|---:|---:|---:|---:|",
+        f"| raw overlapping OOS rows | {_fmt(before_live_threshold, places=6)} | {len(before_gated_live.index)} | {_fmt_rate(len(before_gated_live.index), len(live.index))} | {len(raw_oos.index)} | {int(raw_oos['snapshot_date'].nunique()) if not raw_oos.empty else 0} |",
+        f"| fixed session-level OOS rows | {_fmt(live_threshold, places=6)} | {len(gated_live.index)} | {_fmt_rate(len(gated_live.index), len(live.index))} | {len(oos.index)} | {len(oos_dates)} |",
         "",
         "## Gated Acceptance Windows",
         "",
@@ -382,7 +460,7 @@ def render_report(
             "",
             "## Would-Be Live Picks",
             "",
-            f"- note: {len(gated_live.index)} latest-live rows clear the rolling score threshold; the runtime model path remains capped at top-2 picks.",
+            f"- note: {len(gated_live.index)} latest-live rows clear the fixed rolling score threshold; the runtime model path remains capped at top-2 picks.",
             "",
             "| rank_after_gate | ticker | sector | score | threshold |",
             "|---:|---|---|---:|---:|",
@@ -465,6 +543,12 @@ def _fmt(value: object, *, places: int = 4) -> str:
     if not math.isfinite(number):
         return "n/a"
     return f"{number:+.{places}f}"
+
+
+def _fmt_rate(numerator: int, denominator: int) -> str:
+    if int(denominator) <= 0:
+        return "n/a"
+    return f"{(float(numerator) / float(denominator)):.2%}"
 
 
 if __name__ == "__main__":
