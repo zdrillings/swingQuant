@@ -17,7 +17,12 @@ from scripts.check_shortlist_oos_reproducibility import (
 from scripts.q3_label_overlap import summarize_label_overlap
 from src.cli import build_parser
 from src.research.shortlist_bakeoff_service import MODEL_FEATURE_COLUMNS
-from src.research.shortlist_model_service import B1_OVERNIGHT_FEATURES, ShortlistModelService
+from src.research.shortlist_model_service import (
+    B1_OVERNIGHT_FEATURES,
+    BEAT_HYBRID_MODEL,
+    BEAT_LOGISTIC_RIDGE_MODEL,
+    ShortlistModelService,
+)
 from src.research.shortlist_universe import filter_eligible_universe
 from src.settings import AppPaths
 from src.utils.shortlist_runtime import _passes_runtime_promotion_gate, load_live_shortlist_model_context
@@ -58,10 +63,28 @@ class ShortlistModelServiceTests(unittest.TestCase):
 
         self.assertIn("ridge_model", roster)
         self.assertIn("ridge_adaptive", roster)
+        self.assertIn(BEAT_LOGISTIC_RIDGE_MODEL, roster)
+        self.assertIn(BEAT_HYBRID_MODEL, roster)
         self.assertLess(roster.index("ridge_model"), roster.index("ridge_adaptive"))
+        self.assertLess(roster.index("ridge_adaptive"), roster.index(BEAT_LOGISTIC_RIDGE_MODEL))
+        self.assertLess(roster.index(BEAT_LOGISTIC_RIDGE_MODEL), roster.index(BEAT_HYBRID_MODEL))
         self.assertEqual(
             service._candidate_max_train_dates(
                 model_name="ridge_adaptive",
+                default_max_train_dates=252,
+            ),
+            126,
+        )
+        self.assertEqual(
+            service._candidate_max_train_dates(
+                model_name=BEAT_LOGISTIC_RIDGE_MODEL,
+                default_max_train_dates=252,
+            ),
+            126,
+        )
+        self.assertEqual(
+            service._candidate_max_train_dates(
+                model_name=BEAT_HYBRID_MODEL,
                 default_max_train_dates=252,
             ),
             126,
@@ -111,6 +134,71 @@ class ShortlistModelServiceTests(unittest.TestCase):
         self.assertEqual(ridge_counts["rth_ret_5d"], 1)
         self.assertNotIn("roc_63", ridge_counts)
         self.assertEqual(generic_counts, {})
+
+    def test_beat_hybrid_score_composes_calibrated_beat_and_ridge_ranks(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        snapshot_date = pd.Timestamp("2026-01-05")
+        ridge = pd.DataFrame(
+            {
+                "snapshot_date": [snapshot_date, snapshot_date],
+                "ticker": ["AAA", "BBB"],
+                "sector": ["Technology", "Technology"],
+                "predicted_alpha": [0.2, 0.8],
+                "model_top_reasons": [["ridge_low"], ["ridge_high"]],
+            }
+        )
+        beat = pd.DataFrame(
+            {
+                "snapshot_date": [snapshot_date, snapshot_date],
+                "ticker": ["AAA", "BBB"],
+                "predicted_alpha": [0.9, 0.1],
+                "beat_calibrated_p": [0.9, 0.1],
+                "model_top_reasons": [["beat_high"], ["beat_low"]],
+            }
+        )
+
+        hybrid = service._compose_beat_hybrid_predictions(
+            ridge_predictions=ridge,
+            beat_predictions=beat,
+            beat_score_column="beat_calibrated_p",
+        ).set_index("ticker")
+
+        self.assertAlmostEqual(float(hybrid.loc["AAA", "predicted_alpha"]), 0.65)
+        self.assertAlmostEqual(float(hybrid.loc["BBB", "predicted_alpha"]), 0.85)
+        self.assertEqual(float(hybrid.loc["AAA", "calibrated_p_beat_sector"]), 0.9)
+
+    def test_beat_hybrid_chronological_calibration_does_not_use_same_date_labels(self) -> None:
+        service = ShortlistModelService(db_manager=object())
+        dates = [pd.Timestamp("2026-01-05"), pd.Timestamp("2026-01-06")]
+        ridge = pd.DataFrame(
+            {
+                "snapshot_date": [dates[0], dates[0], dates[1], dates[1]],
+                "ticker": ["AAA", "BBB", "AAA", "BBB"],
+                "sector": ["Technology", "Technology", "Technology", "Technology"],
+                "predicted_alpha": [0.2, 0.8, 0.2, 0.8],
+                "alpha_vs_sector_60d": [-0.1, 0.1, -0.1, 0.1],
+                "model_top_reasons": [[], [], [], []],
+            }
+        )
+        beat = pd.DataFrame(
+            {
+                "snapshot_date": [dates[0], dates[0], dates[1], dates[1]],
+                "ticker": ["AAA", "BBB", "AAA", "BBB"],
+                "sector": ["Technology", "Technology", "Technology", "Technology"],
+                "predicted_alpha": [0.99, 0.01, 0.99, 0.01],
+                "alpha_vs_sector_60d": [-0.1, 0.1, -0.1, 0.1],
+                "model_top_reasons": [[], [], [], []],
+            }
+        )
+
+        hybrid = service._build_beat_hybrid_predictions(
+            ridge_predictions=ridge,
+            beat_predictions=beat,
+            target_column="alpha_vs_sector_60d",
+        )
+        first_date = hybrid[hybrid["snapshot_date"].eq(dates[0])]
+
+        self.assertTrue((first_date["beat_calibrated_p"] == 0.5).all())
 
     def test_ridge_adaptive_uses_ridge_estimator_but_stays_out_of_legacy_ensemble(self) -> None:
         service = ShortlistModelService(db_manager=object())

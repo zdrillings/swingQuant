@@ -9,6 +9,7 @@ import warnings
 import numpy as np
 import pandas as pd
 
+from src.research.beat_calibration import chronological_isotonic_probability
 from src.research.shortlist_bakeoff_service import (
     A4_REGIME_INTERACTION_FEATURES,
     A4_REGIME_INTERACTION_SOURCE_FEATURES,
@@ -34,6 +35,11 @@ from src.utils.shortlist_selection_gate import ShortlistSelectionGate, rolling_s
 PROMOTION_BASKET_SIZE = 2
 RIDGE_MODEL_ALIASES = {"ridge_model", "ridge_adaptive"}
 RIDGE_ADAPTIVE_MAX_TRAIN_DATES = 126
+BEAT_LOGISTIC_RIDGE_MODEL = "beat_logistic_ridge"
+BEAT_XGBOOST_COMPONENT_MODEL = "beat_xgboost_post_tour"
+BEAT_HYBRID_MODEL = "beat_hybrid"
+BEAT_HYBRID_BEAT_WEIGHT = 0.3
+BEAT_HYBRID_RIDGE_WEIGHT = 0.7
 B1_OVERNIGHT_FEATURES = (
     "overnight_ret_5d",
     "rth_ret_5d",
@@ -302,6 +308,8 @@ class ShortlistModelService:
 
         model_predictions: dict[str, pd.DataFrame] = {}
         for model_name in candidate_models:
+            if model_name == BEAT_HYBRID_MODEL:
+                continue
             model_feature_columns = self._feature_columns_for_candidate(
                 model_name=model_name,
                 default_feature_columns=expanded_feature_columns,
@@ -338,6 +346,38 @@ class ShortlistModelService:
                         fallback_only=True,
                     )
                 model_predictions[model_name] = predicted
+        beat_xgboost_predictions = self._walk_forward_predictions(
+            matured,
+            target_column=evaluation_target_column,
+            evaluation_target_column=evaluation_target_column,
+            model_name=BEAT_XGBOOST_COMPONENT_MODEL,
+            min_train_dates=int(min_train_dates),
+            max_train_dates=RIDGE_ADAPTIVE_MAX_TRAIN_DATES,
+            test_window_dates=int(test_window_dates),
+            evaluation_stride_dates=resolved_oos_stride_dates,
+            label_horizon_dates=max(int(horizon_days), 1),
+            model_scope=model_scope,
+            xgboost_params=xgboost_params,
+            feature_columns_override=self._feature_columns_for_candidate(
+                model_name=BEAT_XGBOOST_COMPONENT_MODEL,
+                default_feature_columns=expanded_feature_columns,
+            ),
+            min_feature_ic=min_feature_ic,
+            min_feature_ic_observation_fraction=min_feature_ic_observation_fraction,
+            regime_matching_mode=regime_matching_mode,
+            min_regime_train_dates=min_regime_train_dates,
+            regime_transition_purge_mode=regime_transition_purge_mode if target_type != "path" else "off",
+            regime_matching_stats=regime_matching_stats,
+            regime_feature_stats=regime_feature_stats,
+        )
+        if beat_xgboost_predictions is not None and not beat_xgboost_predictions.empty:
+            beat_hybrid_predictions = self._build_beat_hybrid_predictions(
+                ridge_predictions=model_predictions.get("ridge_adaptive"),
+                beat_predictions=beat_xgboost_predictions,
+                target_column=evaluation_target_column,
+            )
+            if beat_hybrid_predictions is not None and not beat_hybrid_predictions.empty:
+                model_predictions[BEAT_HYBRID_MODEL] = beat_hybrid_predictions
         fixed_oos_evaluation_keys = self._fixed_oos_evaluation_keys(
             matured,
             min_train_dates=int(min_train_dates),
@@ -541,6 +581,8 @@ class ShortlistModelService:
 
         live_base_predictions: dict[str, pd.DataFrame] = {}
         for model_name in candidate_models:
+            if model_name == BEAT_HYBRID_MODEL:
+                continue
             if model_name not in model_predictions:
                 continue
             model_feature_columns = self._feature_columns_for_candidate(
@@ -581,6 +623,37 @@ class ShortlistModelService:
                     target_column=target_column,
                 )
                 live_base_predictions[model_name] = scored
+        if BEAT_HYBRID_MODEL in model_predictions and "ridge_adaptive" in live_base_predictions:
+            live_beat_xgboost = self._score_live_snapshot(
+                all_snapshots=all_snapshots,
+                matured=matured,
+                model_name=BEAT_XGBOOST_COMPONENT_MODEL,
+                target_column=evaluation_target_column,
+                feature_ic_target_column=evaluation_target_column,
+                eligible_universe_mode=eligible_universe_mode,
+                model_scope=model_scope,
+                xgboost_params=xgboost_params,
+                feature_columns_override=self._feature_columns_for_candidate(
+                    model_name=BEAT_XGBOOST_COMPONENT_MODEL,
+                    default_feature_columns=expanded_feature_columns,
+                ),
+                min_feature_ic=min_feature_ic,
+                min_feature_ic_observation_fraction=min_feature_ic_observation_fraction,
+                max_train_dates=RIDGE_ADAPTIVE_MAX_TRAIN_DATES,
+                regime_matching_mode=regime_matching_mode,
+                min_regime_train_dates=min_regime_train_dates,
+                regime_matching_stats=regime_matching_stats,
+                regime_feature_stats=regime_feature_stats,
+            )
+            if live_beat_xgboost is not None and not live_beat_xgboost.empty:
+                live_beat_hybrid = self._build_live_beat_hybrid_predictions(
+                    ridge_predictions=live_base_predictions.get("ridge_adaptive"),
+                    beat_predictions=live_beat_xgboost,
+                    beat_oos_predictions=beat_xgboost_predictions,
+                    target_column=evaluation_target_column,
+                )
+                if live_beat_hybrid is not None and not live_beat_hybrid.empty:
+                    live_base_predictions[BEAT_HYBRID_MODEL] = live_beat_hybrid
         live_ensemble_predictions = self._build_ensemble_predictions(
             self._legacy_grid_model_predictions(live_base_predictions)
         )
@@ -1913,6 +1986,13 @@ class ShortlistModelService:
                 target_column=target_column,
                 feature_columns_override=feature_columns_override,
             )
+        if model_name == BEAT_LOGISTIC_RIDGE_MODEL:
+            return self._score_beat_logistic_ridge(
+                train_frame,
+                test_frame,
+                target_column=target_column,
+                feature_columns_override=feature_columns_override,
+            )
         if model_name == "lasso_model":
             return self._score_lasso_model(
                 train_frame,
@@ -1936,6 +2016,14 @@ class ShortlistModelService:
             )
         if model_name == "xgboost_model":
             return self._score_xgboost_model(
+                train_frame,
+                test_frame,
+                target_column=target_column,
+                xgboost_params=xgboost_params,
+                feature_columns_override=feature_columns_override,
+            )
+        if model_name == BEAT_XGBOOST_COMPONENT_MODEL:
+            return self._score_beat_xgboost_classifier(
                 train_frame,
                 test_frame,
                 target_column=target_column,
@@ -2462,6 +2550,54 @@ class ShortlistModelService:
         scored["model_reason_summary"] = scored["model_top_reasons"].apply(self._format_reason_summary)
         return scored
 
+    def _score_beat_logistic_ridge(
+        self,
+        train_frame: pd.DataFrame,
+        test_frame: pd.DataFrame,
+        *,
+        target_column: str,
+        feature_columns_override: list[str] | None = None,
+    ) -> pd.DataFrame:
+        try:
+            from sklearn.linear_model import LogisticRegression
+        except ModuleNotFoundError:
+            self.logger.warning("scikit-learn unavailable; skipping beat_logistic_ridge.")
+            return test_frame.assign(predicted_alpha=pd.Series(dtype=float))
+        train_matrix, test_matrix, feature_names, standardized_test = self._prepare_model_matrices(
+            train_frame,
+            test_frame,
+            feature_columns_override=feature_columns_override,
+        )
+        train_target = pd.to_numeric(train_frame[target_column], errors="coerce").to_numpy(dtype=float)
+        finite_mask = np.isfinite(train_target)
+        train_matrix = train_matrix[finite_mask]
+        train_labels = (train_target[finite_mask] > 0.0).astype(int)
+        train_matrix = np.nan_to_num(train_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+        test_matrix = np.nan_to_num(test_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+        scored = test_frame.copy()
+        if len(np.unique(train_labels)) < 2:
+            scored["predicted_alpha"] = float(np.mean(train_labels)) if len(train_labels) else 0.5
+            scored["model_top_reasons"] = [[] for _ in range(len(scored.index))]
+            scored["model_reason_summary"] = scored["model_top_reasons"].apply(self._format_reason_summary)
+            return scored
+        model = LogisticRegression(
+            penalty="l2",
+            C=1.0,
+            solver="liblinear",
+            random_state=42,
+            max_iter=1000,
+        )
+        model.fit(train_matrix, train_labels)
+        scored["predicted_alpha"] = model.predict_proba(test_matrix)[:, 1]
+        weights = model.coef_[0] if getattr(model, "coef_", None) is not None else np.zeros(len(feature_names))
+        contribution_frame = standardized_test.mul(weights, axis=1)
+        scored["model_top_reasons"] = [
+            self._top_reason_names(contribution_frame.iloc[index].to_dict())
+            for index in range(len(contribution_frame.index))
+        ]
+        scored["model_reason_summary"] = scored["model_top_reasons"].apply(self._format_reason_summary)
+        return scored
+
     def _score_xgboost_model(
         self,
         train_frame: pd.DataFrame,
@@ -2518,6 +2654,172 @@ class ShortlistModelService:
             scored["model_top_reasons"] = [[] for _ in range(len(scored.index))]
         scored["model_reason_summary"] = scored["model_top_reasons"].apply(self._format_reason_summary)
         return scored
+
+    def _score_beat_xgboost_classifier(
+        self,
+        train_frame: pd.DataFrame,
+        test_frame: pd.DataFrame,
+        *,
+        target_column: str,
+        xgboost_params: dict[str, float | int] | None = None,
+        feature_columns_override: list[str] | None = None,
+    ) -> pd.DataFrame | None:
+        try:
+            from xgboost import XGBClassifier
+        except ModuleNotFoundError:
+            self.logger.warning("xgboost unavailable; skipping beat_hybrid xgboost component.")
+            return None
+        train_matrix, test_matrix, feature_names, _ = self._prepare_model_matrices(
+            train_frame,
+            test_frame,
+            feature_columns_override=feature_columns_override,
+        )
+        train_target = pd.to_numeric(train_frame[target_column], errors="coerce").to_numpy(dtype=float)
+        finite_mask = np.isfinite(train_target)
+        train_matrix = train_matrix[finite_mask]
+        train_labels = (train_target[finite_mask] > 0.0).astype(int)
+        if len(np.unique(train_labels)) < 2:
+            scored = test_frame.copy()
+            scored["predicted_alpha"] = float(np.mean(train_labels)) if len(train_labels) else 0.5
+            scored["model_top_reasons"] = [[] for _ in range(len(scored.index))]
+            scored["model_reason_summary"] = scored["model_top_reasons"].apply(self._format_reason_summary)
+            return scored
+        params = {
+            "n_estimators": 150,
+            "max_depth": 4,
+            "learning_rate": 0.05,
+            "subsample": 0.8,
+            "colsample_bytree": 0.8,
+            "min_child_weight": 1.0,
+            "reg_lambda": 1.0,
+            "random_state": 42,
+            "objective": "binary:logistic",
+            "eval_metric": "logloss",
+        }
+        if xgboost_params:
+            params.update(xgboost_params)
+        train_matrix = np.nan_to_num(train_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+        test_matrix = np.nan_to_num(test_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+        model = XGBClassifier(**params)
+        model.fit(train_matrix, train_labels, verbose=False)
+        scored = test_frame.copy()
+        scored["predicted_alpha"] = model.predict_proba(test_matrix)[:, 1]
+        scored["model_top_reasons"] = [[] for _ in range(len(scored.index))]
+        try:
+            importances = pd.Series(model.feature_importances_, index=feature_names).sort_values(ascending=False)
+            top_features = importances.head(3).index.astype(str).tolist()
+            scored["model_top_reasons"] = [top_features for _ in range(len(scored.index))]
+        except Exception:
+            pass
+        scored["model_reason_summary"] = scored["model_top_reasons"].apply(self._format_reason_summary)
+        return scored
+
+    def _build_beat_hybrid_predictions(
+        self,
+        *,
+        ridge_predictions: pd.DataFrame | None,
+        beat_predictions: pd.DataFrame | None,
+        target_column: str,
+    ) -> pd.DataFrame | None:
+        if ridge_predictions is None or beat_predictions is None or ridge_predictions.empty or beat_predictions.empty:
+            return None
+        calibrated_beat = chronological_isotonic_probability(
+            beat_predictions,
+            target_column=target_column,
+            output_column="beat_calibrated_p",
+            min_train_rows=50,
+        )
+        return self._compose_beat_hybrid_predictions(
+            ridge_predictions=ridge_predictions,
+            beat_predictions=calibrated_beat,
+            beat_score_column="beat_calibrated_p",
+        )
+
+    def _build_live_beat_hybrid_predictions(
+        self,
+        *,
+        ridge_predictions: pd.DataFrame | None,
+        beat_predictions: pd.DataFrame | None,
+        beat_oos_predictions: pd.DataFrame | None,
+        target_column: str,
+    ) -> pd.DataFrame | None:
+        if ridge_predictions is None or beat_predictions is None or ridge_predictions.empty or beat_predictions.empty:
+            return None
+        if beat_oos_predictions is None or beat_oos_predictions.empty:
+            return None
+        calibrated_live = self._apply_calibration_from_oos(
+            beat_predictions,
+            beat_oos_predictions,
+            target_column=target_column,
+        ).rename(columns={"calibrated_p_beat_sector": "beat_calibrated_p"})
+        return self._compose_beat_hybrid_predictions(
+            ridge_predictions=ridge_predictions,
+            beat_predictions=calibrated_live,
+            beat_score_column="beat_calibrated_p",
+        )
+
+    def _compose_beat_hybrid_predictions(
+        self,
+        *,
+        ridge_predictions: pd.DataFrame,
+        beat_predictions: pd.DataFrame,
+        beat_score_column: str,
+    ) -> pd.DataFrame | None:
+        required_columns = {"snapshot_date", "ticker", "predicted_alpha"}
+        if (
+            not required_columns.issubset(ridge_predictions.columns)
+            or not required_columns.issubset(beat_predictions.columns)
+        ):
+            return None
+        ridge = ridge_predictions.copy().rename(
+            columns={
+                "predicted_alpha": "ridge_adaptive_predicted_alpha",
+                "model_top_reasons": "ridge_adaptive_model_top_reasons",
+            }
+        )
+        beat_columns = ["snapshot_date", "ticker", beat_score_column, "predicted_alpha", "model_top_reasons"]
+        beat = beat_predictions[[column for column in beat_columns if column in beat_predictions.columns]].copy()
+        beat = beat.rename(
+            columns={
+                "predicted_alpha": "beat_xgboost_raw_p",
+                "model_top_reasons": "beat_xgboost_model_top_reasons",
+                beat_score_column: "beat_calibrated_p",
+            }
+        )
+        merged = ridge.merge(beat, on=["snapshot_date", "ticker"], how="inner")
+        if merged.empty:
+            return None
+        group_key = merged["snapshot_date"] if merged["snapshot_date"].nunique() > 1 else None
+        if group_key is not None:
+            merged["beat_calibrated_rank"] = pd.to_numeric(merged["beat_calibrated_p"], errors="coerce").groupby(
+                group_key
+            ).rank(method="average", pct=True)
+            merged["ridge_adaptive_rank"] = pd.to_numeric(
+                merged["ridge_adaptive_predicted_alpha"], errors="coerce"
+            ).groupby(group_key).rank(method="average", pct=True)
+        else:
+            merged["beat_calibrated_rank"] = pd.to_numeric(
+                merged["beat_calibrated_p"], errors="coerce"
+            ).rank(method="average", pct=True)
+            merged["ridge_adaptive_rank"] = pd.to_numeric(
+                merged["ridge_adaptive_predicted_alpha"], errors="coerce"
+            ).rank(method="average", pct=True)
+        merged["predicted_alpha"] = (
+            (BEAT_HYBRID_BEAT_WEIGHT * merged["beat_calibrated_rank"])
+            + (BEAT_HYBRID_RIDGE_WEIGHT * merged["ridge_adaptive_rank"])
+        )
+        merged["model_top_reasons"] = merged.apply(
+            lambda row: self._merge_reason_lists(
+                [
+                    self._ensure_reason_list(row.get("beat_xgboost_model_top_reasons")),
+                    self._ensure_reason_list(row.get("ridge_adaptive_model_top_reasons")),
+                ]
+            ),
+            axis=1,
+        )
+        merged["model_reason_summary"] = merged["model_top_reasons"].apply(self._format_reason_summary)
+        merged["calibrated_p_beat_sector"] = pd.to_numeric(merged["beat_calibrated_p"], errors="coerce")
+        return merged
 
     def _build_ensemble_predictions(self, predictions_by_model: dict[str, pd.DataFrame]) -> pd.DataFrame | None:
         usable = {
@@ -2606,7 +2908,7 @@ class ShortlistModelService:
             return self._filter_model_feature_columns(
                 expand_model_feature_columns(E1_NICHE_MODEL_FEATURES[model_name])
             )
-        if model_name == "ridge_adaptive":
+        if model_name in {"ridge_adaptive", BEAT_LOGISTIC_RIDGE_MODEL, BEAT_XGBOOST_COMPONENT_MODEL}:
             ordered = list(default_feature_columns)
             for feature in expand_model_feature_columns(B1_OVERNIGHT_FEATURES):
                 if feature not in ordered:
@@ -2623,6 +2925,8 @@ class ShortlistModelService:
             "structure_factor_signal",
             "ridge_model",
             "ridge_adaptive",
+            BEAT_LOGISTIC_RIDGE_MODEL,
+            BEAT_HYBRID_MODEL,
             "lasso_model",
             "elastic_net_model",
             "ic_sign_model",
@@ -2637,7 +2941,7 @@ class ShortlistModelService:
         model_name: str,
         default_max_train_dates: int | None,
     ) -> int | None:
-        if model_name == "ridge_adaptive":
+        if model_name in {"ridge_adaptive", BEAT_LOGISTIC_RIDGE_MODEL, BEAT_HYBRID_MODEL, BEAT_XGBOOST_COMPONENT_MODEL}:
             return RIDGE_ADAPTIVE_MAX_TRAIN_DATES
         return default_max_train_dates
 
