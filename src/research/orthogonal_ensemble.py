@@ -199,10 +199,12 @@ def passes_acceptance(summary: dict[str, float | int]) -> bool:
         and _finite_at_least(summary.get("last_fold_beat_universe_rate"), 0.50)
         and _finite_at_least(summary.get("last_fold_mean_target_excess"), 0.0)
         and _finite_at_least(summary.get("last_fold_spearman"), 0.0)
+        and _finite_at_most(summary.get("last_fold_top_ticker_date_rate"), 0.40)
         and _finite_at_least(summary.get("trailing_3fold_hit_rate_excess"), 0.02)
         and _finite_at_least(summary.get("trailing_3fold_beat_universe_rate"), 0.50)
         and _finite_at_least(summary.get("trailing_3fold_mean_target_excess"), 0.0)
         and _finite_at_least(summary.get("trailing_3fold_spearman"), 0.0)
+        and _finite_at_most(summary.get("trailing_3fold_top_ticker_date_rate"), 0.40)
     )
 
 
@@ -293,6 +295,7 @@ def _top_n_basket_summary(
         return _empty_basket_summary()
 
     rows: list[dict[str, float]] = []
+    ticker_rows: list[dict[str, object]] = []
     for _, day_frame in working.groupby("snapshot_date", sort=True):
         ordered = day_frame.sort_values(["predicted_alpha", "ticker"], ascending=[False, True]).copy()
         picks = ordered.head(max(int(top_n), 1)).copy()
@@ -300,6 +303,9 @@ def _top_n_basket_summary(
         universe = pd.to_numeric(day_frame[target_column], errors="coerce").clip(lower=-1.0, upper=1.0).dropna()
         if target.empty or universe.empty:
             continue
+        snapshot_date = pd.Timestamp(ordered["snapshot_date"].iloc[0])
+        for ticker in picks["ticker"].astype(str).tolist():
+            ticker_rows.append({"snapshot_date": snapshot_date, "ticker": ticker})
         score = pd.to_numeric(ordered["predicted_alpha"], errors="coerce")
         full_target = pd.to_numeric(ordered[target_column], errors="coerce")
         valid = score.notna() & full_target.notna()
@@ -323,6 +329,7 @@ def _top_n_basket_summary(
     if not rows:
         return _empty_basket_summary()
     daily = pd.DataFrame(rows)
+    concentration = _top_ticker_concentration(ticker_rows)
     return {
         "dates": int(len(daily.index)),
         "avg_pick_count": float(daily["pick_count"].mean()),
@@ -330,6 +337,9 @@ def _top_n_basket_summary(
         "hit_rate_excess": float((daily["hit_rate"] - daily["universe_hit_rate"]).mean()),
         "beat_universe_rate": float((daily["mean_target"] > daily["universe_mean_target"]).mean()),
         "spearman": float(daily["spearman"].dropna().mean()) if daily["spearman"].notna().any() else float("nan"),
+        "top_ticker": concentration["top_ticker"],
+        "top_ticker_date_rate": concentration["top_ticker_date_rate"],
+        "top_ticker_pick_share": concentration["top_ticker_pick_share"],
     }
 
 
@@ -341,6 +351,24 @@ def _empty_basket_summary() -> dict[str, float | int]:
         "hit_rate_excess": float("nan"),
         "beat_universe_rate": float("nan"),
         "spearman": float("nan"),
+        "top_ticker": None,
+        "top_ticker_date_rate": float("nan"),
+        "top_ticker_pick_share": float("nan"),
+    }
+
+
+def _top_ticker_concentration(rows: list[dict[str, object]]) -> dict[str, object]:
+    if not rows:
+        return {"top_ticker": None, "top_ticker_date_rate": float("nan"), "top_ticker_pick_share": float("nan")}
+    frame = pd.DataFrame(rows)
+    ticker_counts = frame["ticker"].value_counts()
+    top_ticker = str(ticker_counts.index[0])
+    total_dates = max(int(frame["snapshot_date"].nunique()), 1)
+    ticker_dates = int(frame.loc[frame["ticker"] == top_ticker, "snapshot_date"].nunique())
+    return {
+        "top_ticker": top_ticker,
+        "top_ticker_date_rate": float(ticker_dates) / float(total_dates),
+        "top_ticker_pick_share": float(ticker_counts.iloc[0]) / float(len(frame.index)),
     }
 
 
@@ -354,3 +382,11 @@ def _finite_at_least(value: object, floor: float) -> bool:
     except (TypeError, ValueError):
         return False
     return math.isfinite(numeric) and numeric >= float(floor)
+
+
+def _finite_at_most(value: object, ceiling: float) -> bool:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(numeric) and numeric <= float(ceiling)
