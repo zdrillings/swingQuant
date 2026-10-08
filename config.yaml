@@ -370,7 +370,7 @@ scan_policy:
     use_as_candidate_source: true
     allow_heuristic_fallback: false
     selection_gate:
-      enabled: false
+      enabled: true
       method: score_quantile
       quantile: 0.95
       lookback_sessions: 126

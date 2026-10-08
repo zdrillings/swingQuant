@@ -14,7 +14,7 @@ from src.scan.backfill_service import ScanBackfillService
 from src.scan.service import LearnedRankerStatus, RegimeGateState, ScanPolicy, ScanService
 from src.scan.ranker import RankerValidationReport
 from src.research.universe_snapshot_service import UniverseSnapshotBackfillService
-from src.settings import AppPaths, RuntimeSettings
+from src.settings import AppPaths, RuntimeSettings, load_feature_config
 from src.sweep.service import BenchmarkContext, SweepService, _optional_finite_float
 from src.utils.db_manager import DatabaseManager
 from src.utils.sizing import HeuristicSizingPolicy, apply_portfolio_stop_risk_cap, compute_heuristic_position_size
@@ -633,6 +633,14 @@ class ScanServiceTests(unittest.TestCase):
         self.assertEqual(policy.shortlist_model.production_feature_profile, "no_gap_risk")
         self.assertEqual(policy.shortlist_model.min_opportunity_score, 0.31)
         self.assertFalse(policy.shortlist_model.selection_gate.enabled)
+
+    def test_committed_config_enables_shortlist_selection_gate(self) -> None:
+        policy = ScanPolicy.from_config(load_feature_config())
+
+        self.assertTrue(policy.shortlist_model.selection_gate.active)
+        self.assertEqual(policy.shortlist_model.selection_gate.method, "score_quantile")
+        self.assertAlmostEqual(policy.shortlist_model.selection_gate.quantile, 0.95)
+        self.assertEqual(policy.shortlist_model.selection_gate.lookback_sessions, 126)
 
     def test_scan_policy_parses_shortlist_selection_gate(self) -> None:
         policy = ScanPolicy.from_config(
