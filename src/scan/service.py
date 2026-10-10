@@ -3551,7 +3551,7 @@ class ScanService:
         return ", ".join(feature_parts[:4]) if feature_parts else "n/a"
 
     def _summarize_candidate_why(self, indicator_details: dict) -> str:
-        if not indicator_details:
+        if not isinstance(indicator_details, dict) or not indicator_details:
             return "n/a"
         scored = []
         hard = []

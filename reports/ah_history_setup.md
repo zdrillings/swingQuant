@@ -14,10 +14,10 @@
 - markdown_reports_recoverable: 1
 - markdown_rows_recoverable: 20
 - rows_upserted_this_run: 255
-- history_total_rows: 15364
-- history_total_nights: 60
+- history_total_rows: 15874
+- history_total_nights: 62
 - history_first_snapshot_date: 2026-07-03
-- history_latest_snapshot_date: 2026-10-06
+- history_latest_snapshot_date: 2026-10-08
 
 ## Coverage Query
 

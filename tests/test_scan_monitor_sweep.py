@@ -29,6 +29,17 @@ class EmailCall:
 
 
 class ScanServiceTests(unittest.TestCase):
+    def test_candidate_signal_evidence_handles_missing_indicator_details(self) -> None:
+        service = ScanService(db_manager=None)
+        for missing in (float("nan"), None):
+            with self.subTest(missing=missing):
+                row = {"indicator_details": missing, "roc_63": 0.20}
+                self.assertEqual(service._candidate_signal_evidence(row), "63d momentum")
+        self.assertEqual(
+            service._candidate_signal_evidence({"indicator_details": float("nan")}),
+            "n/a",
+        )
+
     def test_candidate_summary_labels_classification_model_score(self) -> None:
         service = ScanService(db_manager=None)
         html = service._build_candidate_summary_table(
